@@ -9,17 +9,16 @@ tested: none
 # `monitoring-alerting` skill (reads → probes → thresholds → notify-on-change) [template v1 draft]
 
 Promoted from the executed netwatch flap drill
-(t28-hsmon-proof.md, twin1/7.26beta3: up + down + recovery
-scripts all fired and logged) plus the K20 look-after chain
-(concepts.toml K20: collect/investigate/notify cadences,
+(a 7.26beta3 CHR twin: up + down + recovery
+scripts all fired and logged) plus the look-after chain
+(collect/investigate/notify cadences,
 hysteresis, dedup, recovery announce, failed-never-green).
-The SCHEDULED LOOP (T12) and the notify TRANSPORTS (mail,
+The SCHEDULED LOOP and the notify TRANSPORTS (mail,
 webhook, push) are prescribed, not executed — what IS proven
 is the on-box probe mechanics and the read inventory. Complements
-#3 look-after-ops (the loop procedure when T12 lands) and #38
+the look-after loop (unbuilt) and
 service-path-fleet-check (the fleet view); this skill is the
-single-box watch. Build-tracker references (T/K IDs, notes
-paths) are pointers pending staging scrub. No secrets below.
+single-box watch. No secrets below.
 
 ## Part 1 — The checklist (prove the probe before trusting it)
 
@@ -42,7 +41,7 @@ probe that never fired on a twin.
 
 ### 0. What to watch (the read inventory)
 
-Grounded reads (all ran on twin1 this session unless noted):
+Grounded reads (all ran on the twin unless noted):
 
 - `/system/resource/print` — uptime, load, free-memory,
   free-hdd-space. The liveness heartbeat; poll it first,
@@ -57,18 +56,18 @@ Grounded reads (all ran on twin1 this session unless noted):
   after any netwatch change: `unknown` + the warning means
   "waiting", not "broken".
 - `/system/package/print` — installed versions; the drift
-  input for upgrade planning (#5).
+  input for upgrade planning (backup-restore-upgrade).
 - `/system/health/print` — hardware sensors. On CHR it
   answers `{"state":"disabled"}` (proven this session):
   no sensors, no data. On hardware this menu is the
   temperature/voltage/fan watch — but confirm it answers
   before building thresholds on it.
-- `/interface/print stats` + firewall counters (#8) — the
+- `/interface/print stats` + firewall counters (firewall-apply) — the
   traffic half: counters that should move and don't are a
   signal (stuck queue, dead peer).
 
 NOT watched from here: dude DB internals, UM rows, file
-bytes — those are pull/ + coverage-audit (#5) territory.
+bytes — those are pull/ + coverage-audit (backup-restore-upgrade) territory.
 
 ### 1. Netwatch probes (writes — twin first, always)
 
@@ -77,7 +76,7 @@ centrs execute --quickchr <twin> '/tool/netwatch/add host=10.0.2.2 interval=10s 
 # -> {"ret": "*1"}
 ```
 
-- Grounded end to end (t28-hsmon-proof.md): two hosts added
+- Grounded end to end: two hosts added
   (gateway + unrouted), states read back, scripts fired,
   tagged cleanup to `{}`.
 - `startup-delay` defaults to 5 MINUTES: fresh probes sit at
@@ -93,7 +92,7 @@ centrs execute --quickchr <twin> '/tool/netwatch/add host=10.0.2.2 interval=10s 
   sentence). Escalation (mail, webhook) hangs off the
   log/topic layer or the loop — not inside the probe.
 - Tag every probe (`comment=`): rollback is
-  `remove [find comment~"<tag>"]` + re-print, same as #8.
+  `remove [find comment~"<tag>"]` + re-print, same as firewall-apply.
 
 ### 2. Fire all three transitions (writes — the trust step)
 
@@ -104,16 +103,16 @@ centrs execute --quickchr <twin> '/tool/netwatch/add host=10.0.2.2 interval=10s 
 centrs execute --quickchr <twin> '/log/print where message~"<marker>"'  # read back all three
 ```
 
-- Grounded (t28-hsmon-proof.md): `t28-nw-up-gw` 20:21:28,
+- Grounded: `t28-nw-up-gw` 20:21:28,
   `t28-nw-down-dead` 20:21:31, `t28-nw-up-dead` (recovery)
-  20:21:58 — down, up, and recovery all logged on twin1.
+  20:21:58 — down, up, and recovery all logged on the twin.
 - The recovery flip is the load-bearing test: a probe that
   pages on down but stays silent on recovery trains the
-  owner to ignore it. K20's "announce recovery" is this
+  owner to ignore it. "Announce recovery" is this
   line. Every probe shape proves recovery before it ships.
 - Unknown is not down: `status: unknown` during
   startup-delay must NEVER page. The loop treats unknown
-  as "waiting" (K20: failed-never-green cuts the other
+  as "waiting" (failed-never-green cuts the other
   way too — pending is not verdict).
 
 ### 3. Thresholds with hysteresis (prescribed shape, proven reads)
@@ -128,27 +127,28 @@ centrs execute --quickchr <twin> '/log/print where message~"<marker>"'  # read b
 - Two lines, not one: the alert value trips, the HIGHER
   clear value resets. A single trip line flaps on every
   boundary crossing and spams the owner — hysteresis is
-  the difference between monitoring and noise (K20).
+  the difference between monitoring and noise.
 - Reads feeding thresholds are the step-0 inventory
   (free-memory, cpu-load, free-hdd-space, package
   versions). The scheduler/script mechanics are standard
   RouterOS (routeros-scripting) but UNEXECUTED here —
   the first threshold drill updates this skill.
-- Dedup window: the loop (T12/#3), not the probe,
+- Dedup window: the loop, not the probe,
   collapses repeats. Probe says it every interval; the
   loop notifies once per state episode. Don't throttle
   the probe to fix loop spam.
 
-### 4. Notify on change only (K20 discipline, prescribed loop)
+### 4. Notify on change only (prescribed loop)
 
-- Three cadences, separated (K20): COLLECT often (cheap
+- Three cadences, separated: COLLECT often (cheap
   reads, every few minutes), INVESTIGATE on state change
   (richer reads only when something moved), NOTIFY on
   transitions + recovery. Steady-state produces log
   lines, never notifications.
 - Failed check never renders green: a timed-out read, an
   `unknown` probe, a missing menu is AMBER/unknown in
-  every surface (#38 fleet view, #44 board) — never a
+  every surface (service-path-fleet-check fleet view,
+  decision-board-lifecycle board) — never a
   green tick, never silently dropped.
 - Notify transports (e-mail via `/tool/e-mail`, webhooks
   via `/tool/fetch`, push via the agent surface) are
@@ -171,16 +171,17 @@ looks like for a box; any "why didn't it alert?" postmortem.
 - centrs on PATH; target reachable (`first-contact` first
   on any box not yet in the device registry).
 - A twin at matching firmware for probe-shape proofs.
-- K20 read (concepts.toml): the cadence/hysteresis/dedup
-  vocabulary this skill executes.
+- The look-after vocabulary: collect/investigate/notify
+  cadences, hysteresis, dedup, announce-recovery,
+  failed-never-green.
 
 ### Access
 
 - Twins: anything goes; probe drills are cheap and safe.
-- bigdude (production): reads free; ANY write asks the
+- Production: reads free; ANY write asks the
   developer first — including netwatch adds (config
   writes + probe traffic).
-- Operator Unknown → ask before any write (concepts K14).
+- Operator Unknown → ask before any write.
 
 ### Envs
 
@@ -226,7 +227,7 @@ looks like for a box; any "why didn't it alert?" postmortem.
 
 ### Limits
 
-- The scheduled loop is T12/#3 (unbuilt): this skill
+- The scheduled loop is unbuilt: this skill
   proves probes, not the loop that reads them on a timer.
 - Notify transports are prescribed, each needing its own
   twin proof (test message observed) before trust.
