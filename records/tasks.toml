@@ -970,3 +970,13 @@ evidence = "T93 codex gpt-6.1-sol review 2026-11-01: probes COMPETING_WRITER_RAN
 blocked_by = ["T93"]
 agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
+
+[[task]]
+id = "T98"
+title = "File route hygiene: no symlink follow, no device.cdb, bounded reads"
+status = "needed"
+detail = "/api/file (src/lib/workspace.ts readFile path, src/serve/server.ts) serves any workspace path and follows symlinks: an internal alias -> device.cdb link returns the CDB bytes, and the tree traverses most hidden dirs. Apply the T83 artifact rule set to the editor route: lstat-walk (no symlinks inside the workspace), O_NOFOLLOW open + fstat + read-from-fd, deny device.cdb and other credential stores by name, keep the 512 KiB editor cap. Fail-first tests."
+evidence = "T83 codex gpt-6.1-sol review 2026-11-01: alias.html -> device.cdb returned 200 FAKE_CDB_SECRET via /api/artifact; noted /api/file already exposes arbitrary workspace files (pre-existing, broader than T83)"
+blocked_by = ["T83"]
+agent = ""
+updated = "2026-11-01"
