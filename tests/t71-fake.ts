@@ -18,9 +18,9 @@
 // T71_INTERRUPT_DELAY_MS delays the post-interrupt completion (the ack
 // stays immediate) so the smoke can screenshot the Stopping ticker.
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { startServer } from "../src/serve/server";
+import { mktmp } from "./helpers/tmp";
 
 // Plain JS in a .ts file: generated into the temp bin dir at runtime,
 // never linted. Runs under the bun binary (process.execPath).
@@ -238,7 +238,7 @@ function writeShim(dir: string, name: string, body: string): void {
 
 /** Fronted PATH dir: T71 fake muse + shadow trilogy (all hermetic). */
 export function stubT71Bin(): { bin: string; log: string } {
-	const bin = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t71-bin-"));
+	const bin = mktmp("t71-bin-");
 	const log = path.join(bin, "msp.log");
 	nodeFs.writeFileSync(path.join(bin, "fake-muse-t71.ts"), T71_FAKE_MUSE);
 	writeShim(
@@ -310,7 +310,7 @@ export async function withT71Env<T>(
 
 /** Minimal workspace (workspace.toml only; chat routes need no files). */
 export function makeT71Workspace(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t71-ws-"));
+	const dir = mktmp("t71-ws-");
 	nodeFs.writeFileSync(path.join(dir, "workspace.toml"), "canonical = true\n");
 	return dir;
 }
@@ -321,11 +321,11 @@ export async function startT71Srv(bin: string): Promise<{
 	stop: () => Promise<void>;
 }> {
 	return startServer({
-		dataHome: nodeFs.mkdtempSync(path.join(os.tmpdir(), "t71-dh-")),
+		dataHome: mktmp("t71-dh-"),
 		allowOpenCdb: true,
 		workspace: makeT71Workspace(),
 		provider: "echo",
-		museHome: nodeFs.mkdtempSync(path.join(os.tmpdir(), "t71-home-")),
+		museHome: mktmp("t71-home-"),
 		toolBinDir: bin,
 	});
 }
