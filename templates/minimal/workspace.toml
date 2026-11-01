@@ -1,4 +1,4 @@
-# {{name}} — minimal workspace scaffold (T40). The full template
+# {{name}} — minimal workspace scaffold. The full template
 # (START-HERE, conventions, skills, checks) ships at templates/network;
 # this is the runnable minimum the UI populates from.
 [home]

@@ -4,6 +4,6 @@
 observations/*/pull-*/
 observations/*/latest
 !observations/_sample/latest
-# Credential store: the workspace device.cdb never commits (T9 rule 1).
+# Credential store: the workspace device.cdb never commits.
 # The star covers centrs siblings too: .bak.* snapshots and init temps.
 *.cdb*
