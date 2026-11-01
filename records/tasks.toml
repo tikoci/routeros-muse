@@ -990,3 +990,13 @@ evidence = "T83 follow-up writer note 2026-11-01 (open question: same bug class 
 blocked_by = ["T83"]
 agent = ""
 updated = "2026-11-01"
+
+[[task]]
+id = "T100"
+title = "Package-level skills outside templates, delivered into .agents/skills"
+status = "needed"
+detail = "Skills that belong to routeros-muse itself (harness orientation, rendering through the UI, ui_* MCP tools, workspace conventions) should not live inside one template. Proposed: a package-root skills/ dir; init copies them into the workspace .agents/skills/ beside the template's (never-overwrite, provenance recorded like [template]); doctor reports drift against the installed package; an explicit refresh updates them. RouterOS domain skills stay in tikoci/routeros-skills (user-level ~/.agents/skills), not duplicated here. Today nothing handles this: the only skills are templates/network/skills."
+evidence = "Developer question 2026-11-01 on D40; capture B1 shows muse reads project .agents/skills plus user ~/.agents/skills (routeros-skills symlinks live there on orca)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
