@@ -9,7 +9,7 @@ import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { toolEnv } from "../src/lib/tools";
-import { scaffoldIntoDir } from "../src/lib/workspace";
+import { scaffoldIntoDir, scaffoldWorkspace } from "../src/lib/workspace";
 
 const POSIX = process.platform !== "win32";
 const tposix = POSIX ? test : test.skip;
@@ -245,4 +245,24 @@ describe("scaffold rollback ownership (T97 follow-up)", () => {
 			expect(nodeFs.readdirSync(dir)).toEqual(["AGENTS.md"]);
 		},
 	);
+});
+
+describe("scaffold leftover reporting (T97 follow-up)", () => {
+	tposix("a leftover is named in why, in the picker mode", async () => {
+		const parent = mktmp("t97b-leftover-");
+		const res = await scaffoldWorkspace(
+			parent,
+			"doomed",
+			toolEnv(replacingCentrsBin()),
+		);
+		expect(res.ok).toBe(false);
+		if (!res.ok) {
+			expect(res.why).toMatch(/left behind/);
+			expect(res.why).toContain("AGENTS.md");
+			expect(res.leftover ?? []).toContain("AGENTS.md (ownership changed)");
+		}
+		expect(
+			nodeFs.readFileSync(path.join(parent, "doomed", "AGENTS.md"), "utf8"),
+		).toBe("STUB DATA - must survive\n");
+	});
 });

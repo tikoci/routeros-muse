@@ -556,7 +556,7 @@ export type ScaffoldOpts = {
 
 export type ScaffoldResult =
 	| { ok: true; dir: string }
-	| { ok: false; why: string; conflicts?: string[] };
+	| { ok: false; why: string; conflicts?: string[]; leftover?: string[] };
 
 /** Ledger entry for a path this run just created (lstat identity). */
 function statCreated(full: string, label: string): CreatedPath {
