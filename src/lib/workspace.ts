@@ -531,6 +531,16 @@ export function resolveArtifact(root: string, rel: string): ArtifactResult {
 }
 
 /**
+ * Scaffold threat model (T97 follow-up): init assumes no
+ * concurrent adversary with write access to the destination tree.
+ * It defends against pre-existing files and links, accidental
+ * races (exclusive create plus ownership-checked rollback), and
+ * partial failure. It does NOT defend against a parent directory
+ * being swapped for a symlink mid-copy — Node has no openat, so
+ * path-based checks cannot pin the tree. That is accepted.
+ */
+
+/**
  * Scaffold-name rule: a single basename, no separators or escapes, so
  * the creation target always lands directly under the default dir.
  */
