@@ -8,6 +8,7 @@ import { loadDoctorSpec, runDoctor } from "../steps/doctor";
 import { readDevices } from "./fleet";
 import { have, run } from "./run";
 import {
+	type CreatedPath,
 	copyTemplateFiles,
 	isRealDir,
 	listTemplateFiles,
@@ -662,22 +663,24 @@ export async function scaffoldWorkspace(
 		return { ok: false, why: `already exists: ${target}` };
 	}
 	opts?.afterPreflight?.();
-	const createdFiles: string[] = [];
-	const createdDirs: string[] = [];
+	const createdFiles: CreatedPath[] = [];
+	const createdDirs: CreatedPath[] = [];
 	let targetCreated = false;
 	const rollback = (): void => {
-		for (const rel of createdFiles) {
+		for (const f of createdFiles) {
 			try {
-				nodeFs.rmSync(path.join(target, rel), { force: true });
+				nodeFs.rmSync(f.full, { force: true });
 			} catch {
 				// replaced or already gone: leave it
 			}
 		}
 		// Deepest first: a parent is a strict prefix of its child,
 		// so it is always shorter and sorts later.
-		for (const d of [...createdDirs].sort((a, b) => b.length - a.length)) {
+		for (const d of [...createdDirs].sort(
+			(a, b) => b.label.length - a.label.length,
+		)) {
 			try {
-				nodeFs.rmdirSync(path.join(target, d));
+				nodeFs.rmdirSync(d.full);
 			} catch {
 				// not empty (or already gone): leave it
 			}
@@ -788,22 +791,24 @@ export async function scaffoldIntoDir(
 		};
 	}
 	opts?.afterPreflight?.();
-	const createdFiles: string[] = [];
-	const createdDirs: string[] = [];
+	const createdFiles: CreatedPath[] = [];
+	const createdDirs: CreatedPath[] = [];
 	let destCreated = false;
 	const rollback = (): void => {
-		for (const rel of createdFiles) {
+		for (const f of createdFiles) {
 			try {
-				nodeFs.rmSync(path.join(dir, rel), { force: true });
+				nodeFs.rmSync(f.full, { force: true });
 			} catch {
 				// replaced or already gone: leave it
 			}
 		}
 		// Deepest first: a parent is a strict prefix of its child,
 		// so it is always shorter and sorts later.
-		for (const d of [...createdDirs].sort((a, b) => b.length - a.length)) {
+		for (const d of [...createdDirs].sort(
+			(a, b) => b.label.length - a.label.length,
+		)) {
 			try {
-				nodeFs.rmdirSync(path.join(dir, d));
+				nodeFs.rmdirSync(d.full);
 			} catch {
 				// not empty (or already gone): leave it
 			}

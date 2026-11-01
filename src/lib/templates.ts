@@ -169,17 +169,38 @@ export type ScaffoldFs = {
 };
 
 /**
+ * One path this run created, with identity for ownership-checked
+ * rollback (T97 follow-up): full is the absolute path to remove,
+ * label is the dest-relative display form, and (dev, ino) prove
+ * the path is still ours before removal. Platforms without
+ * stable inodes report ino 0, which opts out of the check.
+ */
+export type CreatedPath = {
+	full: string;
+	label: string;
+	dev: number;
+	ino: number;
+};
+
+/**
  * Exclusive, non-following file create (T97): O_CREAT|O_EXCL
  * fails on any existing path, including a dangling symlink, so
- * a competing writer's file is never truncated. A failed write
- * unlinks the partial file before throwing.
+ * a competing writer's file is never truncated. The write loops
+ * until every byte lands (a zero-byte write is an error), the
+ * path joins the ledger the moment open succeeds — before any
+ * write or close — and the fd closes in a finally, so a write
+ * or close failure still rolls the path back.
  */
 function writeFileExclusive(
 	full: string,
+	rel: string,
 	content: string | Buffer,
+	created: CreatedPath[] | undefined,
 	fs?: ScaffoldFs,
 ): void {
 	const fd = nodeFs.openSync(full, "wx", 0o666);
+	const st = nodeFs.fstatSync(fd);
+	created?.push({ full, label: rel, dev: st.dev, ino: st.ino });
 	const writeSync =
 		fs?.writeSync ??
 		((fd: number, buf: Buffer, offset: number, length: number): number =>
@@ -187,21 +208,19 @@ function writeFileExclusive(
 	const closeSync = fs?.closeSync ?? nodeFs.closeSync;
 	try {
 		const buf = typeof content === "string" ? Buffer.from(content) : content;
-		writeSync(fd, buf, 0, buf.length);
-	} catch (err) {
-		try {
-			closeSync(fd);
-		} catch {
-			// close failure while handling a write failure: ignore
+		let off = 0;
+		while (off < buf.length) {
+			const n = writeSync(fd, buf, off, buf.length - off);
+			if (n <= 0) {
+				throw new Error(
+					`short write on ${rel}: wrote ${n} of ${buf.length - off} bytes`,
+				);
+			}
+			off += n;
 		}
-		try {
-			nodeFs.unlinkSync(full);
-		} catch {
-			// best effort: leave nothing partial behind
-		}
-		throw err;
+	} finally {
+		closeSync(fd);
 	}
-	closeSync(fd);
 }
 
 /**
@@ -213,7 +232,7 @@ function writeFileExclusive(
 function ensureDirPrefix(
 	dest: string,
 	prefix: string,
-	createdDirs?: string[],
+	createdDirs?: CreatedPath[],
 ): void {
 	const parts = prefix.split("/");
 	let acc = "";
@@ -236,7 +255,8 @@ function ensureDirPrefix(
 				}
 				throw mkErr;
 			}
-			createdDirs?.push(acc);
+			const st = nodeFs.lstatSync(full);
+			createdDirs?.push({ full, label: acc, dev: st.dev, ino: st.ino });
 		}
 	}
 }
@@ -261,12 +281,13 @@ export type CopyOpts = {
 	 */
 	provenance?: TemplateMeta;
 	/**
-	 * Caller-owned lists (T97): each file and dir is recorded the
-	 * moment it lands, so a throw at any point still rolls back
-	 * exactly what this run made.
+	 * Caller-owned ledger (T97): each file joins the moment its
+	 * exclusive open succeeds, each dir the moment mkdir lands, so
+	 * a throw at any point still rolls back exactly what this run
+	 * made. Entries carry (dev, ino) for ownership-checked removal.
 	 */
-	createdFiles?: string[];
-	createdDirs?: string[];
+	createdFiles?: CreatedPath[];
+	createdDirs?: CreatedPath[];
 	/** Writer seam (tests only); production leaves it unset. */
 	fs?: ScaffoldFs;
 };
@@ -304,15 +325,22 @@ export function copyTemplateFiles(
 			content = nodeFs.readFileSync(path.join(template, rel));
 		}
 		try {
-			writeFileExclusive(full, content, opts?.fs);
+			writeFileExclusive(full, rel, content, opts?.createdFiles, opts?.fs);
 		} catch (err) {
 			if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
 				throw new ScaffoldConflict([rel]);
 			}
+			if (!opts?.createdFiles) {
+				// No ledger to roll back: remove the partial write here.
+				try {
+					nodeFs.unlinkSync(full);
+				} catch {
+					// best effort: leave nothing partial behind
+				}
+			}
 			throw err;
 		}
 		written.push(rel);
-		opts?.createdFiles?.push(rel);
 	}
 	return written;
 }
