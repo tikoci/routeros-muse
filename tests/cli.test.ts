@@ -5,7 +5,6 @@
 // injected probes; no live meta turns, no real routers.
 import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
 	HelpRequest,
@@ -27,22 +26,12 @@ import {
 import { Stop } from "../src/lib/stop";
 import { detectInstalled, toolBinDir, toolEnv } from "../src/lib/tools";
 import { museAuthFile } from "../src/steps/agent";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const POSIX = process.platform !== "win32";
 const tposix = POSIX ? test : test.skip;
-
-const tmpdirs: string[] = [];
-afterAll(() => {
-	for (const d of tmpdirs) {
-		nodeFs.rmSync(d, { recursive: true, force: true });
-	}
-});
-
-function mktmp(prefix: string): string {
-	const d = nodeFs.mkdtempSync(path.join(os.tmpdir(), prefix));
-	tmpdirs.push(d);
-	return d;
-}
 
 function writeShim(dir: string, name: string, body: string): void {
 	const file = path.join(dir, name);
