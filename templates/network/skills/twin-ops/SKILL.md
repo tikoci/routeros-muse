@@ -14,8 +14,9 @@ No secrets below; twin names below are roles, not hosts.
 
 ## Part 1 — The checklist (disposable boxes, durable discipline)
 
-Run top to bottom. Twins are cattle with ONE exception: the
-standing pair — the two long-lived twins — is never deleted.
+Run top to bottom. Twins are cattle with ONE exception:
+Never remove or clean shared twins or retained evidence specimens;
+use your own disposable twin for destructive probes.
 
 1. Build (or reuse) a twin at the EXACT firmware + packages of the
    question; verify package + disk before trusting it.
@@ -26,7 +27,8 @@ standing pair — the two long-lived twins — is never deleted.
 4. Respect other sessions' machines: list PIDs at start and end,
    touch only your own boxes, restore prior running state.
 5. Tear down what you built (or stop it): remove dirty-work boxes,
-   never the standing pair, leave the bench as found plus your record.
+   never shared twins or retained evidence specimens, leave the bench
+   as found plus your record.
 
 ### 0. Build (match the question exactly)
 
@@ -99,9 +101,9 @@ quickchr list   # session END: same PIDs, prior running state restored
 - Grounded pattern: one session ran zero exec/start/stop/clean/
   remove against other sessions' twins all session — host-side `list`
   only — and closed with PIDs unchanged.
-- NEVER delete the standing pair: they are the long-lived twins
-  (one may carry a wedge as a living specimen — reproduce around
-  it). Make your own dirty-work box for destructive probes.
+- Never remove or clean shared twins or retained evidence specimens;
+  use your own disposable twin for destructive probes. One may carry
+  a wedge as a living specimen — reproduce around it.
 - Restore prior running state at session end: twins you found
   stopped get stopped (`quickchr shutdown` graceful, `stop` for
   power-cut); twins you found running stay running (prior proving
@@ -127,8 +129,8 @@ quickchr clean <twin>               # reset disk to fresh image (keeps the devic
   the shared notes.
 - Deleting a twin with unrecorded state destroys evidence: the run
   record (notes + a shared post) lands BEFORE the remove.
-- The standing pair is never a remove/clean target. No exceptions, no
-  "just this once" — rebuild your own instead.
+- Never remove or clean shared twins or retained evidence specimens.
+  No exceptions, no "just this once" — rebuild your own instead.
 
 ## Part 2 — Skill doc
 
@@ -152,8 +154,9 @@ capability-probe pattern.)
 
 - Lab host is yours to build on; other sessions' RUNNING twins are
   read-only curiosities — never exec/start/stop/remove them.
-- The standing pair: never delete, never clean; a kept wedge is a
-  specimen — reproduce around it, don't "fix" it without asking.
+- Never remove or clean shared twins or retained evidence specimens;
+  a kept wedge is a specimen — reproduce around it, don't "fix" it
+  without asking.
 - Production contact from twin work is forbidden: no
   production-address traffic in a twin session.
 

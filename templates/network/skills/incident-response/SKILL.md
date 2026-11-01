@@ -84,8 +84,9 @@ quickchr start <twin-n>
   left 7.25 open.
 - Pre-reboot HEALTHY baseline is mandatory: record the healthy triple
   before the trigger, or the post-trigger state proves nothing.
-- Never delete the standing pair (twin-ops); make your own dirty-work
-  box for destructive probes. Leave other sessions' twins untouched
+- Never remove or clean shared twins or retained evidence specimens
+  (twin-ops); make your own dirty-work box for destructive probes.
+  Leave other sessions' twins untouched
   (the twin-ops non-disturbance pattern).
 
 ### 3. Bisect (the method, verbatim from the UM campaign)
@@ -173,8 +174,9 @@ capability-probe pattern.)
 
 - Failing production box: pull + reads only until the fix is
   twin-verified. No experimental writes, no reboot-to-see.
-- Twins: anything goes; never delete the standing pair; respect other
-  sessions' machines (list PIDs at session start/end).
+- Twins: anything goes on your own boxes; never remove or clean shared
+  twins or retained evidence specimens; respect other sessions'
+  machines (list PIDs at session start/end).
 - Production fix: owner approval per `change-apply` (reads free,
   ANY write asks first).
 - WIP flag on shared boxes for multi-step work.
