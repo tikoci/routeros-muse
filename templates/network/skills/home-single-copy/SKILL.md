@@ -7,9 +7,8 @@ tested: none
 
 # `home-single-copy` skill (no-disk local home) [template v1 draft]
 
-Vendored from the build notes for review with template v1. Build-tracker
-references (T/K IDs, notes paths) are pointers pending staging scrub.
-See also `home-private-git.md` (promotion target). No secrets below.
+Vendored from the build notes for review with template v1.
+See also `home-private-git` (promotion target). No secrets below.
 
 ## Part 1 — The checklist (instantiate → protect → share → promote)
 
@@ -19,10 +18,10 @@ Use single-copy when the router has no usable disk, or the owner
 simply wants one laptop/desktop copy. Zero ceremony, works fully
 offline after tool install, lowest owner friction — and trivially
 consistent, because there are no router-owned dirs to pull. This is
-workspace-first in its purest form (K1): a prepared directory plus
+workspace-first in its purest form: a prepared directory plus
 conventions plus skills, no deployment anything.
 
-### 1. Instantiate (minimal — grow on demand, K10)
+### 1. Instantiate (minimal — grow on demand)
 
 1. Create the layout subset: START-HERE, `workspace.toml`
    (`home = "single-copy"`), `inventory/ observations/ operations/`
@@ -42,7 +41,7 @@ the requirement, not the tool):
 2. A restore was TESTED at bootstrap (date recorded). An untested
    backup is not a backup.
 3. Session close never skips: uncommitted-thought vs unshaped-draft
-   is tracked the same as the git home (§5.4 of the discipline
+   is tracked the same as the git home (the session-close discipline
    carries over, minus git) — inbox + last summary tell the next
    session where things stand.
 
@@ -57,9 +56,9 @@ the requirement, not the tool):
 3. Drive is never the share mechanism (`anti-drive-live`).
 4. BUILD NOTE (not owner workflow): while routeros-muse is under
    construction, builder sessions additionally coordinate across
-   habitats via the coord room (Gmail Drafts) — point at state, never
+   environments via the coord room (shared drafts) — point at state, never
    paste copies. The room retires into GitHub mechanics once
-   routeros-muse itself is on GitHub (D2/Q5 decided 2026-10-28).
+   routeros-muse itself is on GitHub (decided 2026-10-28).
 
 ### 4. Multi-session rule (one writer at a time)
 
@@ -68,18 +67,18 @@ the requirement, not the tool):
    where state is).
 3. Never assume the tree is as you left it — verify, then work.
 
-### 5. Promotion trigger (T21 Q6 proposed answer)
+### 5. Promotion trigger
 
 Second machine, second agent, or owner request → the skill
-AUTO-SUGGESTS bootstrapping `home-private-git` (T24 strawman §4).
-Promotion requires the privacy scrub first (D1): raw pulls stay
+AUTO-SUGGESTS bootstrapping `home-private-git` (the git workflow §4).
+Promotion requires the privacy scrub first: raw pulls stay
 behind, redacted summaries may travel. Until promotion, §3–§4 hold.
 
 ### 6. Second-copy guard
 
 If a second copy appears anyway: declare ONE canonical in
 `workspace.toml` immediately; the other carries an age manifest and
-is read-only reference. Still never two-way sync (K12).
+is read-only reference. Still never two-way sync.
 
 ## Part 2 — Skill doc
 
@@ -98,13 +97,13 @@ machines" question; promotion-to-git evaluation.
 ### Access
 
 - Local writes free. Router rules unchanged (reads-first, production
-  writes need go-ahead, K14 for unknown operators).
+  writes need go-ahead, ask for unknown operators).
 - Sharing writes happen only via coord posts or git promotion — never
   by handing out live tree copies.
 
 ### Envs
 
-None new. Transport auth reuses the t8-recipe envs (`CENTRS_*`,
+None new. Transport auth reuses the first-contact envs (`CENTRS_*`,
 CDB-first).
 
 ### Outputs
@@ -120,7 +119,7 @@ CDB-first).
 - No undeclared second copy (ask the owner when in doubt — forks
   hide in "oh, I also copied it to…").
 - Checker exit 0 over captures worked this session; claims carry
-  command + output (K23).
+  command + output.
 
 ### Recovery
 
@@ -137,12 +136,12 @@ CDB-first).
 - Manual sharing; multi-agent use without git promotion forks
   silently — hence the §5 auto-suggest.
 - No owner-facing share channel exists besides git promotion (coord
-  is build scaffolding, D2/Q5 decided 2026-10-28).
+  is build scaffolding, decided 2026-10-28).
 
-## Part 3 — Assumptions (D2/T13 ratify; this skill assumes)
+## Part 3 — Assumptions (decided during template design; this skill assumes)
 
-1. Coord room is build scaffolding only, never owner workflow (D2/Q5
-   decided 2026-10-28); owner continuity is the tree plus git promotion.
+1. Coord room is build scaffolding only, never owner workflow (decided
+   2026-10-28); owner continuity is the tree plus git promotion.
 2. Backup mechanism is the owner's choice; only the requirement +
    tested-restore bit are the skill's business.
 3. §5 fires as an auto-suggestion, not an auto-migration — the owner
