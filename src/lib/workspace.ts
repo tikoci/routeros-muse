@@ -9,9 +9,11 @@ import { readDevices } from "./fleet";
 import { have, run } from "./run";
 import {
 	copyTemplateFiles,
+	isRealDir,
 	listTemplateFiles,
+	lstatExists,
 	readTemplateMeta,
-	stampTemplateProvenance,
+	ScaffoldConflict,
 	templateDir,
 	templatesRoot,
 } from "./templates";
@@ -587,14 +589,55 @@ async function runDevicesInit(
 }
 
 /**
+ * Ensure dirname(dir) exists as real dirs (T97), creating missing
+ * levels one at a time; an existing component that is not a real
+ * directory throws. Created parents are left behind on rollback
+ * (the old recursive-mkdir behavior); only the scaffold target
+ * itself is tracked.
+ */
+function ensureParentChain(dir: string): void {
+	const missing: string[] = [];
+	let cur = path.dirname(path.resolve(dir));
+	for (;;) {
+		let st: nodeFs.Stats | null = null;
+		try {
+			st = nodeFs.lstatSync(cur);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
+			missing.push(cur);
+			const up = path.dirname(cur);
+			if (up === cur) {
+				throw new Error(`cannot create parent chain under ${cur}`);
+			}
+			cur = up;
+			continue;
+		}
+		if (!st.isDirectory() || st.isSymbolicLink()) {
+			throw new Error(`not a directory: ${cur}`);
+		}
+		break;
+	}
+	for (const p of missing.reverse()) {
+		try {
+			nodeFs.mkdirSync(p);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
+			if (!isRealDir(p)) throw new Error(`not a directory: ${p}`);
+		}
+	}
+}
+
+/**
  * Create a workspace from a template under parent/name (default
  * template: minimal): copy the template (template.toml excluded,
- * {{name}} substituted), stamp [template] provenance, then
- * device.cdb via `centrs devices init` — an open registry with
- * WinBox-encryption steering until C14 (tikoci/centrs#558) ships a
- * centrs-side encryption path. The name is validated before joining,
- * so the target always lands directly under parent; any failure
- * rolls the target back so no half-scaffold survives.
+ * {{name}} substituted, [template] provenance stamped in the
+ * single workspace.toml create), then device.cdb via
+ * `centrs devices init` — an open registry with WinBox-encryption
+ * steering until C14 (tikoci/centrs#558) ships a centrs-side
+ * encryption path. The name is validated before joining, so the
+ * target always lands directly under parent; every write is an
+ * exclusive, non-following create, and any failure rolls back
+ * exactly what this run made so no half-scaffold survives.
  */
 export async function scaffoldWorkspace(
 	parent: string,
@@ -612,30 +655,79 @@ export async function scaffoldWorkspace(
 	const tpl = resolveTemplate(template, opts);
 	if ("error" in tpl) return { ok: false, why: tpl.error };
 	const target = path.join(parent, name);
-	if (nodeFs.existsSync(target)) {
+	if (lstatExists(target)) {
 		return { ok: false, why: `already exists: ${target}` };
 	}
 	opts?.afterPreflight?.();
+	const createdFiles: string[] = [];
+	const createdDirs: string[] = [];
+	let targetCreated = false;
 	const rollback = (): void => {
-		nodeFs.rmSync(target, { recursive: true, force: true });
+		for (const rel of createdFiles) {
+			try {
+				nodeFs.rmSync(path.join(target, rel), { force: true });
+			} catch {
+				// replaced or already gone: leave it
+			}
+		}
+		// Deepest first: a parent is a strict prefix of its child,
+		// so it is always shorter and sorts later.
+		for (const d of [...createdDirs].sort((a, b) => b.length - a.length)) {
+			try {
+				nodeFs.rmdirSync(path.join(target, d));
+			} catch {
+				// not empty (or already gone): leave it
+			}
+		}
+		if (targetCreated) {
+			try {
+				nodeFs.rmdirSync(target);
+			} catch {
+				// competing writer filled it: leave it
+			}
+		}
 	};
 	try {
-		nodeFs.mkdirSync(target, { recursive: true });
-		copyTemplateFiles(tpl.dir, target, name);
-		stampTemplateProvenance(path.join(target, "workspace.toml"), {
-			name: tpl.name,
-			description: "",
-			version: tpl.version,
+		ensureParentChain(target);
+		try {
+			nodeFs.mkdirSync(target);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
+				return { ok: false, why: `already exists: ${target}` };
+			}
+			throw err;
+		}
+		targetCreated = true;
+		copyTemplateFiles(tpl.dir, target, name, {
+			provenance: { name: tpl.name, description: "", version: tpl.version },
+			createdFiles,
+			createdDirs,
 		});
 	} catch (err) {
+		if (err instanceof ScaffoldConflict) {
+			rollback();
+			return {
+				ok: false,
+				why: `refusing to overwrite in ${target}: ${err.conflicts.join(", ")}`,
+				conflicts: err.conflicts,
+			};
+		}
 		rollback();
 		return {
 			ok: false,
 			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
 		};
 	}
+	const cdbExisted = lstatExists(path.join(target, "device.cdb"));
 	const failed = await runDevicesInit(target, env);
 	if (failed) {
+		if (!cdbExisted) {
+			try {
+				nodeFs.rmSync(path.join(target, "device.cdb"), { force: true });
+			} catch {
+				// already gone: leave it
+			}
+		}
 		rollback();
 		return { ok: false, why: failed };
 	}
@@ -645,8 +737,12 @@ export async function scaffoldWorkspace(
 /**
  * Scaffold a template INTO dir (the CLI init path): dir may exist,
  * but none of the template's files (nor device.cdb) may already be
- * there — conflicts are listed and nothing is written. Rollback
- * removes only what this call wrote, never the pre-existing dir.
+ * there — conflicts are listed and nothing is written. The scan
+ * uses lstat, so dangling symlinks count as conflicts, and every
+ * dir component the template needs must be absent or a real
+ * directory. Every write is an exclusive, non-following create;
+ * rollback removes only what this call made, never the
+ * pre-existing dir.
  */
 export async function scaffoldIntoDir(
 	dir: string,
@@ -656,11 +752,29 @@ export async function scaffoldIntoDir(
 ): Promise<ScaffoldResult> {
 	const tpl = resolveTemplate(template, opts);
 	if ("error" in tpl) return { ok: false, why: tpl.error };
-	const conflicts = listTemplateFiles(tpl.dir).filter((rel) =>
-		nodeFs.existsSync(path.join(dir, rel)),
-	);
-	if (nodeFs.existsSync(path.join(dir, "device.cdb"))) {
-		conflicts.push("device.cdb");
+	if (lstatExists(dir) && !isRealDir(dir)) {
+		return { ok: false, why: `not a directory: ${dir}` };
+	}
+	const conflicts: string[] = [];
+	const seen = new Set<string>();
+	const add = (rel: string): void => {
+		if (!seen.has(rel)) {
+			seen.add(rel);
+			conflicts.push(rel);
+		}
+	};
+	for (const rel of listTemplateFiles(tpl.dir)) {
+		if (lstatExists(path.join(dir, rel))) add(rel);
+		const parts = rel.split("/");
+		let acc = "";
+		for (let i = 0; i < parts.length - 1; i++) {
+			acc = acc ? `${acc}/${parts[i]}` : (parts[i] as string);
+			const full = path.join(dir, acc);
+			if (lstatExists(full) && !isRealDir(full)) add(acc);
+		}
+	}
+	if (lstatExists(path.join(dir, "device.cdb"))) {
+		add("device.cdb");
 	}
 	if (conflicts.length > 0) {
 		return {
@@ -670,43 +784,82 @@ export async function scaffoldIntoDir(
 		};
 	}
 	opts?.afterPreflight?.();
-	const existed = nodeFs.existsSync(dir);
-	let written: string[] = [];
+	const createdFiles: string[] = [];
+	const createdDirs: string[] = [];
+	let destCreated = false;
 	const rollback = (): void => {
-		for (const rel of written) {
-			nodeFs.rmSync(path.join(dir, rel), { force: true });
-		}
-		nodeFs.rmSync(path.join(dir, "device.cdb"), { force: true });
-		const dirs = new Set(
-			written.map((rel) => path.dirname(path.join(dir, rel))),
-		);
-		for (const d of [...dirs].sort((a, b) => b.length - a.length)) {
-			// rmdir drops only empty dirs: pre-existing content pins its dir.
+		for (const rel of createdFiles) {
 			try {
-				nodeFs.rmdirSync(d);
+				nodeFs.rmSync(path.join(dir, rel), { force: true });
+			} catch {
+				// replaced or already gone: leave it
+			}
+		}
+		// Deepest first: a parent is a strict prefix of its child,
+		// so it is always shorter and sorts later.
+		for (const d of [...createdDirs].sort((a, b) => b.length - a.length)) {
+			try {
+				nodeFs.rmdirSync(path.join(dir, d));
 			} catch {
 				// not empty (or already gone): leave it
 			}
 		}
-		if (!existed) nodeFs.rmSync(dir, { recursive: true, force: true });
+		if (destCreated) {
+			try {
+				nodeFs.rmdirSync(dir);
+			} catch {
+				// competing writer filled it: leave it
+			}
+		}
 	};
 	try {
-		nodeFs.mkdirSync(dir, { recursive: true });
-		written = copyTemplateFiles(tpl.dir, dir, path.basename(path.resolve(dir)));
-		stampTemplateProvenance(path.join(dir, "workspace.toml"), {
-			name: tpl.name,
-			description: "",
-			version: tpl.version,
+		if (lstatExists(dir)) {
+			if (!isRealDir(dir)) {
+				return { ok: false, why: `not a directory: ${dir}` };
+			}
+		} else {
+			ensureParentChain(dir);
+			try {
+				nodeFs.mkdirSync(dir);
+				destCreated = true;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
+				if (!isRealDir(dir)) throw new Error(`not a directory: ${dir}`);
+				// A competitor created the dir; not ours, so unrecorded.
+			}
+		}
+		copyTemplateFiles(tpl.dir, dir, path.basename(path.resolve(dir)), {
+			provenance: { name: tpl.name, description: "", version: tpl.version },
+			createdFiles,
+			createdDirs,
 		});
 	} catch (err) {
+		if (err instanceof ScaffoldConflict) {
+			rollback();
+			return {
+				ok: false,
+				why: `refusing to overwrite in ${dir}: ${err.conflicts.join(", ")}`,
+				conflicts: err.conflicts,
+			};
+		}
 		rollback();
 		return {
 			ok: false,
 			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
 		};
 	}
+	// device.cdb never existed at preflight; only remove what centrs
+	// itself may have left behind, never a competitor's file.
+	const cdbExisted = lstatExists(path.join(dir, "device.cdb"));
 	const failed = await runDevicesInit(dir, env);
 	if (failed) {
+		if (!cdbExisted) {
+			try {
+				nodeFs.rmSync(path.join(dir, "device.cdb"), { force: true });
+			} catch {
+				// already gone: leave it
+			}
+		}
 		rollback();
 		return { ok: false, why: failed };
 	}

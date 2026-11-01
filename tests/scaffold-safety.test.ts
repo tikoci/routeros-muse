@@ -53,36 +53,51 @@ function failingCentrsBin(): string {
 }
 
 describe("scaffold write safety", () => {
-	tposix("TOCTOU: a competing write after preflight is not overwritten", async () => {
-		const dir = mktmp("t97-toctou-");
-		const competing = "OWNER DATA — must survive\n";
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()), "minimal", {
-			afterPreflight: () => {
-				nodeFs.writeFileSync(path.join(dir, "workspace.toml"), competing);
-			},
-		});
-		expect(res.ok).toBe(false);
-		expect(nodeFs.readFileSync(path.join(dir, "workspace.toml"), "utf8")).toBe(
-			competing,
-		);
-		expect(nodeFs.readdirSync(dir).sort()).toEqual(["workspace.toml"]);
-	});
+	tposix(
+		"TOCTOU: a competing write after preflight is not overwritten",
+		async () => {
+			const dir = mktmp("t97-toctou-");
+			const competing = "OWNER DATA — must survive\n";
+			const res = await scaffoldIntoDir(
+				dir,
+				toolEnv(stubCentrsBin()),
+				"minimal",
+				{
+					afterPreflight: () => {
+						nodeFs.writeFileSync(path.join(dir, "workspace.toml"), competing);
+					},
+				},
+			);
+			expect(res.ok).toBe(false);
+			expect(
+				nodeFs.readFileSync(path.join(dir, "workspace.toml"), "utf8"),
+			).toBe(competing);
+			expect(nodeFs.readdirSync(dir).sort()).toEqual(["workspace.toml"]);
+		},
+	);
 
-	tposix("dangling workspace.toml symlink is a conflict; target untouched", async () => {
-		const outer = mktmp("t97-symlink-");
-		const dir = path.join(outer, "ws");
-		nodeFs.mkdirSync(dir);
-		const outside = path.join(outer, "outside.txt");
-		nodeFs.symlinkSync(outside, path.join(dir, "workspace.toml"));
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()), "minimal");
-		expect(res.ok).toBe(false);
-		if (!res.ok) expect(res.conflicts).toContain("workspace.toml");
-		expect(nodeFs.existsSync(outside)).toBe(false);
-		expect(
-			nodeFs.lstatSync(path.join(dir, "workspace.toml")).isSymbolicLink(),
-		).toBe(true);
-		expect(nodeFs.readdirSync(dir)).toEqual(["workspace.toml"]);
-	});
+	tposix(
+		"dangling workspace.toml symlink is a conflict; target untouched",
+		async () => {
+			const outer = mktmp("t97-symlink-");
+			const dir = path.join(outer, "ws");
+			nodeFs.mkdirSync(dir);
+			const outside = path.join(outer, "outside.txt");
+			nodeFs.symlinkSync(outside, path.join(dir, "workspace.toml"));
+			const res = await scaffoldIntoDir(
+				dir,
+				toolEnv(stubCentrsBin()),
+				"minimal",
+			);
+			expect(res.ok).toBe(false);
+			if (!res.ok) expect(res.conflicts).toContain("workspace.toml");
+			expect(nodeFs.existsSync(outside)).toBe(false);
+			expect(
+				nodeFs.lstatSync(path.join(dir, "workspace.toml")).isSymbolicLink(),
+			).toBe(true);
+			expect(nodeFs.readdirSync(dir)).toEqual(["workspace.toml"]);
+		},
+	);
 
 	tposix("symlinked subdir is a conflict; nothing lands outside", async () => {
 		const outer = mktmp("t97-symdir-");
