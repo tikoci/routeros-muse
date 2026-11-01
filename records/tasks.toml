@@ -924,11 +924,11 @@ updated = "2026-11-01"
 [[task]]
 id = "T93"
 title = "CLI reshape per D35 (start|serve, init, code, doctor)"
-status = "needed"
+status = "active"
 detail = "Implement D35 on the moved repo: shared workspace resolution (cwd, TTY prompt for code, browser picker for start), browser open, init into cwd from templates/, code passthrough to muse, doctor print-only, drop devices subcommand and its tests, README leads with start."
-evidence = "D35 2026-11-01"
+evidence = "D35 2026-11-01; includes templates/minimal as the single init source (T14 scaffold reconcile); staffed to muse in a worktree"
 blocked_by = ["T14"]
-agent = ""
+agent = "claude-orch"
 updated = "2026-11-01"
 
 [[task]]
