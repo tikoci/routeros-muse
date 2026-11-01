@@ -7,8 +7,8 @@ tested: none
 
 # `bth-file-exchange` skill (share → drop → list → fetch) [template v1 draft]
 
-Promoted from the BTH Files design (scheme
-from public forum topic #181789), the live access matrix (recon: relay
+Promoted from the BTH Files design (collected
+HTTP exchange shape; round-trip verification pending), the live access matrix (recon: relay
 refuses the sandbox, works from residential nets), a production
 router's BTH presence, and fresh-CHR menu probes.
 No secrets below; share URLs are
@@ -83,14 +83,13 @@ share of a directory (e.g. `disk1/bthf/muse-test-1`,
 
 ### 2. Exchange (plain HTTP, append-only)
 
-Scheme from the forum writeup (topic #181789 — collected, the
-round-trip itself is the pending proof):
+Collected HTTP exchange shape; round-trip verification pending:
 
 - `GET ?list` → JSON directory listing.
 - `GET <path>?dl` → download.
 - `POST` multipart field `file` WITH trailing slash → upload.
-  (The trailing slash is load-bearing per the writeup — first
-  uploader confirms or corrects.)
+  (The trailing slash is load-bearing in the collected shape —
+  first uploader confirms or corrects.)
 - No DELETE: the share is append-only. Supersede by versioned
   names (`plan-2.toml` beside `plan-1.toml`), never by
   overwrite-then-pretend. Stale files are removed router-side

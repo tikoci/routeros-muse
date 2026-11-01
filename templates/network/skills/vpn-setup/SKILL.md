@@ -134,7 +134,8 @@ requires.
 - **BTH Files (LAN-side + human exchange).** `/ip/cloud/file-share`
   (7.18+; design notes say `/ip/cloud/back-to-home-file`) sharing a
   directory, reachable at `https://<id>.routingthecloud.net/s/<key>`.
-  HTTP scheme from forum topic #181789: `GET ?list` → JSON,
+  Collected HTTP exchange shape (round-trip verification pending):
+  `GET ?list` → JSON,
   `GET <path>?dl` downloads, `POST` multipart field `file` WITH
   trailing slash uploads, no DELETE (append-only). Zero new
   accounts/infra. Proven requires: share → upload → list → download
