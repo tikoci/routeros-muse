@@ -1,14 +1,13 @@
 // Anchor tests for check-skills.ts on tmp-dir fixtures. Run: bun test (in tools/).
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	mkdirSync,
-	mkdtempSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
 import {
 	frontVal,
 	isPlaybookSkill,
@@ -23,6 +22,8 @@ import {
 	verifySkill,
 	verifyTested,
 } from "./check-skills";
+
+afterAll(cleanupTmpdirs);
 
 const GOOD = (name: string, extra = ""): string => `---
 name: ${name}
@@ -59,7 +60,7 @@ ${extra}---
 `;
 
 function skillTree(files: Record<string, string>, exec: string[] = []): string {
-	const root = mkdtempSync(join(tmpdir(), "skills-"));
+	const root = mktmp("skills-");
 	for (const [rel, content] of Object.entries(files)) {
 		const p = join(root, rel);
 		mkdirSync(join(p, ".."), { recursive: true });

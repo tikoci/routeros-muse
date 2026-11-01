@@ -2,7 +2,7 @@
 // fronting, pinned-spec reads, and env-honoring detection. Stub
 // shims prove the fronted env wins over ambient PATH; the real-bundle
 // test anchors the installed package.json pins when present.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -16,6 +16,9 @@ import {
 	toolSource,
 	toolSourceLines,
 } from "../src/lib/tools";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 // Stub shims are POSIX shell; the fronting logic they prove is
 // platform-neutral (path.delimiter), the scripts are not.
@@ -28,7 +31,7 @@ function writeShim(dir: string, name: string, body: string): void {
 }
 
 function stubBin(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-stubbin-"));
+	const dir = mktmp("t51-stubbin-");
 	writeShim(dir, "quickchr", 'echo "stub-quickchr 9.9.1-stub"');
 	writeShim(dir, "centrs", 'echo "stub-centrs 9.9.2-stub"');
 	writeShim(dir, "rosetta", 'echo "stub-rosetta 9.9.3-stub"');
@@ -46,7 +49,7 @@ describe("package root and bundle", () => {
 	});
 
 	test("packageRoot returns null outside any routeros-muse tree", () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-nopkg-"));
+		const dir = mktmp("t51-nopkg-");
 		nodeFs.writeFileSync(
 			path.join(dir, "package.json"),
 			JSON.stringify({ name: "something-else" }),
@@ -61,7 +64,7 @@ describe("package root and bundle", () => {
 	});
 
 	test("toolBinDir is null without a bundle, set with one", () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-bindir-"));
+		const dir = mktmp("t51-bindir-");
 		expect(toolBinDir(dir)).toBeNull();
 		const bin = path.join(dir, "node_modules", ".bin");
 		nodeFs.mkdirSync(bin, { recursive: true });
@@ -109,7 +112,7 @@ describe("toolEnv", () => {
 
 describe("pinnedTools", () => {
 	test("reads trilogy specs from a fixture package.json", () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-pkg-"));
+		const dir = mktmp("t51-pkg-");
 		nodeFs.writeFileSync(
 			path.join(dir, "package.json"),
 			JSON.stringify({
@@ -127,7 +130,7 @@ describe("pinnedTools", () => {
 	});
 
 	test("missing package.json yields nulls, never throws", () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-nopkgjson-"));
+		const dir = mktmp("t51-nopkgjson-");
 		expect(pinnedTools(dir)).toEqual({
 			quickchr: null,
 			centrs: null,
@@ -177,7 +180,7 @@ describe("env-honoring detection", () => {
 	});
 
 	tposix("narrowed PATH without a shell reads as absent, never throws", () => {
-		const empty = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-emptypath-"));
+		const empty = mktmp("t51-emptypath-");
 		expect(
 			have("centrs", toolEnv(null, { PATH: empty } as NodeJS.ProcessEnv)),
 		).toBe(false);

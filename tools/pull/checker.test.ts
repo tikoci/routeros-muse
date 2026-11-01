@@ -1,11 +1,14 @@
 // Anchor tests for checker.ts verify functions. Pure tmp-dir fixtures, no router.
 // Run: bun test
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cleanupTmpdirs, mktmp } from "../../tests/helpers/tmp";
 import { verifyFiles, verifyManifestSchema, verifySlot } from "./checker";
 import { sha256Hex } from "./sanitize";
+
+afterAll(cleanupTmpdirs);
 
 function manifest(files: { path: string; sha256: string; bytes: number }[]) {
 	return {
@@ -24,7 +27,7 @@ function fixtureSlot(
 	m: ReturnType<typeof manifest>,
 	payloads: Record<string, string>,
 ): string {
-	const root = mkdtempSync(join(tmpdir(), "checker-"));
+	const root = mktmp("checker-");
 	const slotDir = join(root, "t");
 	const dir = join(slotDir, "stamp");
 	mkdirSync(dir, { recursive: true });
@@ -60,7 +63,7 @@ describe("verifyManifestSchema", () => {
 
 describe("verifyFiles", () => {
 	test("clean files pass, totalBytes sums sizes", () => {
-		const dir = mkdtempSync(join(tmpdir(), "checker-"));
+		const dir = mktmp("checker-");
 		writeFileSync(join(dir, "a.txt"), "abc");
 		const r = verifyFiles(dir, [
 			{ path: "a.txt", sha256: sha256Hex("abc"), bytes: 3 },
@@ -69,7 +72,7 @@ describe("verifyFiles", () => {
 		expect(r.totalBytes).toBe(3);
 	});
 	test("flags missing file, tampered content, wrong bytes", () => {
-		const dir = mkdtempSync(join(tmpdir(), "checker-"));
+		const dir = mktmp("checker-");
 		writeFileSync(join(dir, "a.txt"), "tampered");
 		const r = verifyFiles(dir, [
 			{ path: "a.txt", sha256: sha256Hex("abc"), bytes: 3 },
@@ -89,7 +92,7 @@ describe("verifySlot", () => {
 		expect(report.files).toBe(1);
 	});
 	test("dangling latest fails", () => {
-		const root = mkdtempSync(join(tmpdir(), "checker-"));
+		const root = mktmp("checker-");
 		const slotDir = join(root, "t");
 		mkdirSync(slotDir, { recursive: true });
 		symlinkSync("no-such-dir", join(slotDir, "latest"));

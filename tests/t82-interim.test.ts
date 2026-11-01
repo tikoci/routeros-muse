@@ -6,10 +6,9 @@
 //
 // Hermetic: real centrs binary, temp CDB file, no routers, no network
 // (the seeded-CDB pattern from the T48 suite in serve.test.ts).
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
 	credentialSnapshot,
@@ -17,12 +16,15 @@ import {
 	showCdbDevice,
 } from "../src/lib/fleet";
 import { have } from "../src/lib/run";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const HAVE_CENTRS = have("centrs");
 const tcentrs = HAVE_CENTRS ? test : test.skip;
 
 function seedOpenCdb(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t82-seed-"));
+	const dir = mktmp("t82-seed-");
 	const cdb = path.join(dir, "seeded.cdb");
 	const env = { ...process.env, CENTRS_CDB_FILE: cdb };
 	const init = childProcess.spawnSync("centrs", ["devices", "init"], { env });
