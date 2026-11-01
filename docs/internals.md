@@ -3,23 +3,41 @@
 How the pieces fit. Owner-facing summary lives in `README.md`;
 design history in `docs/design/`.
 
-## Bootstrap (Mode A)
+## CLI (T93, D35)
 
-`bun src/index.ts [workspace] [--router H[:port]] [--yes] [--yolo] [--print-only]`
-per `docs/design/t29-handoff-bootstrap-design.md` (Final, D20).
-Checks the machine, pins the trilogy, checks `muse`,
+Bare `routeros-muse` is `start`: serve the directory (default: cwd)
+when it is a workspace and open the browser, else offer init-here /
+registry pick / browser picker on a TTY (no-workspace mode off
+one). `serve` aliases `start`; `start --tui` aliases `code`. `init
+[dir] [--template minimal|network]` scaffolds in place, never
+overwriting, and registers the workspace. `code` runs the Mode A
+steps below, then execs `muse` with the package bundle on PATH;
+every arg but `--yes`/`--router`/`--print-only` passes through to
+`muse` verbatim (`--` forces the rest). `doctor` runs the same steps
+print-only and exits 1 when a required item is missing. Fleet reads
+left this CLI with the `devices` subcommand (T93): `centrs`
+owns them now.
+
+## Code + doctor (Mode A steps)
+
+`code [dir] [muse args...] [--yes] [--router H[:port]]
+[--print-only]` per `docs/design/t29-handoff-bootstrap-design.md`
+(Final, D20). Checks the machine, pins the trilogy, checks `muse`,
 opens/validates the workspace, runs the capability probe, picks up
-`operations/*-handoff.md` + `inbox/`, and launches `muse` in the
-workspace. Nothing installs without asking.
+`operations/*-handoff.md` + `inbox/`, and execs `muse` in the
+workspace. Nothing installs without asking. `doctor [dir]` runs the
+same steps print-only: never installs, never prompts, never execs.
 
 ```sh
 make test   # anchor suite (see gate output for current counts)
 ```
 
-`workspace` is a local folder or a git URL (clone target defaults to
-`./<repo>` off a TTY, prompted on one). `--yes` is the one-yes for
-echoed user-level installs; `--yolo` forwards to the `muse` launch
-only; `--print-only` prints the launch line instead of exec'ing it.
+`dir` defaults to the cwd; an explicit git URL still clones (target
+defaults to `./<repo>` off a TTY, prompted on one). `--yes` is the
+one-yes for echoed user-level installs; `--print-only` prints the
+launch line instead of exec'ing it. `--yolo` is not a code flag: it
+passes through to `muse` like any other unknown arg (on `start` it
+is ours: the session's most permissive approval mode).
 
 Steps (T29 §4 order):
 
@@ -75,8 +93,7 @@ row carries the production MikroTik symbol + Meta mark (T35). T40
 split the UI-agnostic reads out of the server into
 `src/lib/workspace.ts` (tree/recents/files/alerts/artifacts) and
 `src/lib/fleet.ts` (devices/stats/twins); the routes are thin
-wrappers, and the CLI wraps the same fleet module (one
-implementation, never two).
+wrappers over those modules.
 
 Render services (T33 done): `src/render/jobs.ts` runs named jobs into
 `<workspace>/reports/render/<job>-<stamp>/` with source + time
@@ -85,16 +102,20 @@ HTML; CLI: DOT + `dot -Tsvg`, text fallback); report renders markdown
 to self-contained HTML. Map/chart have defined contracts and honest
 not-built errors. Served via `POST /api/render` + `GET /api/artifact`.
 
-## CLI fleet reads (T40)
+## Templates (T93)
 
-`devices list` prints the workspace devices (default workspace: the
-cwd); `devices stats <id>` prints live identity + resource JSON via
-centrs under the package bundle. The T64 fail-closed binding holds:
-`<workspace>/device.cdb` unless `--cdb-file` overrides it. An
-encrypted CDB unlocks via `CENTRS_CDB_PASSWORD` or a no-echo TTY
-prompt — the password only ever rides the child env, never argv,
-never the screen. Reads only: device writes are out of scope here
-(T48 owns write UX).
+`templates/<name>/` is the single init source: `template.toml`
+(name, description, version — never copied) plus the files to copy.
+The scaffold copies recursively, substitutes `{{name}}` in
+`*.toml`/`*.md`, stamps a `[template]` provenance table into the new
+`workspace.toml` (a record, never enforced), then runs `centrs
+devices init`. `minimal` is the runnable minimum the UI populates
+from; `network` is the full starter. Both scaffold and pass
+workspace validation; templates resolve via the package root so
+bunx/npm installs find them. The picker create flow and `init`
+share this path (`scaffoldWorkspace` for create-at-default,
+`scaffoldIntoDir` for init-in-place with its never-overwrite
+conflict list).
 
 ## Workspaces registry (T40)
 
@@ -111,12 +132,12 @@ predictable path on every OS (no user-dirs parsing, no per-OS
 special cases), and machine-managed network trees stay out of the
 documents clutter. Opening is a restart: serve binds its root at
 boot, so the picker prints the exact `serve` line instead of
-pretending to switch live. Creation scaffolds the minimum (canonical
-workspace.toml + channel pins, AGENTS.md pointer, commented
-router.toml, `device.cdb` via `centrs devices init`) and steers to
-WinBox encryption until C14. The T64 missing-CDB overlay now points
-at the real setup: the exact init command in workspace mode, the
-creation flow otherwise.
+pretending to switch live. Creation scaffolds from the template
+select (minimal default, network full), stamps `[template]`
+provenance, writes `device.cdb` via `centrs devices init`, and
+steers to WinBox encryption until C14. The T64 missing-CDB overlay
+now points at the real setup: the exact init command in workspace
+mode, the creation flow otherwise.
 
 ## UI smoke (T43 standing rule)
 

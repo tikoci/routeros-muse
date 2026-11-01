@@ -17,17 +17,21 @@ Status: **preview**. Expect rough edges; nothing here is finished.
 ## Quick start
 
 Prereqs: [Bun](https://bun.sh) (per Bun's own install instructions),
-plus `muse` installed and signed in. Then, from a checkout:
+plus `muse` installed and signed in. Then:
 
 ```sh
-bun install
-bun src/index.ts [workspace]        # check the machine, then launch muse in the workspace
-bun src/index.ts serve [workspace]  # web UI on 127.0.0.1 by default; open the printed URL
+bunx @tikoci/routeros-muse start   # web UI on 127.0.0.1 by default; opens your browser
 ```
 
-`workspace` is a local folder or a git URL (cloned next to you).
-Without one, both commands ask on a terminal. `make gate` runs the
-full check (lint + tests + browser smoke).
+From a checkout, `bun install` once, then `bun src/index.ts start`
+does the same. `start` serves the current directory when it is a
+workspace, else walks you through init / pick / browser picker on a
+terminal. `make gate` runs the full check (lint + tests + browser
+smoke).
+
+Other commands: `init` scaffolds a workspace where you are, `code`
+checks the machine then drops you in a `muse` shell in the
+workspace, and `doctor` runs the same checks print-only.
 
 ## The workspace idea
 
@@ -61,39 +65,45 @@ sides resolve identical builds:
 ## CLI
 
 ```sh
-routeros-muse [workspace] [--router H[:port]] [--yes] [--yolo] [--print-only]
-routeros-muse serve [workspace] [--port N] [--host H] [--provider NAME] [--no-workspace] [--allow-open-cdb]
-routeros-muse devices list [workspace]
-routeros-muse devices stats <id> [workspace] [--cdb-file FILE]
+routeros-muse [command] [dir] [options]   # bare = start
+routeros-muse start [dir] [--port N] [--host H] [--no-open] [--yolo]
+routeros-muse init [dir] [--template minimal|network]
+routeros-muse code [dir] [muse args...] [--yes] [--router H[:port]] [--print-only]
+routeros-muse doctor [dir]
 ```
 
-Bare (Mode A): checks prereqs, the trilogy, and the agent; opens and
+`start` (alias: `serve`; bare means `start`): web UI over
+the workspace — devices left, chat center, render/status right —
+opened in your browser; `--no-open` prints the URL instead.
+Defaults: host `127.0.0.1` (`--host` overrides the bind; only do that on
+a trusted network), ephemeral port, provider `meta`. When
+the directory (default: here) is not a workspace, a terminal offers
+init-here / registered-workspace pick / browser picker; off a
+terminal it serves with no workspace attached. `--yolo` starts the
+agent session at its most permissive approval mode (`Allow all`).
+`--tui` aliases `code`. Developer flags: `--no-workspace`,
+`--provider NAME`, `--allow-open-cdb` (an open CDB implies no auth).
+
+`init`: scaffolds a workspace in the directory (default: here) from
+`minimal` (runnable minimum) or `network` (full starter), never
+overwriting, and registers it. The web picker's create button
+scaffolds into `~/Networks` instead.
+
+`code`: checks prereqs, the trilogy, and the agent; opens and
 validates the workspace; reconciles `[pins]`; probes twins and LAN
 into a capability mode (`full` / `twin-only` / `real-box-only` /
-`design-only`); lists handoffs; then launches `muse` in the
-workspace. `--yes` is the one-yes for echoed user-level installs;
-`--yolo` forwards to the `muse` launch only; `--print-only` prints
-the launch line instead of running it. Nothing installs without
-asking.
+`design-only`); lists handoffs; then execs `muse` in the workspace
+with the package tool bundle on PATH. `--yes` is the one-yes for
+echoed user-level installs; `--print-only` prints the launch line
+instead of running it; every other arg passes through to `muse`
+verbatim (`-c`, `--yolo`, resume flags), with `--` forcing the rest
+through. Nothing installs without asking.
 
-`serve` (Mode B): web UI bound to loopback by default (`--host` overrides it; only do that on a trusted network) over the workspace — devices
-left, chat center, render/status right. Defaults: host `127.0.0.1`,
-ephemeral port, provider `meta`. `--no-workspace` serves
-centrs/quickchr only with a workspace picker; `--allow-open-cdb` is
-the dev hatch where an open CDB implies no auth.
+`doctor`: the same checks print-only. Never installs, never execs
+muse. Exit 1 when a required item is missing.
 
-`devices`: read-only fleet reads over a workspace (default: the
-current directory). `stats` prints live identity plus resource JSON;
-an encrypted CDB unlocks via `CENTRS_CDB_PASSWORD` or a no-echo TTY
-prompt. Device writes live in the web UI, not here.
-
-## Planned (D35)
-
-The CLI will shrink to an owner surface: `start|serve`, `init`
-(scaffold from `minimal|network`), `code` (a `muse` shell with the
-bundle PATH plus instructions), and `doctor` (print-only checks).
-Agents keep using centrs/quickchr/rosetta directly. Until then, the
-reference above is what the code does today.
+Fleet reads live in `centrs` (`devices list`, `retrieve`), not here;
+agents use centrs/quickchr/rosetta directly.
 
 ## Docs
 
