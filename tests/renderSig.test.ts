@@ -4,7 +4,7 @@
 // are kept (never overwritten), and concurrent first signers agree on
 // one key via an atomic link. Hermetic: temp homes, cleaned after.
 // Never the real data home.
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
@@ -104,5 +104,46 @@ describe("render key provisioning", () => {
 		nodeFs.rmSync(`${dh}.b`, { force: true });
 		nodeFs.rmSync(`${dh}.ae`, { force: true });
 		nodeFs.rmSync(`${dh}.be`, { force: true });
+	});
+});
+
+describe("render key write failure (T83 re-review 3)", () => {
+	test("a failed key write closes its descriptor and leaves no tmp", () => {
+		const dh = makeDir("t83-fu3-keyfail-");
+		const opened: number[] = [];
+		const closed: number[] = [];
+		const origOpen = nodeFs.openSync;
+		const origClose = nodeFs.closeSync;
+		const openSpy = spyOn(nodeFs, "openSync").mockImplementation(((
+			...args: Parameters<typeof nodeFs.openSync>
+		) => {
+			const fd = (origOpen as (...a: unknown[]) => number)(...args);
+			opened.push(fd);
+			return fd;
+		}) as typeof nodeFs.openSync);
+		const writeSpy = spyOn(nodeFs, "writeSync").mockImplementation((() => {
+			const e = new Error("ENOSPC: no space left") as NodeJS.ErrnoException;
+			e.code = "ENOSPC";
+			throw e;
+		}) as typeof nodeFs.writeSync);
+		const closeSpy = spyOn(nodeFs, "closeSync").mockImplementation(((
+			fd: number,
+		) => {
+			closed.push(fd);
+			(origClose as (fd: number) => void)(fd);
+		}) as typeof nodeFs.closeSync);
+		try {
+			expect(() => ensureRenderKey(dh)).toThrow(/ENOSPC/);
+		} finally {
+			openSpy.mockRestore();
+			writeSpy.mockRestore();
+			closeSpy.mockRestore();
+		}
+		expect(opened.length).toBeGreaterThan(0);
+		for (const fd of opened) expect(closed).toContain(fd);
+		const left = nodeFs.existsSync(path.dirname(renderKeyFile(dh)))
+			? nodeFs.readdirSync(path.dirname(renderKeyFile(dh)))
+			: [];
+		expect(left).toEqual([]);
 	});
 });

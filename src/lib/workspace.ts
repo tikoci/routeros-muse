@@ -858,7 +858,12 @@ function verifyRenderDir(
 		}
 		const member = safeJoin(root, `${jobDirRel}/${name}`);
 		if (!member) return STATIC_MEMO;
-		const bytes = readRegularFile(member, ARTIFACT_MAX_BYTES);
+		// The per-file cap shrinks to what is left of the total budget,
+		// so an over-budget member is refused by fstat before any read.
+		const bytes = readRegularFile(
+			member,
+			Math.min(ARTIFACT_MAX_BYTES, VERIFY_TOTAL_MAX_BYTES - total),
+		);
 		if (!bytes) return STATIC_MEMO;
 		total += bytes.length;
 		if (total > VERIFY_TOTAL_MAX_BYTES) return STATIC_MEMO;

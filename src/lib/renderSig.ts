@@ -149,6 +149,11 @@ function createKeyFile(file: string): Buffer {
 			}
 			nodeFs.closeSync(fd);
 		} catch (err) {
+			try {
+				nodeFs.closeSync(fd);
+			} catch {
+				// The descriptor may already be closed.
+			}
 			nodeFs.rmSync(tmp, { force: true });
 			throw err;
 		}

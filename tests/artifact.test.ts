@@ -1,7 +1,7 @@
 // T83 artifact route tests: resolveArtifact allowlist / traversal /
 // symlink escape / size cap, tier CSP headers (pure + live route).
 // Hermetic: temp dirs cleaned in afterAll, echo provider, never $HOME.
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -700,6 +700,49 @@ describe("serve-time provenance (T83 followup 2)", () => {
 		expect(artifactTier(ws, `${jobDirRel}/big.html`, { dataHome: dh })).toBe(
 			"static",
 		);
+	});
+
+	test("verification never reads past the 16 MiB total budget", () => {
+		// sol re-review 3: three 8 MiB members read all 24 MiB before
+		// the total check rejected them. Count real fd reads.
+		const ws = makeWs();
+		const dh = makeDir("t83-fu3-dh-");
+		const jobDirRel = "reports/render/budget-stamp";
+		const dir = path.join(ws, jobDirRel);
+		nodeFs.mkdirSync(dir, { recursive: true });
+		const files = ["a.html", "b.html", "c.html"];
+		for (const f of files) {
+			const m = path.join(dir, f);
+			nodeFs.writeFileSync(m, "");
+			nodeFs.truncateSync(m, ARTIFACT_MAX_BYTES);
+		}
+		nodeFs.writeFileSync(
+			path.join(dir, "job.json"),
+			JSON.stringify({ tier: "scripts", files }),
+		);
+		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
+		ensureRenderKey(dh);
+		let readBytes = 0;
+		const orig = nodeFs.readSync;
+		const spy = spyOn(nodeFs, "readSync").mockImplementation(((
+			...args: Parameters<typeof nodeFs.readSync>
+		) => {
+			const n = (orig as (...a: unknown[]) => number)(...args);
+			readBytes += n;
+			return n;
+		}) as typeof nodeFs.readSync);
+		try {
+			expect(artifactTier(ws, `${jobDirRel}/a.html`, { dataHome: dh })).toBe(
+				"static",
+			);
+		} finally {
+			spy.mockRestore();
+		}
+		expect(readBytes).toBeGreaterThan(0);
+		// Members fill the 16 MiB budget exactly (two of three); the
+		// rest is job.json/.sig/key metadata, each capped at 64 KiB.
+		// Before the fix the third member was read too (24 MiB).
+		expect(readBytes).toBeLessThanOrEqual(16 * 1024 * 1024 + 3 * 64 * 1024);
 	});
 
 	test("a forged oversized job is rejected by shape before its members", () => {
