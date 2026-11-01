@@ -7,10 +7,10 @@ tested: none
 
 # `failure-layer-attribution` skill (shape → layer → logs → verdict) [template v1 draft]
 
-Promoted from the twin denial-shape proof (t28-acl-proof.md), the
-corpus 401/500(9) matrix (review-of-reviews §2, VERIFIED), the
-merged centrs attribution fix (tikoci/centrs#541), and the Habitat A
-egress matrix (coord 556). Backlog #29. No secrets below; no
+Promoted from a twin denial-shape proof, an
+earlier 401/500(9) matrix (VERIFIED), the
+merged centrs attribution fix (tikoci/centrs#541), and a sandbox
+egress matrix. No secrets below; no
 credentials are needed to read an error.
 
 ## Part 1 — The checklist (never retry what refuses)
@@ -29,8 +29,8 @@ feeling — "the network is down" is never a verdict.
 
 ### 0. Auth shapes (401 flavors + centrs codes)
 
-Re-verified 2026-10-29 on twin-acl, CHR 7.26beta3, curl + centrs
-0.1.9-next (t28-acl-proof.md). RouterOS REST 401s:
+Re-verified 2026-10-29 on a CHR twin, 7.26beta3, curl + centrs
+0.1.9-next. RouterOS REST 401s:
 
 | Shape | Meaning |
 |---|---|
@@ -38,8 +38,8 @@ Re-verified 2026-10-29 on twin-acl, CHR 7.26beta3, curl + centrs
 | Bare `401` (zero `WWW-Authenticate` headers), same body | Credentials sent and rejected |
 | centrs `transport/auth-failed` ("rejected the REST credentials") | The bad-credential case through the envelope |
 
-Edge shapes (corpus-collected, VERIFIED there, no Access edge in
-this lab so not re-run): Cloudflare Access's 401 carries
+Edge shapes (collected and VERIFIED in earlier runs; no Access
+edge on the test bench, so not re-run): Cloudflare Access's 401 carries
 `WWW-Authenticate: Bearer … resource_metadata=`, and its Basic
 rejection is a `403`. So: Bearer-challenge or 403 = "rejected
 BEFORE RouterOS" from response shape alone. Post-#541 centrs gives
@@ -87,13 +87,13 @@ Rules that fall out:
   check `centrs --version` before believing a retryable code on a
   500. The code names the centrs behavior, the `(9)` names the
   RouterOS truth — when they disagree, `(9)` wins.
-- Need record C6 ("misreported as retryable") is fixed upstream;
+- The misreported-as-retryable issue is fixed upstream;
   its evidence now points at the merged PR + this twin proof.
 
 ### 2. Logs first — for the AUTH layer only
 
 "Logs first" is half-right, and the twin run drew the exact line
-(t28-acl-proof.md, `/log` tail after bad-pw + denial probes):
+(`/log` tail after bad-pw + denial probes):
 
 - Login failures ARE logged: `system,error,critical login failure
   for user <name> from <addr> via rest-api` — one line per bad
@@ -115,8 +115,8 @@ when shape + log disagree — they rarely do.
 ### 3. Reachability ladder (policy → proxy → relay → router)
 
 For "cannot reach it at all" failures, walk outward from the
-caller. Every rung below was measured live from the Muse-app
-sandbox 2026-10-28 (coord 556, full A recon note) with the orca
+caller. Every rung below was measured live from a sandboxed
+agent environment 2026-10-28, with the LAN-workstation
 side proven working the same week (vpn-setup §0):
 
 | Rung | Failing shape (measured) | Verdict |
@@ -131,8 +131,8 @@ Attribution discipline: name the rung, quote the shape, stop. The
 original error in that investigation was treating cloudflared as
 something the CONNECTING side runs — it sits on the far side,
 dialing out; the client side is ordinary HTTPS/WSS. Most tunnel
-"mysteries" are this category error, not transport faults. (T26
-boundary, still open per backlog Q3: the Access-admission and
+"mysteries" are this category error, not transport faults. (Open
+boundary: the Access-admission and
 diagnosis halves folded here may move to the /app playbook — this
 skill keeps the shape table regardless.)
 
@@ -146,12 +146,12 @@ Deliver every attribution in one breath: layer + shape + rule.
   read-back proves non-application.
 - **Fixable here**: wrong credentials (fix the secret, check the
   log line), missing group policy (grant + re-prove per
-  agent-access-bootstrap), wrong transport for the habitat (re-pick
+  agent-access-bootstrap), wrong transport for the environment (re-pick
   per vpn-setup §0), stale firmware row (add `api`, or upgrade).
 - **Refused**: `(9)` denials, bare-401-after-fix attempts,
   sandbox EPERM, relay refusals. Retrying is the bug. Change the
   layer (different account, different transport, different
-  habitat), not the attempt count.
+  environment), not the attempt count.
 - Record it (evidence-ledger): the shape quoted verbatim, the
   layer named, the log lines or their absence, what would change
   the verdict. The next agent with the same shape should find your
@@ -165,7 +165,7 @@ Load when: any request to a router, relay, or edge failed and the
 cause is unclear; deciding retry vs fix vs escalate; "is it the
 router or the network" questions; 401/403/500s from REST, API, or a
 tunnel; login failures in the log. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
@@ -180,7 +180,7 @@ capability-probe pattern: K22.)
 ### Access
 
 - Attribution is read-mostly: failed requests + log reads. No
-  approval needed for reads on any box (bigdude included).
+  approval needed for reads on any box (production included).
 - Confirmation probes that WRITE (reproducing a denial) go to a
   twin, or ride an approved change — never probe-write production
   to satisfy curiosity.
@@ -199,7 +199,7 @@ capability-probe pattern: K22.)
 
 - The verdict: layer + quoted shape + retry rule, one breath.
 - The evidence: verbatim error, log lines or their noted absence,
-  centrs version, habitat + date.
+  centrs version, environment + date.
 - The fix or the escalation: what changes the verdict, and who
   owns it (account owner, network owner, vendor issue).
 
@@ -211,7 +211,7 @@ capability-probe pattern: K22.)
   retry the fix" claim.
 - Log check performed and recorded either way (lines found, or
   "silent — policy layer").
-- Egress verdicts name the rung + shape; habitat-dated (policies
+- Egress verdicts name the rung + shape; environment-dated (policies
   change — the 2026-10-28 rows are not timeless).
 
 ### Recovery
@@ -226,17 +226,17 @@ capability-probe pattern: K22.)
   and extend this skill. Unknown shapes are skill fuel, not dust.
 - Flapping (works, fails, works): suspect timeouts/concurrency,
   not policy — policy doesn't flap. Check `Bun.serve` 10s drops
-  and Cloudflare 524s (corpus transport traps) before re-picking.
+  and Cloudflare 524s (known transport traps) before re-picking.
 
 ### Limits
 
 - CHR proof only (7.26beta3, local users): Cloudflare Access
   shapes collected-not-rerun; pre-#541 code paths described from
-  the merged diff + corpus, observed only via the version gate.
-- The egress ladder is habitat-dated (sandbox 2026-10-28): proxy
-  policies and relay behavior move; re-probe per habitat.
+  the merged diff, observed only via the version gate.
+- The egress ladder is environment-dated (sandbox 2026-10-28): proxy
+  policies and relay behavior move; re-probe per environment.
 - Log silence convicts policy ONLY for authenticated requests —
   an unauthenticated request that logs nothing may never have
   reached RouterOS (check the nearer rungs first).
-- T26 boundary open: Access-admission/diagnosis halves may migrate
+- Boundary open: Access-admission/diagnosis halves may migrate
   to the /app playbook; the shape tables stay here either way.

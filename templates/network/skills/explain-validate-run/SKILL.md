@@ -8,10 +8,10 @@ tested: none
 
 # `explain-validate-run` skill (docs → explain → validate → run → check) [template v1 draft]
 
-Promoted from the executed loop proof (t28-evr-proof.md: note write
-through all five rungs on twin-evr) plus the T6 `numbers=` precedent
-and the /console/inspect probe mechanics. Backlog #28. No secrets
-below; validation outputs carry no credentials.
+Promoted from an executed loop proof (a note write
+through all five rungs on a disposable twin) plus the staged-run
+`numbers=` precedent and the /console/inspect probe mechanics.
+No secrets below; validation outputs carry no credentials.
 
 ## Part 1 — The checklist (each rung catches what the last can't)
 
@@ -45,7 +45,7 @@ rosetta v0.11.3 ready (DB schema v11, 370 pages, release v0.11.3).
 - Cite DB identity on every rosetta-backed claim (release + schema
   + version range). The twin runs 7.26beta3; the DB range ends at
   7.25rc1 — past the edge, docs are advisory and the live device
-  wins (silent-fallback trap, orca-setup).
+  wins (the silent-fallback trap).
 - Docs disagreeing with the device is data: record both, trust the
   device for ITS behavior, file the doc gap upstream if it matters.
 
@@ -62,8 +62,8 @@ verdict: pass · runtimeAcceptance: not-proven   ← ALSO passes
 - Offline explain canonicalizes the input, reports structure +
   syntax diagnostics, and shows the centrs call it would become
   (`api … -X POST -f …`). No connection, no credentials, instant.
-- It passes the known-bad `numbers=` form (T6 finding 1: RouterOS
-  rejects it at runtime with "bad parameter numbers"). The envelope
+- It passes the known-bad `numbers=` form (the staged-run finding:
+  RouterOS rejects it at runtime with "bad parameter numbers"). The envelope
   says `runtimeAcceptance: not-proven` itself — believe it. Offline
   pass is necessary, never sufficient.
 - First thing to run when a command is REJECTED, too: if offline
@@ -73,13 +73,13 @@ verdict: pass · runtimeAcceptance: not-proven   ← ALSO passes
 ### 2. Validate live (the device's own parser)
 
 ```
-$ centrs explain --quickchr twin-evr '/system/note/set note=t28-evr-proof'
+$ centrs explain --quickchr <twin> '/system/note/set note=t28-evr-proof'
 verdict: pass
 live: 7.26beta3 x86_64 · parse accepted · highlight 35 byte(s) · arguments 1 path(s), 3 name(s)
 evidence: live0 /system/resource, live1 :parse, live2 highlight, live3 child, live4 syntax
 runtimeAcceptance: not-proven
 
-$ centrs explain --quickchr twin-evr '/system/script/run numbers=t28x'
+$ centrs explain --quickchr <twin> '/system/script/run numbers=t28x'
 verdict: fail — 1 diagnostic(s)
 live: 7.26beta3 x86_64 · parse rejected at 1:32 · ...
 ```
@@ -100,7 +100,7 @@ live: 7.26beta3 x86_64 · parse rejected at 1:32 · ...
 ### 3. Run (disposable CHR proves it)
 
 ```
-$ centrs execute --quickchr twin-evr --yes '/system/note/set note=t28-evr-proof' --json
+$ centrs execute --quickchr <twin> --yes '/system/note/set note=t28-evr-proof' --json
 ok: True data: {} via: native-api
 ```
 
@@ -118,9 +118,9 @@ ok: True data: {} via: native-api
 ### 4. Two-endpoint check (agreement is the proof)
 
 ```
-$ centrs retrieve --quickchr twin-evr --via rest-api /system/note --json
+$ centrs retrieve --quickchr <twin> --via rest-api /system/note --json
 note: t28-evr-proof
-$ centrs retrieve --quickchr twin-evr --via native-api /system/note --json
+$ centrs retrieve --quickchr <twin> --via native-api /system/note --json
 note: t28-evr-proof
 MATCH: two endpoints agree
 ```
@@ -133,7 +133,7 @@ MATCH: two endpoints agree
   counts from `meta.operation.objectCount`, not from `data` shape
   (empty-object/single-object/array instability, centrs#360).
 - Cleanup is part of the loop: clear the test value, read back the
-  cleared state, tear down the twin (t28-evr-proof.md §6). A proof
+  cleared state, tear down the twin. A proof
   that leaves residue is half a proof.
 
 ## Part 2 — Skill doc
@@ -144,7 +144,7 @@ Load when: running any unfamiliar RouterOS command; proving a
 procedure before production; onboarding ("how do I safely try
 things here"); "will this command work" questions; a rejection
 needs diagnosis (explain-first). (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
@@ -157,8 +157,8 @@ capability-probe pattern: K22.)
 
 ### Access
 
-- Rungs 0–2 are read-only: safe on twins AND production (bigdude
-  reads free). Live validation opens no write path.
+- Rungs 0–2 are read-only: safe on twins AND production — reads
+  are free. Live validation opens no write path.
 - Rung 3 writes: twin freely; production only behind change-apply
   (approval + deadman). Rung 4 reads back wherever rung 3 wrote.
 - No credentials in the ledger for any rung (evidence-ledger);
@@ -209,9 +209,9 @@ capability-probe pattern: K22.)
   per-firmware twins; radio/hardware behavior never proven here.
 - Rosetta range-bounded (7.1.1–7.25rc1 at v0.11.3): past the edge
   is advisory-only, always cited.
-- Inspect-vs-runtime gap acknowledged, unprobed in our runs: a
+- Inspect-vs-runtime gap acknowledged, unprobed in the grounding runs: a
   live-validated command can still fail at execution — rung 3 is
   what closes that, not rung 2.
 - The loop validates commands, not designs: a perfectly valid
-  command can still be the wrong change (adversarial review,
-  backlog #33, is the separate control).
+  command can still be the wrong change (adversarial-review
+  is the separate control).
