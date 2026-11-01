@@ -603,6 +603,27 @@ function removeOwned(
 	return null;
 }
 
+/**
+ * Failure result with rollback residue (T97 follow-up): leftover
+ * notes join `why` as `; left behind: ...` and ride along as
+ * `leftover`. Clean rollbacks keep the bare why and no leftover
+ * field, so existing callers see no change.
+ */
+function scaffoldFail(
+	why: string,
+	leftovers: string[],
+	conflicts?: string[],
+): ScaffoldResult {
+	const suffix =
+		leftovers.length > 0 ? `; left behind: ${leftovers.join(", ")}` : "";
+	return {
+		ok: false,
+		why: `${why}${suffix}`,
+		...(conflicts ? { conflicts } : {}),
+		...(leftovers.length > 0 ? { leftover: leftovers } : {}),
+	};
+}
+
 function resolveTemplate(
 	template: string,
 	opts?: ScaffoldOpts,
@@ -750,18 +771,16 @@ export async function scaffoldWorkspace(
 		});
 	} catch (err) {
 		if (err instanceof ScaffoldConflict) {
-			rollback();
-			return {
-				ok: false,
-				why: `refusing to overwrite in ${target}: ${err.conflicts.join(", ")}`,
-				conflicts: err.conflicts,
-			};
+			return scaffoldFail(
+				`refusing to overwrite in ${target}: ${err.conflicts.join(", ")}`,
+				rollback(),
+				err.conflicts,
+			);
 		}
-		rollback();
-		return {
-			ok: false,
-			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
-		};
+		return scaffoldFail(
+			`scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
+			rollback(),
+		);
 	}
 	const cdbFull = path.join(target, "device.cdb");
 	const cdbExisted = lstatExists(cdbFull);
@@ -781,11 +800,15 @@ export async function scaffoldWorkspace(
 		}
 	}
 	if (failed) {
+		const leftovers: string[] = [];
 		if (cdbEntry) {
-			removeOwned(cdbEntry, (p) => nodeFs.rmSync(p, { force: true }));
+			const note = removeOwned(cdbEntry, (p) =>
+				nodeFs.rmSync(p, { force: true }),
+			);
+			if (note) leftovers.push(note);
 		}
-		rollback();
-		return { ok: false, why: failed };
+		leftovers.push(...rollback());
+		return scaffoldFail(failed, leftovers);
 	}
 	return { ok: true, dir: target };
 }
@@ -887,18 +910,16 @@ export async function scaffoldIntoDir(
 		});
 	} catch (err) {
 		if (err instanceof ScaffoldConflict) {
-			rollback();
-			return {
-				ok: false,
-				why: `refusing to overwrite in ${dir}: ${err.conflicts.join(", ")}`,
-				conflicts: err.conflicts,
-			};
+			return scaffoldFail(
+				`refusing to overwrite in ${dir}: ${err.conflicts.join(", ")}`,
+				rollback(),
+				err.conflicts,
+			);
 		}
-		rollback();
-		return {
-			ok: false,
-			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
-		};
+		return scaffoldFail(
+			`scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
+			rollback(),
+		);
 	}
 	// device.cdb never existed at preflight; only remove what centrs
 	// itself may have left behind, never a competitor's file. As in
@@ -916,11 +937,15 @@ export async function scaffoldIntoDir(
 		}
 	}
 	if (failed) {
+		const leftovers: string[] = [];
 		if (cdbEntry) {
-			removeOwned(cdbEntry, (p) => nodeFs.rmSync(p, { force: true }));
+			const note = removeOwned(cdbEntry, (p) =>
+				nodeFs.rmSync(p, { force: true }),
+			);
+			if (note) leftovers.push(note);
 		}
-		rollback();
-		return { ok: false, why: failed };
+		leftovers.push(...rollback());
+		return scaffoldFail(failed, leftovers);
 	}
 	return { ok: true, dir };
 }
