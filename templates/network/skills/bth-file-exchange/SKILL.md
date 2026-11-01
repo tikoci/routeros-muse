@@ -156,7 +156,7 @@ capability-probe pattern.)
 
 - Share creation/removal: router writes — approval per item
   (production: developer). Share URLs are bearer-capable: treat
-  the full URL like a password in every channel (coord,
+  the full URL like a password in every channel (handoff notes,
   chat, notes quote the share NAME, never the URL).
 - Upload/download: whoever holds the link. Scope shares so
   link-holders are exactly who you mean.

@@ -45,7 +45,7 @@ grep confirmed no token remained. Lessons encoded here:
 - Sweep list before any publish: capture dirs, QEMU/machine state,
   tool caches carrying device data, shell histories with
   credentials in argv (use env vars per agent-access-bootstrap so
-  there's nothing to sweep), coord-local drafts, /tmp flowsheets.
+  there's nothing to sweep), local handoff drafts, /tmp flowsheets.
 - Router-side residue counts too: test users/groups/scripts left
   on a box travel with its next export. Every proof run ends
   pristine-verified (the proof teardown shape) — the scrub

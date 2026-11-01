@@ -202,7 +202,7 @@ capability-probe pattern.)
 - Never paste captures, secrets, serials, or private
   addresses into an upstream issue — shapes only, always.
 - Never edit another agent's triage entry — append a
-  follow-up citing it (coord rule carries over).
+  follow-up citing it (house rule: never edit another session's note).
 
 ### Envs
 

@@ -38,7 +38,7 @@ live state through Drive.
 
 | Need | Correct home |
 |---|---|
-| Share across sessions/environments | coord-room post with pointers (home-single-copy §3) |
+| Share across sessions/environments | handoff note under `inbox/` or `operations/*-handoff.md` with pointers (home-single-copy §3) |
 | Share across machines/humans | promote to `home-private-git` (scrub first — see pre-publish-scrub) |
 | Back up a local home | home-single-copy §2 backup discipline (owner mechanism) |
 | Second machine, same network | git promotion — never a second live tree without the canonical guard |

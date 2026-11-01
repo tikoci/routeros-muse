@@ -26,13 +26,13 @@ confidence.
 3. Label each claim and note anomalies (§2–§3): observed / collected
    / inferred / pending — plus anything surprising, even (especially)
    good news that arrived too easily.
-4. Attach and close (§4): tracker evidence points at the entry, coord
-   carries the summary, unrun halves stay listed as pending.
+4. Attach and close (§4): tracker evidence points at the entry, a handoff
+   note carries the summary, unrun halves stay listed as pending.
 
 ### 0. Open (the header is the provenance)
 
 Every ledger entry — a `notes/*.md` run note, an `operations/`
-incident record, a coord post — opens with the same four facts:
+incident record, a handoff note — opens with the same four facts:
 
 - **Date** (YYYY-MM-DD, UTC): when the commands ran, not when the
   note was edited. Stale runs are data, but only when dated.
@@ -83,7 +83,7 @@ are banned from verdicts.
   `observed 2026-10-29 vm-host/vpn-twin`. A setup guide's `[VERIFIED
   date]` sections are this label at file scale.
 - **Collected**: read from a trustworthy source, not re-run. Cite
-  the source exactly (file + line, coord UID, issue number). A
+  the source exactly (file + line, handoff-note path, issue number). A
   skills backlog marks its entire inventory this way until promotion
   runs execute it.
 - **Inferred**: reasoned from observed/collected facts. Show the
@@ -125,9 +125,9 @@ happened, because the surprise is usually the finding:
   tracker's `evidence` field names the note file ("the board tracks
   work while the ledger is the evidence"). Prose in the tracker is a
   pointer, not a copy.
-- Coord carries the summary for other sessions: verdict + entry
-  pointer + pending list. Never edit another session's post (append
-  races); post a follow-up that cites it.
+- A handoff note carries the summary for other sessions: verdict + entry
+  pointer + pending list. Never edit another session's note (append
+  races); write a follow-up that cites it.
 - Close checks: header complete, every command has its output or a
   pending label, no secrets (grep for token/key/serial patterns
   before calling it done), twins restored (twin-ops session-end list).
@@ -149,7 +149,7 @@ capability-probe pattern.)
 - The question written down (Part 1 step 1 refuses to start without
   it — a ledger without a question is a diary).
 - Write access to the entry location (`notes/` for run notes,
-  `operations/` for incidents, coord for cross-session summaries).
+  `operations/` for incidents, `inbox/` for cross-session handoff notes).
 - The redaction rule internalized: shapes, never values, for
   anything secret or identifying.
 
@@ -158,7 +158,7 @@ capability-probe pattern.)
 - Run notes are local-first: captures with real network data stay in
   local-only paths (pull `out/`), git-ignored on promotion, never
   committed.
-- Coord posts are shared across sessions and environments: verdicts and
+- Handoff notes are shared across sessions and environments: verdicts and
   pointers only, no secrets, no pasted captures.
 - Promoted skills cite ledger entries by path; the pre-publish scrub
   decides what survives publication — internal pointers are
@@ -175,7 +175,7 @@ capability-probe pattern.)
 - A dated ledger entry: header + command/output transcript + labels
   + anomaly notes + pending list.
 - A tracker `evidence` pointer naming the entry.
-- A coord summary post (when another session should know).
+- A handoff summary note (when another session should know).
 - Promoted field lessons (redactor rules, diagnostic procedures)
   filed where they execute, not just where they happened.
 

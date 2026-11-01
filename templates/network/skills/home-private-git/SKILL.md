@@ -135,7 +135,7 @@ agent's repo credential is provisioned by the owner at bootstrap
 ### Outputs
 
 - Bootstrap: repo URL + initial commit SHA recorded in `workspace.toml`
-  provenance (or the coord post that announces the home).
+  provenance (or the handoff note that announces the home).
 - Per session: shaped commits (proposals/decisions/incidents/reports),
   refreshed `summary.md` files, checker verdicts cited by device + time.
 - Promotion events: issue↔record links where the GitHub adapter is in
@@ -189,8 +189,7 @@ agent's repo credential is provisioned by the owner at bootstrap
    it (e.g. summaries also local-only for some deployments).
 4. Second-machine/second-agent appearance is the promotion trigger
    from main-only to branch+PR.
-5. The coord room (shared drafts) is BUILD scaffolding only — environment
-   interchange while building, until routeros-muse itself is on GitHub.
-   It is NOT part of the offering and NEVER an owner workflow (decided
-   2026-10-28). Owner cross-session continuity is the repo
+5. Cross-session handoff is workspace-native: a note under `inbox/`
+   or `operations/*-handoff.md`, pointing at state, never pasting
+   copies. Owner cross-session continuity is the repo
    itself (plus file-provider homes once listed).

@@ -209,8 +209,8 @@ capability-probe pattern.)
 - Local/LAN writes free on test boxes; production router writes
   (firewall accepts, service gates) ask the developer first
   per item (the production rule carries over).
-- Passwords travel LAN-page-only: never into chat, notes,
-  coord, env dumps, or staged scripts.
+- Passwords travel LAN-page-only: never into chat, notes, handoff notes,
+  env dumps, or staged scripts.
 - Never delete a twin others rely on; dirty pairing experiments get a
   fresh twin.
 
@@ -242,7 +242,7 @@ moment they exist.
 - Every fleet router has BOTH a CDB row AND an explicit grant;
   rows without grants get no agent calls (spot-check one).
 - Password audit: no router password in chat, notes, ledger,
-  coord, env, or staged text — grep the session's trail.
+  handoff notes, env, or staged text — grep the session's trail.
 - Firewall/service read-backs show the pairing rules in place
   with the drop-not-from-LAN still closing the chain.
 - Claim audit: each pairing claim carries command + output or

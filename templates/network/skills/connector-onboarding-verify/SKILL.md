@@ -147,9 +147,9 @@ escalated after the read set printed).
   (collected: the friction log). Test twins and test targets get the
   same treatment.
 - The evidence ledger points at the probe outputs (command +
-  output, trimmed honestly, secrets redacted to shapes); coord
-  carries the verdict + pointer + pending list for other sessions.
-  Never edit another session's post — append a follow-up citing it.
+  output, trimmed honestly, secrets redacted to shapes); a handoff
+  note carries the verdict + pointer + pending list for other sessions.
+  Never edit another session's note — append a follow-up citing it.
 - Close checks: every allowlisted tool is probed or pending; no
   secrets in the doc (grep token/key/serial patterns); the doc
   states the grant's expiry story (TTL, one-shot vs durable).

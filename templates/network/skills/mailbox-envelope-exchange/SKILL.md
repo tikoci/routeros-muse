@@ -9,8 +9,8 @@ tested: none
 
 Promoted from the envelope design (transport-never-authority
 + the rung ladder), the signing-key open decision,
-the lived coord precedent (one draft per post, 19/19 tests
-green), and the pull manifest-last mechanics (pull.ts).
+a single-writer precedent (one file per envelope, never edit
+another writer's), and the pull manifest-last mechanics (pull.ts).
 No secrets below; envelope contents are never quoted.
 
 ## Part 1 — The checklist (async, signed, manifest-last)
@@ -45,7 +45,7 @@ an open decision, see Limits):
   and Cloudflare Worker+KV): same signed + encrypted job blobs
   in a directory. The format is the design asset; the carrier
   differs by environment (the rung ladder).
-- Envelope contents: job id (self-minting, coord-style:
+- Envelope contents: job id (self-minting:
   timestamp + environment — no counter lock), payload, scope,
   expiry, signature. Scope says what the job may touch; expiry
   bounds replay; the id makes duplicates detectable.
@@ -61,10 +61,9 @@ Mechanics grounded in two lived systems:
   (ids + hashes + completeness) final. A reader that sees no
   manifest sees nothing-yet — never a half-written job. The
   manifest is the completeness statement, not a nicety.
-- **One writer per folder** (coord protocol + house rule):
-  coord runs one draft per post, never edit another's (whole-body
-  replace → append races; self-minting IDs; 19/19
-  protocol tests green). House rule: "one
+- **One writer per folder** (single-writer convention):
+  one file per envelope, never edit another writer's (whole-body
+  replace → append races; self-minting IDs). House rule: "one
   writer per file" across environments. Mailbox extension: one
   writer per FOLDER — the writer owns the drop dir, the reader
   only reads. Two writers to one folder is how whole-file

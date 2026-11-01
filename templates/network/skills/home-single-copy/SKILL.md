@@ -54,11 +54,9 @@ the requirement, not the tool):
    file tree by copy/sync tools without declaring canonical is how
    networks silently fork.
 3. Drive is never the share mechanism (`anti-drive-live`).
-4. BUILD NOTE (not owner workflow): while routeros-muse is under
-   construction, builder sessions additionally coordinate across
-   environments via the coord room (shared drafts) — point at state, never
-   paste copies. The room retires into GitHub mechanics once
-   routeros-muse itself is on GitHub (decided 2026-10-28).
+4. Cross-session/cross-environment handoff is a note in the tree
+   (`inbox/` or `operations/*-handoff.md`): point at state, never
+   paste copies. No side channel exists or is needed.
 
 ### 4. Multi-session rule (one writer at a time)
 
@@ -98,7 +96,7 @@ machines" question; promotion-to-git evaluation.
 
 - Local writes free. Router rules unchanged (reads-first, production
   writes need go-ahead, ask for unknown operators).
-- Sharing writes happen only via coord posts or git promotion — never
+- Sharing writes happen only via handoff notes or git promotion — never
   by handing out live tree copies.
 
 ### Envs
@@ -135,13 +133,13 @@ CDB-first).
   load-bearing, not advisory.
 - Manual sharing; multi-agent use without git promotion forks
   silently — hence the §5 auto-suggest.
-- No owner-facing share channel exists besides git promotion (coord
-  is build scaffolding, decided 2026-10-28).
+- No owner-facing share channel exists besides git promotion and
+  in-tree handoff notes.
 
 ## Part 3 — Assumptions (decided during template design; this skill assumes)
 
-1. Coord room is build scaffolding only, never owner workflow (decided
-   2026-10-28); owner continuity is the tree plus git promotion.
+1. Handoff is workspace-native (in-tree notes), never a side channel;
+   owner continuity is the tree plus git promotion.
 2. Backup mechanism is the owner's choice; only the requirement +
    tested-restore bit are the skill's business.
 3. §5 fires as an auto-suggestion, not an auto-migration — the owner

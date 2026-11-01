@@ -207,7 +207,7 @@ pattern.)
 
 - Twin runs: disposable boxes, anything goes, teardown after.
 - Production: the approver named on the proposal; production writes need
-  the developer per item. Key material stays out of chat/shared drafts/notes.
+  the developer per item. Key material stays out of chat, notes, and handoff notes.
 - BTH/Cloudflare enables touch third-party relays (MikroTik,
   Cloudflare): deliberate decision each time, recorded in the ledger.
 

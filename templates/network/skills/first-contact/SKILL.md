@@ -225,5 +225,4 @@ pattern.)
    `--cdb-password`/env, never stored beside the CDB.
 5. A credential-handoff design will replace the `.env`-mapping handoff and
    decide rotation/persistence; until then: persist to CDB on first success
-   (fixes "clean-system amnesia"), never paste secrets into coord
-   drafts or notes.
+   (fixes "clean-system amnesia"), never paste secrets into shared notes.

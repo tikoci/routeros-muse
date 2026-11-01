@@ -9,7 +9,7 @@ tested: none
 
 Promoted from the template build (layout, conventions, schema),
 the home frame (writer/sync rules), and standing build practice
-(coord handoff, ledger attach). Claims below are
+(handoff notes, ledger attach). Claims below are
 collected (read, not re-run) unless labeled; sources
 cited inline by path. No secrets below; devices are roles.
 
@@ -24,7 +24,7 @@ anything — §3 is that test.
 2. Draw the writer/sync map (§1): every directory gets one writer
    and one direction; second copies get age manifests, never merge-back.
 3. Wire memory and handoff (§2): per-session summaries in-tree,
-   ledger entries for runs, coord posts while building.
+   ledger entries for runs, handoff notes while building.
 4. Run the fresh-session takeover test (§3): cold read → probe →
    checker → first useful statement, all from the tree alone.
 5. Record and close (§4): decisions logged, backup tested where
@@ -104,15 +104,16 @@ In-tree memory (owner workflow — survives promotion):
   commands + outputs + labels (observed/collected/inferred/
   pending) + anomaly notes; the tracker points AT the entry.
 
-Cross-session talk (build scaffolding — retires, never owner flow):
+Cross-session talk (workspace-native handoff):
 
-- Coord protocol: start `coord list`,
-  finish `coord post` with what/where/next; long runs post as they
-  go. Point at state (paths, commits, UIDs); never paste copies.
-  Never edit another session's draft — post a follow-up.
-- Decided: the coord room is BUILD
-  scaffolding only. Owner continuity is the repo itself. The coord
-  half of this section is for builder sessions, pending the pre-publish scrub.
+- Handoff protocol: open by reading `inbox/` + the last session
+  summary; close by writing a handoff note under `inbox/` or
+  `operations/*-handoff.md` with what/where/next; long runs update
+  the note as they go. Point at state (paths, commits, UIDs);
+  never paste copies. Never edit another session's note — append
+  a follow-up.
+- Owner continuity is the repo itself: the tree plus handoff notes,
+  no side channel.
 - Pending is first-class: every handoff ends with unrun halves
   named with owners (evidence-ledger §4).
 
@@ -149,7 +150,7 @@ layout/handoff bugs, fixed in the tree, test re-run.
   untested backup a blocker, not advice).
 - Record trilogy pins + repo provenance (URL + initial commit SHA)
   in workspace.toml.
-- Builder sessions: coord post (verdict + tree pointer + pending);
+- Builder sessions: handoff note (verdict + tree pointer + pending);
   tracker evidence pointer at the ledger entry.
 - Pending list stays explicit: probe automation, second-box
   sim unrun, developer review of templates/network/ — each with its owner.
@@ -184,7 +185,7 @@ capability-probe pattern.)
   before any write.
 - Never edit a pull; never push agent edits into router-owned
   paths; never merge two live trees (reconcile by re-pull/re-do).
-- Coord posts are builder-talk: verdicts + pointers, no secrets,
+- Handoff notes are builder-talk: verdicts + pointers, no secrets,
   no pasted captures.
 
 ### Envs
@@ -204,7 +205,7 @@ and lives in the deployment's own store, never in the repo.
   + writer/sync map ([upstreams] + ownership) + decisions.md entry.
 - Per session: shaped commits, refreshed summary.md files, checker
   verdicts cited by device + time, inbox drained or triaged.
-- Handoff: session summary + ledger entry + coord post (builders)
+- Handoff: session summary + ledger entry + handoff note
   + pending list with owners.
 - Takeover proof: the §3 five-step result (pass, or filed layout
   bugs + re-run).
@@ -259,6 +260,5 @@ and lives in the deployment's own store, never in the repo.
 - Acceptance halves (lifecycle pass vs twin, second-box sim,
   scrub grep) are unrun: takeover steps 4–5 are prescribed, not
   yet executed — the first runner grounds them.
-- Coord content here is build scaffolding: owner-facing
-  copies of this skill drop §2's coord half at the pre-publish scrub and
-  keep the tree.
+- Handoff here is workspace-native: session summary + ledger entry +
+  handoff note, all in the tree.

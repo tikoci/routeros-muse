@@ -84,7 +84,7 @@ normally log in through RADIUS. Agents never do:
 ```sh
 centrs execute --quickchr <twin> --yes \
   '/user/add name=<reader> group=<reader-group> password="<throwaway>"' --json
-# ok:true {"ret":"*2"} — password value NEVER enters notes/ledger/shared drafts
+# ok:true {"ret":"*2"} — password value NEVER enters notes/ledger/handoff notes
 ```
 
 - Passwords are set from shell variables holding throwaways,

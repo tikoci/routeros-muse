@@ -158,7 +158,7 @@ planning. (Entry-skill + capability-probe pattern.)
   owner approval per `change-apply`; on twins, anything goes.
 - Wedge escape on production is a write with data-loss shape
   (old users abandoned): explicit approval + incident record first.
-- Never paste user passwords into notes, captures, or shared drafts.
+- Never paste user passwords into notes, captures, or handoff notes.
 
 ### Envs
 

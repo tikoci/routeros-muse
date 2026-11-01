@@ -146,7 +146,7 @@ citations in steps 1–2. Pending = unprobed, not absent.
 
 | Harness | HTML | Images | Links | Files | Live pages | Evidence channel |
 |---|---|---|---|---|---|---|
-| Local workstation | served yes (observed); inline pending | generate yes (observed); inline display pending | file paths yes (observed); deep-link follow pending | yes (observed) | loopback yes (observed); LAN/inbound pending | local files + coord posts (observed pattern) |
+| Local workstation | served yes (observed); inline pending | generate yes (observed); inline display pending | file paths yes (observed); deep-link follow pending | yes (observed) | loopback yes (observed); LAN/inbound pending | local files + handoff notes (observed pattern) |
 | Sandboxed agent app | pending | generate yes (collected, explainer); display pending | pending | Drive .md in place (collected); repo files via connector (collected) | no loopback/inbound from sandbox (collected); served-via-Drive partial (collected) | Issues + Drive .md (collected) |
 | T3 Code desktop | pending | pending (visuals lean, collected ruling) | pending | pending | pending | pending |
 | Meta desktop | pending | pending | pending | pending | pending | pending |
@@ -186,7 +186,7 @@ citations in steps 1–2. Pending = unprobed, not absent.
   pending with the probe that was attempted.
 - File the proof note next to the others
   (`notes/<harness>-proof.md`), update the matrix
-  row + date, and post to coord so the next session
+  row + date, and leave a handoff note so the next session
   knows which harness gained ground.
 
 ## Part 2 — Skill doc
@@ -258,7 +258,7 @@ harness; any "can the owner SEE this here?" question.
   bracket trick (`1892[3]`), re-verify down with curl.
 - Presentation fails despite a green matrix cell →
   the cell lied: reproduce, demote to pending with the
-  failure output, post to coord, re-probe.
+  failure output, record it in the handoff note, re-probe.
 - Source doc stale (pricing moved, toolset drifted) →
   update the collected cell + capture date, or demote
   to pending if the new state is unverified.
