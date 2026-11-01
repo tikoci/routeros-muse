@@ -8,14 +8,14 @@ tested: twin-run
 
 # `unbox-provision` skill (bind → render → twin-proof → apply → first pull) [template v1 draft]
 
-Unbox and look-after are different products (K18): provisioning
+Unbox and look-after are different products: provisioning
 is wholesale, human-hands, destructive-by-design; management is
 incremental, remote, read-first. This skill owns the unbox side
 up to the boundary commit ("first pull") and then hands off.
 Fold-ins carried as sections: sticker-identity-bootstrap,
 photo-to-plan-device-onboarding, unbox-baseline-render,
 configure-from-plan-twin-first, unbox-import. Claim labels:
-observed = twin2 drill 2026-10-30 (t28-unbox-proof.md);
+observed = a CHR twin drill 2026-10-30;
 collected = corpus cites; pending = honestly unrun. No
 secrets below; identifiers redacted to hashes.
 
@@ -39,7 +39,7 @@ twin; the new hardware is touched at step 5, read at step 6.
 
 ### 0. Sticker-identity bootstrap (device vs label vs serial)
 
-- K9 rule (collected, homework §6): the device ID names
+- The rule (collected, homework §6): the device ID names
   the JOB (`<site>-<location>-<role>`); the label is what
   is on the UNIT; the serial binds hardware to device at
   unbox. A device outlives the hardware in it (concept
@@ -49,10 +49,10 @@ twin; the new hardware is touched at step 5, read at step 6.
   `references/device-record.example.toml`: device, label
   model/serial/MAC, bound-at, bound-by, a password POINTER
   (`private/<device>.txt`), render + first-pull dates.
-- Observed (twin2 drill): CHR has no routerboard and no
+- Observed (the twin drill): CHR has no routerboard and no
   sticker, so identity is the license system-id and the
   label fields stay honestly N/A. pull.ts stores the
-  binding as `system-id:<id>` (pull.ts:65-68); the drill
+  binding as `system-id:<id>`; the drill
   verified manifest serial == `system-id:`+license id
   (binding-match True). First bare-id compare mismatched —
   the prefix rule is load-bearing, re-verify it, don't
@@ -68,9 +68,9 @@ twin; the new hardware is touched at step 5, read at step 6.
   git-ignored file AND the harness denies reading it.
   Never in the ledger, never in a capture, never pasted.
 
-### 1. Photo-to-plan device onboarding (U1, PENDING on CHR)
+### 1. Photo-to-plan device onboarding (PENDING on CHR)
 
-- Collected pipeline (demo-catalog U1, meta-explainer
+- Collected pipeline (onboarding scenario, platform-explainer
   SAM §): holder photographs the label → SAM 3.1 segments
   the sticker region → vision/OCR reads model + serial +
   MAC → Rosetta resolves the exact hardware profile
@@ -81,8 +81,8 @@ twin; the new hardware is touched at step 5, read at step 6.
   never leaves the device unmasked. If the segmenter
   only runs in-cloud, the photo with the password goes
   nowhere — low-risk fallbacks (homework §11): tape over
-  the password before the photo (what the private network
-  does), or on-device crop to identifiers-only first.
+  the password before the photo, or on-device crop to
+  identifiers-only first.
 - SAM segments; it does not read text (homework §11):
   reading is the vision model's job. Don't promise OCR
   from the segmenter.
@@ -93,7 +93,7 @@ twin; the new hardware is touched at step 5, read at step 6.
 - Pending: unexecuted on CHR (no sticker). Status stays
   PENDING SAM spike; the drill bound via license identity
   instead. Install-sheet + device-binding halves are
-  journaled-by-hand (demo-catalog U1).
+  journaled-by-hand.
 
 ### 2. Unbox-baseline render (plan → bench script)
 
@@ -113,24 +113,25 @@ twin; the new hardware is touched at step 5, read at step 6.
   (executed identity+note subset on top, prescribed
   remainder commented with OWNER-FILL + placeholder-only
   secrets; test.sh enforces both).
-- Observed subset (twin2 drill): identity+note staged as
+- Observed subset (the twin drill): identity+note staged as
   ONE `/system/script` (`unbox-baseline`, `;`-separated,
   quote-free args → `*1`), run positionally, read back
   exact. The twin executed the MECHANISM; accounts,
   access, time, DNS, device-mode are prescribed, not run.
-- Inferred: the site's main router is hand-built, not
-  rendered (feedback §3) — the render covers the fleet
-  shape, and the exception is named, not silently absorbed.
+- Inferred: where the main router is hand-built rather
+  than rendered (feedback §3), the exception is named,
+  not silently absorbed — the render covers the fleet
+  shape.
 
-### 3. Configure-from-plan twin-first (S1 discipline)
+### 3. Configure-from-plan twin-first (twin-first discipline)
 
-- Collected (demo-catalog S1): from the workspace plan,
+- Collected: from the workspace plan,
   configure management access, agent accounts, the note
   convention, and services — TEST on a twin first, then
   apply with approval, then check the real service (a
   phone signs in and lands on the right VLAN, not "the
   config applied").
-- Observed mechanics (twin2 drill + change-apply): build
+- Observed mechanics (the twin drill + change-apply): build
   the EXACT script body, WIP flag set first, stage, run
   positionally (`numbers=` is rejected on run/), read
   back against intent, remove script + artifacts, clear
@@ -138,38 +139,38 @@ twin; the new hardware is touched at step 5, read at step 6.
   cleanup.
 - Twin choice (twin-ops): EXACT firmware + packages of
   the target; verify package + disk before trusting.
-  Twin results state CHR limits every time (K23): no
+  Twin results state CHR limits every time: no
   radios, x86-only packages, no routerboard menus.
 - Inferred stop rule: a render the twin rejects (bad
   parameter, missing package) never reaches the bench —
   fix the PLAN, re-render, re-proof. The bench is not a
   debugger.
 - Pending: multi-device render (VLAN + RADIUS + AP as
-  RADIUS client per S1) needs staged endpoints; the
+  RADIUS client) needs staged endpoints; the
   drill proved single-box mechanics only.
 
 ### 4. Bench apply + install sheet (hands on site)
 
-- Collected routes (demo-catalog S1): several
-  provisioning routes exist — netinstall (as in the
-  private workspace), a reset script, or step-by-step
-  changes. Feedback §3 order: reset or netinstall on
+- Collected routes: several
+  provisioning routes exist — netinstall, a reset script,
+  or step-by-step changes. Feedback §3 order: reset or
+  netinstall on
   the BENCH, install sheet for the person on site, then
   first pull. Lockout on the bench is expected and
   cheap (feedback §3 table) — that is WHY the bench
   exists.
-- Observed route (twin2 drill): staged-script apply
+- Observed route (the twin drill): staged-script apply
   (steps above). Netinstall/reset paths prescribed, not
-  exercised here — #12 netinstall-flash owns the
+  exercised here — netinstall-flash owns the
   netinstall-package flow when it lands.
 - Install sheet (collected, feedback §4): IKEA-style —
   what goes where, what comes out, how to tell it
-  worked. U2 (DESIGN): after install, the holder
+  worked. (DESIGN): after install, the holder
   photographs the wiring and the agent checks it against
   the sheet ("ether2 vs ether1") — no credentials in
   frame, a natural vision job.
-- Approval shape at unbox (collected, feedback §3 +
-  K13): "reset this device and install the render" is
+- Approval shape at unbox (collected, feedback §3):
+  "reset this device and install the render" is
   NORMAL at unbox and alarming in look-after — separate
   entry skills, separate policy classes. Stage/upload
   asks the human (harness ask-class); destructive bench
@@ -179,7 +180,7 @@ twin; the new hardware is touched at step 5, read at step 6.
 
 ### 5. First pull + boundary (unbox-import)
 
-- Observed (twin2 drill): fresh device, `pull.ts` →
+- Observed (the twin drill): fresh device, `pull.ts` →
   status ok, 5 files, CHR identity note; `checker.ts`
   → ok true, 2739 bytes, 0 problems; drill markers
   present in export.rsc (3 hits). Trust-on-first-pull
@@ -192,16 +193,16 @@ twin; the new hardware is touched at step 5, read at step 6.
   check note, explain offline, execute with approval,
   read back, pull, diff, record.
 - Existing networks DON'T unbox (collected, feedback
-  §3): the import path (#2 import-existing-network) is
+  §3): the import path (import-existing-network) is
   a first pull plus questions to the owner — NO
   reinstall. Many owners only ever do look-after; make
   the import path explicit and never reinstall a box
   just to adopt it.
-- Teardown observed (twin2 drill): script removed,
+- Teardown observed (the twin drill): script removed,
   identity + note restored to pre-state (CHR / empty),
-  45 file names identical to pre-state, twin2 stopped,
-  lab as found. UM specimen untouched (no
-  /user-manager, /disk, /file writes all drill).
+  45 file names identical to pre-state, the twin stopped,
+  bench as found. Other packages untouched (no
+  /user-manager, /disk, /file writes during the drill).
 - Inferred: a first pull that fails (serial won't bind,
   checker problems) keeps the box OUTSIDE the managed
   set — no intent is written for an unproven box.
@@ -214,15 +215,15 @@ Load when: unboxing hardware; adding a device to inventory;
 reprovisioning from scratch; rendering a baseline; asking
 where provisioning ends and managing begins; any "new box,
 where do we start?" question. Do NOT load for existing
-networks — that is #2 import-existing-network.
+networks — that is import-existing-network.
 
 ### Prereqs
 
 - Device named (`<site>-<location>-<role>`) or N=1 single
-  file; plan/TOML intent for the device (K10 zero ceremony:
+  file; plan/TOML intent for the device (zero ceremony:
   one router.toml + one observations/ folder suffices).
 - A twin at the target firmware for step 3
-  (`quickchr list`; twin1/twin2 never deleted).
+  (`quickchr list`; the long-lived twins are never deleted).
 - Bench access for step 5 when hardware is real
   (netinstall server or console); camera for steps 1–2
   with EXIF/GPS handling decided up front.
@@ -259,7 +260,7 @@ networks — that is #2 import-existing-network.
 - Bench result: applied render + install sheet for site hands.
 - First pull: capture dir + checker verdict + boundary
   commit ("first pull"); armed serial continuity.
-- Import-path decision for existing boxes: #2, no reinstall.
+- Import-path decision for existing boxes: import-existing-network, no reinstall.
 
 ### Verification
 
@@ -269,7 +270,7 @@ networks — that is #2 import-existing-network.
   enforces this on the example, the agent enforces it on
   the real render.
 - Twin read-back matches intent exactly before ANY bench
-  apply; twin proof states CHR limits (K23).
+  apply; twin proof states CHR limits.
 - Checker ok:true, 0 problems, on the first pull; drill
   markers (or real render lines) present in export.rsc.
 - Post-drill twin pristine (scripts {}, identity/note
@@ -292,7 +293,7 @@ networks — that is #2 import-existing-network.
 
 ### Limits
 
-- Photo onboarding (U1/SAM) is PENDING: collected
+- Photo onboarding is PENDING: collected
   procedure, journaled-by-hand halves, no executed run.
   Never claim a masking guarantee you didn't execute.
 - Full baseline beyond identity+note is prescribed, not
@@ -302,4 +303,4 @@ networks — that is #2 import-existing-network.
   hardware or explicit owner-accepted risk.
 - This skill provisions; it never manages. After the
   boundary commit, look-after skills own the box — and
-  "reset and reinstall" becomes alarming again (K18).
+  "reset and reinstall" becomes alarming again.
