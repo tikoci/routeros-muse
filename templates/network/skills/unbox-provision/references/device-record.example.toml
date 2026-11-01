@@ -1,7 +1,7 @@
 # Device record — example shape (copy per device, fill from the sticker + first pull)
 # The device ID names the JOB; the label is what is on the UNIT;
-# the serial binds hardware to device at unbox (K9). N=1: one file
-# like this is the whole inventory (K10 zero ceremony).
+# the serial binds hardware to device at unbox. N=1: one file
+# like this is the whole inventory (zero ceremony).
 device = "site-cabinet-uplink"        # <site>-<location>-<role>
 label_model = "OWNER-FILL"            # sticker: model (e.g. L009UiGS)
 label_serial = "OWNER-FILL"           # sticker: serial (hardware) or system-id:<id> (CHR)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check-png.py — stdlib-only PNG assertions: exact dimensions + non-blank.
 
-Vendored copy of the map-reports (#16) pattern: parses IHDR, requires 8-bit
+Vendored copy of the map-reports pattern: parses IHDR, requires 8-bit
 RGB/RGBA non-interlaced, un-filters IDAT scanlines (all five PNG filter
 types) and counts unique pixels with an early exit once the threshold is
 comfortably exceeded.

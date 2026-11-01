@@ -53,7 +53,7 @@ additionally needs a cited `references/twin-run.md`. See
 - `explain-validate-run/` — command grounding loop: rosetta docs,
   offline explain, live device validation, twin proof, two-endpoint
   read-back agreement.
-- `pre-publish-scrub/` — pre-public sweep: runtime state, D1 tiers,
+- `pre-publish-scrub/` — pre-public sweep: runtime state, privacy tiers,
   zero-findings gate, clean-home staging, pair review.
 - `capture-drift-hygiene/` — intent vs observation: pull-first,
   checker verdicts, three freshness clocks, drift list discipline.
@@ -68,7 +68,7 @@ additionally needs a cited `references/twin-run.md`. See
   by removal.
 - `mailbox-envelope-exchange/` — async jobs without a live path:
   signed/encrypted envelopes, manifest-last, one writer per folder,
-  carrier per habitat, poll pickup.
+  carrier per environment, poll pickup.
 - `deployment-readback-verification/` — deploy proof: separate
   deploy log, reload per target, served-artifact hash read-back,
   never trust the return.
@@ -105,5 +105,4 @@ additionally needs a cited `references/twin-run.md`. See
 - `workflow/` — lifecycle: buying, setup, configuring,
   troubleshooting, reports + the thin GitHub adapter.
 
-Status: drafts under review with template v1. Internal tracker
-pointers inside are pending staging scrub before any public step.
+Status: drafts under review with template v1.

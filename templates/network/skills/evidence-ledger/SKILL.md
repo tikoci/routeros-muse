@@ -160,7 +160,7 @@ capability-probe pattern.)
   committed.
 - Coord posts are shared across sessions and environments: verdicts and
   pointers only, no secrets, no pasted captures.
-- Promoted skills cite ledger entries by path; the staging scrub
+- Promoted skills cite ledger entries by path; the pre-publish scrub
   decides what survives publication — internal pointers are
   expected pre-scrub, not a violation.
 
@@ -218,4 +218,4 @@ capability-probe pattern.)
   that a second party confirmed it. Adversarial review before apply
   (adversarial-review) is the separate control for high-stakes claims.
 - This skill standardizes the practice; it does not enforce it.
-  Enforcement is review + the staging scrub + the re-run test.
+  Enforcement is review + the pre-publish scrub + the re-run test.

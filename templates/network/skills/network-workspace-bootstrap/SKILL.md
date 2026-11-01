@@ -112,7 +112,7 @@ Cross-session talk (build scaffolding — retires, never owner flow):
   Never edit another session's draft — post a follow-up.
 - Decided: the coord room is BUILD
   scaffolding only. Owner continuity is the repo itself. The coord
-  half of this section is for builder sessions, pending the staging scrub.
+  half of this section is for builder sessions, pending the pre-publish scrub.
 - Pending is first-class: every handoff ends with unrun halves
   named with owners (evidence-ledger §4).
 
@@ -260,5 +260,5 @@ and lives in the deployment's own store, never in the repo.
   scrub grep) are unrun: takeover steps 4–5 are prescribed, not
   yet executed — the first runner grounds them.
 - Coord content here is build scaffolding: owner-facing
-  copies of this skill drop §2's coord half at the staging scrub and
+  copies of this skill drop §2's coord half at the pre-publish scrub and
   keep the tree.

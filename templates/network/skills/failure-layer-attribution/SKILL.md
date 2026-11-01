@@ -184,7 +184,7 @@ capability-probe pattern.)
 - Confirmation probes that WRITE (reproducing a denial) go to a
   twin, or ride an approved change — never probe-write production
   to satisfy curiosity.
-- Quoted shapes in notes/coord carry no credentials by
+- Quoted shapes in notes/shared drafts carry no credentials by
   construction; keep it that way (strip `Authorization` headers
   before pasting, always).
 

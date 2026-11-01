@@ -217,7 +217,7 @@ two agents talk without a connection" questions. (Entry-skill
   with what, envelopes are format-complete but unactionable —
   this skill's procedures assume the decision exists.
 - Partially verified: manifest-last + one-writer mechanics are
-  lived (pull.ts, coord 19/19); the ENVELOPE round-trip
+  lived (pull.ts, 19/19 re-runs); the ENVELOPE round-trip
   (wrap → carrier → verify → act → receipt) has NOT executed
   end-to-end anywhere. First round-trip grounds it.
 - Cloudflare-carrier verification #1 open (design-time); BTH
