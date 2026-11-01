@@ -1,21 +1,23 @@
-// Mode A launch: `muse` in the workspace directory. --yolo
-// forwards to this launch only (the agent's approval mode), never
-// to installs or sudo.
+// Code launch: `muse` in the workspace directory, with the code
+// passthrough appended verbatim (--yolo included: it is muse's own
+// approval flag here, never ours).
 
-export function launchArgs(yolo: boolean): string[] {
-	return yolo ? ["muse", "--yolo"] : ["muse"];
+export function launchArgs(extra: string[] = []): string[] {
+	return ["muse", ...extra];
 }
 
-export function launchLine(yolo: boolean): string {
-	return launchArgs(yolo).join(" ");
+export function launchLine(extra: string[] = []): string {
+	return launchArgs(extra)
+		.map((a) => (a.includes(" ") ? JSON.stringify(a) : a))
+		.join(" ");
 }
 
 export async function launchAgent(
 	wsDir: string,
-	yolo: boolean,
+	extra: string[] = [],
 	env?: Record<string, string>,
 ): Promise<never> {
-	const proc = Bun.spawn(launchArgs(yolo), {
+	const proc = Bun.spawn(launchArgs(extra), {
 		cwd: wsDir,
 		stdin: "inherit",
 		stdout: "inherit",

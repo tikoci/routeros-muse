@@ -6,7 +6,6 @@ import { Stop } from "./lib/stop";
 export type Args = {
 	workspace?: string;
 	yes: boolean;
-	yolo: boolean;
 	printOnly: boolean;
 	router?: string;
 };
@@ -27,9 +26,8 @@ export function createCtx(args: Args): Ctx {
 	};
 }
 
-export function resumeLine(ctx: Ctx): string {
-	const parts = ["bunx", "routeros-muse", ctx.workspaceLabel];
-	if (ctx.args.yolo) parts.push("--yolo");
+export function resumeLine(ctx: Ctx, cmd = "code"): string {
+	const parts = ["bunx", "@tikoci/routeros-muse", cmd, ctx.workspaceLabel];
 	if (ctx.args.router) parts.push("--router", ctx.args.router);
 	return parts.join(" ");
 }

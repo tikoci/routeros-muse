@@ -2,7 +2,8 @@
 // official user-level install (echoed, under the one-yes), else
 // print-and-stop with a resume command. If present but
 // unauthenticated, walk the owner through `muse`'s own auth flow;
-// auth lives in muse's store, never here.
+// auth lives in muse's store, never here. reportAgent is the
+// print-only twin for doctor: same facts, never installs.
 
 import * as os from "node:os";
 import * as path from "node:path";
@@ -13,6 +14,11 @@ import { Stop } from "../lib/stop";
 export const MUSE_INSTALL_SH =
 	"curl -fsSL https://dev.meta.ai/install.sh | bash";
 export const MUSE_INSTALL_PS1 = "irm https://dev.meta.ai/install.ps1 | iex";
+
+/** The official user-level installer for this OS. */
+export function museInstallLine(): string {
+	return process.platform === "win32" ? MUSE_INSTALL_PS1 : MUSE_INSTALL_SH;
+}
 
 export function museAuthFile(): string {
 	if (process.platform === "win32") {
@@ -39,15 +45,20 @@ export async function museAuthSource(): Promise<"env" | "file" | null> {
 	return null;
 }
 
-export function authWalkthrough(ctx: Ctx): string[] {
+export function authWalkthrough(label: string, cmd = "code"): string[] {
+	const resume = ["bunx", "@tikoci/routeros-muse", cmd, label].join(" ");
 	return [
 		"muse is installed but shows no login (no META_API_KEY, no auth in muse's store).",
 		"Sign in with muse's own flow (nothing is collected or stored here):",
 		"  1. Run: muse login",
 		"  2. Approve the code in your browser.",
 		"Then resume with:",
-		`  ${resumeLine(ctx)}`,
+		`  ${resume}`,
 	];
+}
+
+export function authSummary(auth: "env" | "file"): string {
+	return `muse auth: assumed signed in (via ${auth === "env" ? "META_API_KEY" : "muse's own store"}; the launch is the final word)`;
 }
 
 export async function checkAgent(ctx: Ctx): Promise<void> {
@@ -56,25 +67,25 @@ export async function checkAgent(ctx: Ctx): Promise<void> {
 		if (process.platform === "win32") {
 			throw new Stop([
 				"muse is not installed. Install it in PowerShell, then resume:",
-				`  ${MUSE_INSTALL_PS1}`,
+				`  ${museInstallLine()}`,
 				`  ${resumeLine(ctx)}`,
 			]);
 		}
-		console.log(`  official user-level installer: ${MUSE_INSTALL_SH}`);
+		console.log(`  official user-level installer: ${museInstallLine()}`);
 		if (!(await ensureConsent(ctx, "muse install"))) {
 			throw new Stop([
 				"Declined. Install muse by hand, then resume:",
-				`  ${MUSE_INSTALL_SH}`,
+				`  ${museInstallLine()}`,
 				`  ${resumeLine(ctx)}`,
 			]);
 		}
-		console.log(`  $ ${MUSE_INSTALL_SH}`);
-		const r = await runShell(MUSE_INSTALL_SH, { timeoutMs: 300_000 });
+		console.log(`  $ ${museInstallLine()}`);
+		const r = await runShell(museInstallLine(), { timeoutMs: 300_000 });
 		if (!have("muse")) {
 			throw new Stop([
 				`muse installer ran (exit ${r.exit}) but muse is still not on PATH.`,
 				"Install it by hand, make sure it is on PATH, then resume:",
-				`  ${MUSE_INSTALL_SH}`,
+				`  ${museInstallLine()}`,
 				`  ${resumeLine(ctx)}`,
 			]);
 		}
@@ -85,9 +96,34 @@ export async function checkAgent(ctx: Ctx): Promise<void> {
 
 	const auth = await museAuthSource();
 	if (auth === null) {
-		throw new Stop(authWalkthrough(ctx));
+		throw new Stop(authWalkthrough(ctx.workspaceLabel));
 	}
-	console.log(
-		`  muse auth: assumed signed in (via ${auth === "env" ? "META_API_KEY" : "muse's own store"}; the launch is the final word)`,
-	);
+	console.log(`  ${authSummary(auth)}`);
+}
+
+/**
+ * Print-only agent facts for doctor. Never installs, never throws:
+ * missing items come back in the report and fail the run at the end.
+ */
+export async function reportAgent(label: string): Promise<{
+	missing: string[];
+}> {
+	const missing: string[] = [];
+	if (!have("muse")) {
+		console.log("  muse: MISSING");
+		console.log(`  install: ${museInstallLine()}`);
+		missing.push("muse (not installed)");
+	} else {
+		console.log("  muse: present");
+	}
+	const auth = await museAuthSource();
+	if (auth === null) {
+		for (const line of authWalkthrough(label, "doctor")) {
+			console.log(`  ${line}`);
+		}
+		missing.push("muse auth (not signed in)");
+	} else {
+		console.log(`  ${authSummary(auth)}`);
+	}
+	return { missing };
 }
