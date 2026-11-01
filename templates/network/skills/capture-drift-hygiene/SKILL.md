@@ -7,11 +7,11 @@ tested: none
 
 # `capture-drift-hygiene` skill (pull → verify → compare → list) [template v1 draft]
 
-Promoted from K3/K6/K8 (record contracts, partial vocabulary, drift
-as a list), the pull + checker implementation (pull.ts, checker.ts,
-sanitize.ts), the template conventions (conventions.md,
+Promoted from the record contracts, partial vocabulary, and
+drift-as-a-list rules, the pull + checker implementation (pull.ts,
+checker.ts, sanitize.ts), the template conventions (conventions.md,
 observations/README.md, operations/drift.md), and a live checker
-run over both capture devices. Backlog #32. No secrets below; device
+run over two capture devices. No secrets below; device
 names + byte counts only.
 
 ## Part 1 — The checklist (intent here, observation there)
@@ -32,20 +32,20 @@ the pull, and disagreement goes on the drift list.
 
 ### 0. Pull (the only writer)
 
-- One writer per record class (K3): captures are pull-written,
+- One writer per record class: captures are pull-written,
   plans are human/agent-written. An agent that hand-edits a pull
   (or writes "observed" state from memory) has corrupted the
   evidence layer — re-pull instead. Template rule: router-owned
   pulls under `observations/` are read-only evidence (conventions.md).
-- Observations carry device/source/time/completeness (K3): every
+- Observations carry device/source/time/completeness: every
   pull lands as `observations/<device>/pull-<timestamp>/` with
   `manifest.json` (target, serial, time, tool versions, sha256
   per file) and `latest` repointed at it. The manifest IS the
   completeness statement — file list + sizes + statuses.
-- Stable IDs survive address changes (K3): devices are bound by
+- Stable IDs survive address changes: devices are bound by
   serial, not address. The serial gate refuses a pull from the
   wrong box (exit 2 + `attempt.json`, `latest` untouched —
-  proven in the pull-slice session, orca-setup). An address book
+  proven in an early pull session). An address book
   pointing at the wrong box is a refused pull, not a merged lie.
 - Raw pull dirs are LOCAL-ONLY (git-ignored); what commits is the
   redacted sibling `summary.md` (device, three clocks, file list,
@@ -55,11 +55,11 @@ the pull, and disagreement goes on the drift list.
 
 ### 1. Verify (checker-clean or it isn't evidence)
 
-Live run 2026-10-29, orca, `bun checker.ts --all` over `pull/out/`:
+Live run 2026-10-29 on a Linux host, `bun checker.ts --all` over `pull/out/`:
 
 ```
-{"device":"bigdude","ok":true,"dir":"out/bigdude/latest","totalBytes":49294,"files":5,"problems":[]}
-{"device":"twin1","ok":true,"dir":"out/twin1/latest","totalBytes":1772,"files":5,"problems":[]}
+{"device":"prod-1","ok":true,"dir":"out/prod-1/latest","totalBytes":49294,"files":5,"problems":[]}
+{"device":"twin","ok":true,"dir":"out/twin/latest","totalBytes":1772,"files":5,"problems":[]}
 ```
 
 - Exit 0 clean / 1 problems; one JSON line per device. Checks:
@@ -67,7 +67,7 @@ Live run 2026-10-29, orca, `bun checker.ts --all` over `pull/out/`:
   per-file sha256 + bytes, status in ok/partial/refused),
   per-file existence + byte size + sha256, `latest` symlink,
   total bytes (checker.ts, read this session).
-- Status vocabulary (K6, enforced by pull.ts exit codes): `ok`
+- Status vocabulary (enforced by pull.ts exit codes): `ok`
   (exit 0), `partial` (some reads failed — exit 0, notes name
   them), `refused` (serial mismatch — exit 2, nothing
   published), `running` (in flight). Partial keeps last-good
@@ -94,8 +94,8 @@ From observations/README.md (template, read this session):
 
 A quiet box with fresh pulls is healthy, not stale: unchanged
 content + recent observed = calm. A failed pull moves only
-`last_attempted_at` — healthy data never looks unobserved (K6).
-Views cite data plus time (K3) and never outrun their freshest
+`last_attempted_at` — healthy data never looks unobserved.
+Views cite data plus time and never outrun their freshest
 cited observation (workflow Reports rule).
 
 Triage shapes:
@@ -111,11 +111,11 @@ Triage shapes:
 ### 3. Reconcile (drift list or fix the router)
 
 - Disagreement between plan (`router.toml` + inventory) and
-  capture goes on `operations/drift.md` OR the router gets fixed
-  (K8). Live entries only; resolved entries move to the
+  capture goes on `operations/drift.md` OR the router gets fixed.
+  Live entries only; resolved entries move to the
   proposal/incident that closed them, citing the clearing pull.
 - The plan is NEVER rewritten to match the capture unless that
-  is the recorded decision, with an owner (K8). The one allowed
+  is the recorded decision, with an owner. The one allowed
   plan-from-capture direction: a decided import step when
   adopting an existing network (pull first, adopt captures,
   write plan from observed — workflow Setup rule).
@@ -135,20 +135,20 @@ Triage shapes:
 Load when: reading router state into records; plan and capture
 disagree; a pull is stale, partial, or refused; "what changed?"
 or "is this data fresh?" questions; designing a capture pipeline.
-(Entry-skill + capability-probe pattern: K22.)
+(Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
 - Devices bound by serial (identity before evidence — first pull
   establishes the binding, later pulls enforce it).
-- pull + checker runnable (`pull/Makefile` targets; anchor tests
+- pull + checker runnable (anchor tests
   green proves the tooling before the data).
 - The plan readable (`router.toml` + inventory): drift needs both
   sides, capture alone is just a pile of files.
 
 ### Access
 
-- Pulls are reads: safe on any box, bigdude included, any time.
+- Pulls are reads: safe on any box, production included, any time.
 - Raw pulls local-only always; summaries commit. The override
   (redacted raw into git for multi-agent sharing) is documented,
   on-request-only, stated with its caveat, never volunteered.
@@ -204,8 +204,8 @@ or "is this data fresh?" questions; designing a capture pipeline.
   misconfigured box is faithfully wrong. Truth comes from
   reconcile (§3), not verify (§1).
 - Freshness clocks need a running loop: one-shot pulls give
-  one timestamp, not three clocks. The loop (look-after-ops,
-  backlog #3) is what makes clocks meaningful.
+  one timestamp, not three clocks. The look-after loop
+  is what makes clocks meaningful.
 - Export isn't backup: `/export` omits menus on some versions
   (UM + smb missing on 7.26beta3, journaled) — the pull's file
   list is the completeness statement, and gaps in it are
