@@ -1,16 +1,16 @@
 ---
 name: pre-publish-scrub
-description: "Pre-public sweep before anything leaves the lab: runtime state, identifiers by D1 tier, photo EXIF, synthetic fixtures, zero-findings gate. Use when: publishing a repo, sharing captures or notes, promoting Work material to template, or asking 'is this safe to show?'."
+description: "Pre-public sweep before anything leaves the workspace: runtime state, identifiers by sensitivity tier, photo EXIF, synthetic fixtures, zero-findings gate. Use when: publishing a repo, sharing captures or notes, promoting private material to template, or asking 'is this safe to show?'."
 topics: [privacy, secrets, hygiene, exif]
 tested: none
 ---
 
 # `pre-publish-scrub` skill (sweep → tier → gate → review) [template v1 draft]
 
-Promoted from the real tunnel-token leak + redactor fix
-(orca-setup.md D4), the pull sanitizer + anchor tests
-(sanitize.ts, pull.test.ts), the D1 privacy tiers (decisions.toml),
-and the staging rule (T14). Backlog #31. This skill names leak
+Promoted from a real tunnel-token leak + redactor fix
+(the setup guide's redaction section), the pull sanitizer + anchor tests
+(sanitize.ts, pull.test.ts), the privacy tiers (decisions log),
+and the staging rule. This skill names leak
 vectors; it contains no leaked values.
 
 ## Part 1 — The checklist (nothing leaves without the gate)
@@ -20,7 +20,7 @@ no publish, no exceptions, no "just this once".
 
 1. Sweep runtime state (§0): captures, logs, caches, shell
    history, and everything git-ignored that proves it was secret.
-2. Tier every identifier (§1): D1 low may travel, D1 high never —
+2. Tier every identifier (§1): low-sensitivity may travel, high-sensitivity never —
    sort each value you find, don't just grep-and-hope.
 3. Run the zero-findings gate (§2): pattern sweep + redactor test
    + fixture rule, all green or no publish.
@@ -29,8 +29,8 @@ no publish, no exceptions, no "just this once".
 
 ### 0. Sweep (runtime state first)
 
-The leak that motivates this skill (orca-setup.md, D1–D4
-execution): the first full bigdude export contained a live
+The leak that motivates this skill (privacy-tier
+execution): the first full production export contained a live
 Cloudflare tunnel token in a `/container/add env="..."` line — the
 redactor only covered `/container/envs` lines. Caught by
 spot-check, fixed the same session (inline env= K/V redaction +
@@ -48,17 +48,17 @@ grep confirmed no token remained. Lessons encoded here:
   there's nothing to sweep), coord-local drafts, /tmp flowsheets.
 - Router-side residue counts too: test users/groups/scripts left
   on a box travel with its next export. Every proof run ends
-  pristine-verified (t28-acl-proof.md teardown shape) — the scrub
+  pristine-verified (the proof teardown shape) — the scrub
   re-verifies, it doesn't assume.
-- Photos are runtime state: label photos (#12 netinstall-package:
+- Photos are runtime state: label photos (netinstall-flash:
   "MAC comes from the label photo"), install photos, screenshots
   of WebFig/WinBox. No images exist in this tree today (find for
   png/jpg/heic returns nothing) — the photo half of this skill is
   prescribed-but-pending until the first photo lands.
 
-### 1. Tier (D1 decides, not vibes)
+### 1. Tier (the privacy tiers decide, not vibes)
 
-D1 (decided 2026-10-28, decisions.toml + notes/d1-d2-decision.md):
+The privacy tiers (decided 2026-10-28):
 
 - LOW-sensitivity — may travel: device models, MACs, private IPs,
   software keys. (Still minimized: travel only what the reader
@@ -71,10 +71,10 @@ D1 (decided 2026-10-28, decisions.toml + notes/d1-d2-decision.md):
   pasted public IP is dirty. Sort each identifier you find into a
   tier; anything un-tierable is HIGH until proven otherwise.
 - Two field rules that override flags: `/export` prints container
-  env values in CLEAR even without show-sensitive (Codex §12 —
-  the pull redacts them anyway), and the router log repeats env
+  env values in CLEAR even without show-sensitive
+  (the pull redacts them anyway), and the router log repeats env
   values on every `/app` change. "Safe to share" is a TESTED
-  TRANSFORMATION, never a flag (feedback.md §6).
+  TRANSFORMATION, never a flag.
 
 ### 2. Gate (zero findings or no publish)
 
@@ -86,7 +86,7 @@ Three checks, all green, quoted in the publish record:
    env names, `BEGIN .* PRIVATE KEY`, 44-char base64 key shapes,
    public-IP shapes outside documented examples. Zero findings
    or no publish. (The sanitizer's SECRET_KEY/ENV_SECRET_NAME in
-   sanitize.ts:14-17 is the starting pattern list — the gate and
+   sanitize.ts is the starting pattern list — the gate and
    the redactor share it so they can't drift apart.)
 2. **Redactor test.** `pull` anchor tests green (redact, header-
    stable, volatile-strip, sha256, serial gate) — the redactor is
@@ -94,10 +94,10 @@ Three checks, all green, quoted in the publish record:
    without its anchor test fails the gate by construction.
 3. **Fixture rule.** Publishable examples use SYNTHETIC fixtures,
    never scrubbed captures: checker tests build "pure tmp-dir
-   fixtures, no router" (checker.test.ts:1) — that line is the
+   fixtures, no router" (checker.test.ts) — that line is the
    pattern. Scrubbed-real is for internal records; published
-   examples are born synthetic. TEST-NET addresses (203.0.113.9
-   in t28-acl-proof.md) for anything address-shaped.
+   examples are born synthetic. TEST-NET addresses (203.0.113.x)
+   for anything address-shaped.
 
 The incident precedent for "gate passed": "repo-wide grep
 confirms no token remains on disk" — quoted in the session note,
@@ -106,13 +106,13 @@ not assumed from the fix.
 ### 3. Stage + review (clean home, second pair of eyes)
 
 - Stage-as-if-soon in a clean home: the promotable subset
-  (templates/network/ + tools/ + docs) copied minus /Work cruft, scrub
-  pass AT staging (D1 outcome). The staging copy is what the gate
+  (templates/network/ + tools/ + docs) copied minus build-notes cruft, scrub
+  pass AT staging. The staging copy is what the gate
   runs over — never gate the live tree and publish a copy.
-- No legacy/undone-concept garbage travels (D1): dead drafts,
+- No legacy/undone-concept garbage travels: dead drafts,
   superseded notes, and "maybe later" files stay behind. Cruft is
   where stale secrets hide.
-- Pair review before GitHub (D1): a second agent (or the
+- Pair review before GitHub: a second agent (or the
   developer) re-runs the gate and spot-checks the tiering.
   Review stays async — post the staging for review, don't wait
   on it, and never publish while review is pending.
@@ -125,16 +125,16 @@ not assumed from the fix.
 ### Trigger
 
 Load when: publishing anything (repo, gist, doc, screenshot);
-sharing captures, notes, or ledger entries outside the lab;
-promoting Work material toward templates/network/; "is this safe to show?"
+sharing captures, notes, or ledger entries outside the workspace;
+promoting private material toward templates/network/; "is this safe to show?"
 questions; after ANY suspected leak (this skill + incident-
-response together). (Entry-skill + capability-probe pattern: K22.)
+response together). (Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
 - The publish SET defined: exact paths, exact destination. "The
   repo" is not a set — name the tree.
-- D1 tiers internalized (low travels, high never, clues are
+- Sensitivity tiers internalized (low travels, high never, clues are
   high). When in doubt, HIGH.
 - Write access to a staging area outside the live tree.
 
@@ -203,9 +203,9 @@ response together). (Entry-skill + capability-probe pattern: K22.)
   backstop, not the patterns.
 - EXIF/photo half is prescribed-but-pending: no images in tree,
   no executed strip-and-verify. First photo grounds it.
-- D1 tiers are a decision, not physics: "models may travel" can
+- The tiers are a decision, not physics: "models may travel" can
   still identify a network in combination — minimize even LOW.
 - This skill gates publication; internal handling (captures
   local-only, creds never in notes) is the standing rule that
-  makes the gate passable. A lab that leaks internally can't
+  makes the gate passable. A workspace that leaks internally can't
   scrub at the boundary.
