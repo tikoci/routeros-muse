@@ -8,10 +8,9 @@ tested: none
 
 # `home-router-disk-sync` skill (disk, no container) [template v1 draft]
 
-Vendored from the build notes for review with template v1. Build-tracker
-references (T/K IDs, notes paths) are pointers pending staging scrub.
+Vendored from the build notes for review with template v1.
 Branching, capture boundary, and session commit rules live in
-`home-private-git.md` and are not repeated. No secrets below.
+`home-private-git` and are not repeated. No secrets below.
 
 ## Part 1 — The checklist (map → pull-first loop)
 
@@ -30,7 +29,7 @@ compute here. No disk at all → `home-single-copy`.
    data, served-static if any) with sizes.
 2. Record the map in the device's inventory entry: router path → local
    landing path under `observations/<device>/raw/`.
-3. Consult the per-version export-omission list (T7) BEFORE first
+3. Consult the per-version export-omission list BEFORE first
    pull: known-missing sections (UM, smb, per-version gaps) read as
    known gaps afterward, never as drift.
 
@@ -39,11 +38,10 @@ compute here. No disk at all → `home-single-copy`.
 1. `git pull` the canonical source home (or confirm single-copy canonical).
 2. Pull EVERY router-owned dir via centrs retrieve/transfer down to
    `observations/<device>/raw/` (ignored). Export-over-native-API is
-   the proven read; pin `--via` explicitly (C7/C10 — auto-select does
+   the proven read; pin `--via` explicitly (auto-select does
    not fail over, transfer ignores record `via=ssh`).
-3. Manifest check: age, sha256 + byte size per file (checker over
-   captures, K5; prototype `bun checker.ts --all`).
-4. Read ages with the freshness split (K6): content-changed vs
+3. Verify manifest schema, age, sha256 and byte size using state-pull §2.
+4. Read ages with the freshness split: content-changed vs
    last-observed vs last-attempted — a quiet router with fresh pulls
    is healthy, not stale.
 
@@ -52,12 +50,12 @@ compute here. No disk at all → `home-single-copy`.
 | Directory class | Direction | Conflict rule |
 |---|---|---|
 | Router-owned (logs, collected data) | pull only | re-pull wins; agent edits here are forbidden |
-| Agent-owned (plan, skills, schemes, docs) | sync from canonical home | canonical home wins (K12); second copies carry age manifests |
+| Agent-owned (plan, skills, schemes, docs) | sync from canonical home | canonical home wins; second copies carry age manifests |
 
 Conflicts resolve by re-pull, never by pushing agent edits into
 router-owned paths. There is no merge step in this skill.
 
-### 4. Drift handling (K8)
+### 4. Drift handling
 
 Plan-vs-capture disagreement goes on the drift list or the router
 gets fixed. Never rewrite the plan to match unless that is the
@@ -84,22 +82,22 @@ without containers; mapping router disk dirs; any sync conflict or
 ### Prereqs
 
 - Usable router disk with scheme locations reachable; SSH or
-  native-API read path verified (t8-recipe negotiation on first contact).
-- Dir map recorded (§1); T7 omission list consulted for the box's version.
+  native-API read path verified (transport negotiation on first contact).
+- Dir map recorded (§1); the export-omission list consulted for the box's version.
 - Agent machine: trilogy + pull/checker; canonical source home exists.
 
 ### Access
 
 - Reads-first: pull + checker before any write.
 - Router-owned paths: pull + read only. Any router change goes
-  through the config flow (strawman §2) with owner go-ahead on
+  through the config flow (workflow: Configuring) with owner go-ahead on
   production boxes — never a "sync back".
-- Operator Unknown → ask before any write (K14).
+- Operator Unknown → ask before any write.
 
 ### Envs
 
-None new. Transport auth reuses the t8-recipe envs (`CENTRS_*`,
-CDB-first). Long pulls may need `--timeout 30s` (C11 — the 10s
+None new. Transport auth reuses the first-contact envs (`CENTRS_*`,
+CDB-first). Long pulls may need `--timeout 30s` (the 10s
 default kills long runs silently).
 
 ### Outputs
@@ -119,9 +117,9 @@ default kills long runs silently).
 ### Recovery
 
 - Manifest mismatch / tamper signal: treat as incident input
-  (strawman §2 troubleshooting), not as a cue to hand-edit `raw/`.
-- C8 0-byte transfer: retry `--force`. C6 REST denial: failure, never
-  success, never blind retry. C11 timeout kill: `--timeout 30s`.
+  (workflow: Troubleshooting), not as a cue to hand-edit `raw/`.
+- 0-byte transfer: retry `--force`. REST denial: failure, never
+  success, never blind retry. Timeout kill: `--timeout 30s`.
 - Sync conflict: re-pull (§3 table). There is no second remedy.
 
 ### Limits
@@ -133,11 +131,12 @@ default kills long runs silently).
 - The proven read is export-over-native-API; other paths must prove
   themselves per box before becoming routine.
 
-## Part 3 — Assumptions (T13/D2 ratify; this skill assumes)
+## Part 3 — Assumptions (ratified elsewhere; this skill assumes)
 
-1. Scheme locations for router-owned dirs come from T13; until then
-   the §1 map is per-deployment and recorded, not standard.
-2. T7 omission list is consulted per box version; unlisted gaps are
-   drift until proven otherwise.
+1. Scheme locations for router-owned dirs come from the workspace
+   template; until then the §1 map is per-deployment and recorded,
+   not standard.
+2. The export-omission list is consulted per box version; unlisted gaps
+   are drift until proven otherwise.
 3. Canonical source home (git or single-copy) always exists alongside;
    this skill owns the pull direction only.

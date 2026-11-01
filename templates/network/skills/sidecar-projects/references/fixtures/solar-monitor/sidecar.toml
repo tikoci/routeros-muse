@@ -1,6 +1,5 @@
-# Synthetic fixture shaped like the heltec-victron parable (backlog #57).
-# No real project data: the unpublished victron-heltec tree was excluded
-# from the corpus mirror and is not drawn on here.
+# Synthetic fixture shaped like the parable (a custom ESP32 solar monitor).
+# No real project data: invented values only, not drawn from any real tree.
 name = "solar-monitor"
 problem = "Owner needs panel/battery state; the shelf product is overkill and mismatched."
 rejected_alternative = "Full Victron stack rejected: 5x the cost for telemetry the owner will not read, and its shunt does not fit the existing busbar."

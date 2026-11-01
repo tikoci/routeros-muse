@@ -5,7 +5,7 @@ agent writes a program, a dashboard, a sensor reader, or a one-off
 tool for this network, it goes in `work/<name>/` — not scattered
 across the root, not inside `observations/`, not in chat.
 
-Parable: the heltec-victron solar monitor. The shelf product was
+Parable: a custom ESP32 solar monitor. The shelf product was
 overkill and mismatched, so the agent built a small ESP32 reader
 instead. That build is a `work/` resident until it earns promotion.
 

@@ -8,17 +8,16 @@ tested: none
 # `device-selection` skill (scenario → inventory → rosetta lookup → purchase rules → advice with gaps)
 
 Pre-sticker TOP-LEVEL advice: this skill runs BEFORE any
-buy/label/provision step (#1 unbox-provision is downstream).
+buy/label/provision step (unbox-provision is downstream).
 Every device fact below is either observed (a rosetta query
-in notes/t28-devsel-proof.md, rosetta 0.11.3, DB release
+run against rosetta 0.11.3, DB release
 v0.11.3 schema v11) or collected with its citation — never
 from memory. Claim labels (observed / collected / inferred /
 pending) follow `evidence-ledger`. No twin, no box writes:
 rosetta reads + local inventory reads only. Gaps are stated,
 not papered over: rosetta has specs and benchmarks but NO
 per-device default-config data and NO RF polar-plot data
-(R7, pending). Build-tracker references (T/K/R IDs, notes
-paths) are pointers pending staging scrub. No secrets below:
+(an upstream rosetta need, pending). No secrets below:
 rosetta data is public spec data.
 
 ## Part 1 — The checklist (advise from lookups, never from memory)
@@ -28,7 +27,7 @@ skill without a rosetta lookup behind every device it names.
 
 1. Name the scenario: (a) update advice on an existing
    network, (b) greenfield MikroTik build, or (c) vendor
-   conversion → #50 handoff, marked pending (step 0).
+   conversion → vendor-conversion handoff, marked pending (step 0).
 2. Inventory FIRST (scenario a): adopt-read the existing
    network before any advice. Advice without inventory is
    guessing (step 1).
@@ -55,8 +54,8 @@ skill without a rosetta lookup behind every device it names.
 - (c) Vendor conversion (ubnt/cisco/netgear/linksys in
   place): OUT OF SCOPE here. Capture the old setup +
   inventory (step 1 discipline), shortlist the MikroTik
-  side per steps 2–3, then HAND OFF to #50
-  vendor-conversion — PENDING, not yet a skill. Mark the
+  side per steps 2–3, then HAND OFF to
+  vendor-conversion. Mark the
   handoff pending in the advice; do not improvise a
   migration procedure.
 
@@ -72,7 +71,7 @@ skill without a rosetta lookup behind every device it names.
   dead spots where? what new load?). An inventory that
   cannot name the bottleneck is not done.
 - Captures stay local (`pull/out/`, never published);
-  cite redacted facts only (D1). Device-selection adds no
+  cite redacted facts only (pre-publish-scrub tiers). Device-selection adds no
   new capture handling — it consumes the adopt read.
 - Greenfield (b) skips this step but still records the
   owner's requirements in the same one-screen shape, so
@@ -87,21 +86,21 @@ rosetta browse --once '.routeros_device_lookup architecture="ARM 64bit" limit=10
 rosetta browse --once stats                          # DB identity for citations
 ```
 
-- Observed (t28-devsel-proof.md): `device hAP ax3` returns
+- Observed: `device hAP ax3` returns
   an exact card (ARM 64bit, IPQ-6010, 1 GB, $139, 30
   benchmarks); `.routeros_device_lookup hAP ax3` returns
   the same as JSON (id 73, ram_mb 1024, msrp_usd 139).
-  Prefer the dot-command JSON for agent piping (T20
-  curation precedent, notes/t20-curation.md).
+  Prefer the dot-command JSON for agent piping (curation
+  precedent: two-layer lookup, alias map, drift caveats).
 - Quote multiword filter values: observed that an
   unquoted `architecture=ARM 64bit` splits into
   architecture=ARM + query=64bit and returns 0 rows,
   while `architecture="ARM 64bit"` returns matrix rows.
-- Cite the DB release on every rosetta-backed claim (R5):
+- Cite the DB release on every rosetta-backed claim:
   this skill's facts are DB release v0.11.3, schema v11,
   built 2026-10-05, version range 7.1.1–7.25rc1; Devices
   155, catalog 258, aliases 1,279, test results 3,162.
-  Re-run `stats` when your DB differs — T20's newer
+  Re-run `stats` when your DB differs — a newer
   v0.12.0-next.123 DB had 0 test rows, so benchmark
   availability is PER-RELEASE, not guaranteed.
 - Know the three miss shapes (all observed): exact card
@@ -134,9 +133,9 @@ rosetta browse --once stats                          # DB identity for citations
 - Discontinued flag: catalog-only/discontinued rows
   (Audience observed) are replace-advice INPUT (scenario
   a), never greenfield picks. Matrix snapshot drift is
-  known upstream (#185); re-check live prices/availability
+  known upstream (rosetta#185); re-check live prices/availability
   before the owner pays.
-- THE ARM64 RULE (fold-in #53 purchase-arm64-rule): any
+- THE ARM64 RULE (the purchase-arm64 rule): any
   box with a container future must be ARM64. Observed
   ARM64 examples: hAP ax3 (IPQ-6010, $139), RB5009
   family (88F7040, 1 GB, $219/$299/$319). arm32 is
@@ -144,12 +143,10 @@ rosetta browse --once stats                          # DB identity for citations
   (IPQ-5018 2×800 MHz, 512 MB, $129) and RB1100AHx4
   (AL21400 4×1.4 GHz, $329) are both observed ARM 32bit.
   Collected tension, stated honestly: L009-class arm32
-  CAN run containers (two units per
-  triage/corpus-local/demo-hardware-notes.md) — the rule
+  CAN run containers (two units observed) — the rule
   stands because the container image ecosystem and the
   512 MB ceiling make arm32 a dead end for NEW purchases,
-  not because the feature flag is absent. Related
-  landed work: S4 arm32 failure-surface map.
+  not because the feature flag is absent.
 
 ### 4. Deliver advice with gaps stated (all scenarios)
 
@@ -160,14 +157,14 @@ rosetta browse --once stats                          # DB identity for citations
   row traces to a lookup in the proof style of step 2.
 - GAPS (pending, never silent): NO per-device
   default-config data and NO RF polar-plot data in
-  rosetta (R7 needed: "Mikrotik PDFs unindexed; both
+  rosetta (upstream rosetta need: "Mikrotik PDFs unindexed; both
   needed for device-selection advice"). So: no claims
   about out-of-box behavior beyond what the vendor manual
   states, and no AP orientation/coverage claims beyond
   chain counts + dBi on the card. Multi-AP layout is
-  #52 site-plan-multi-ap's problem (pending).
+  site-plan-multi-ap's problem (pending).
 - Scenario (c) handoff: the advice ends with "migration
-  procedure: #50 vendor-conversion (PENDING)" plus what
+  procedure: vendor-conversion (PENDING)" plus what
   IS ready (old-setup capture + MikroTik shortlist).
   Do not write migration steps under this skill's name.
 - Re-check rule: MSRP on the card is a ranking hint, not
@@ -190,29 +187,29 @@ needs next (then inventory first).
   Know your DB release (`browse --once stats`) — cite it.
 - Scenario (a)/(c): an adopt read exists
   (`import-existing-network` steps 0–3) or you take one now.
-- Curation precedent read once: notes/t20-curation.md
-  (two-layer lookup, alias map, drift caveats).
+- Curation precedent known: two-layer lookup, alias map,
+  drift caveats (prefer dot-command JSON for piping).
 
 ### Access
 
 - Reads only: rosetta queries + local inventory reads.
   No twin, no box writes, no production contact — safe
   anywhere, including before first contact.
-- Inventory captures (scenario a) stay local per D1:
-  cite redacted O/A lines, never serials/IDs/addresses.
+- Inventory captures (scenario a) stay local per the
+  sensitivity tiers: cite redacted O/A lines, never serials/IDs/addresses.
 
 ### Envs
 
 | Name | Use |
 |---|---|
 | `ROSETTA_OFFLINE=1` | Skip DB freshness network checks; use the local DB |
-| `DB_PATH` | Pin a specific ros-help.db when releases coexist (R4) |
+| `DB_PATH` | Pin a specific ros-help.db when releases coexist |
 
 ### Outputs
 
 - Advice note: scenario + inventory/requirements pointer
   + shortlist table with rosetta citations + pick +
-  GAPS section (+ #50 handoff line for scenario c).
+  GAPS section (+ vendor-conversion handoff line for scenario c).
 - Proof appendix (proof-file style): every `rosetta
   browse --once` command + redacted output behind the
   device rows. Claim = command + output.
@@ -223,10 +220,10 @@ needs next (then inventory first).
   with DB release cited; no spec from memory.
 - Scenario (a) advice traces each line to an inventory
   fact or a stated requirement; no inventory, no advice.
-- GAPS section present: default-config + RF plots (+ #50
+- GAPS section present: default-config + RF plots (+ vendor-conversion
   handoff for conversions). MSRP labeled hint, live price
   unchecked unless checked with a date.
-- No serials/IDs/addresses/secrets anywhere (D1).
+- No serials/IDs/addresses/secrets anywhere (sensitivity tiers).
 
 ### Recovery
 
@@ -244,10 +241,10 @@ needs next (then inventory first).
 ### Limits
 
 - Rosetta specs + benchmarks only: no default-config
-  data, no RF polar plots (R7); no traffic/counter claims
+  data, no RF polar plots; no traffic/counter claims
   (specs are not measurements of THIS network).
-- This skill advises; it never buys, provisions (#1), or
-  migrates (#50). Vendor conversion ends at the handoff.
-- Matrix snapshot drift (#185) + per-release test-row
+- This skill advises; it never buys, provisions (unbox-provision), or
+  migrates (vendor-conversion). Vendor conversion ends at the handoff.
+- Matrix snapshot drift (rosetta#185) + per-release test-row
   variance: advice is dated to its DB release and must
   say so. A newer rosetta can change a recommendation.

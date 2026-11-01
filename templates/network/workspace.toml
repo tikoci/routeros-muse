@@ -9,8 +9,8 @@ canonical = true                # this copy is the truth; other copies carry age
 
 [pins]
 # Verified-against record: versions this setup was built and checked
-# with. Resolution itself comes from the routeros-muse package.json
-# (D26); when the running bundle differs, the bootstrap stops and
+# with. Resolution itself comes from the routeros-muse package.json;
+# when the running bundle differs, the bootstrap stops and
 # asks for a refresh or a re-verify-and-bump. Channel pins track the
 # @next dist-tag (preview: the chat tools must come from @next, never
 # release). Resolved via the registry at bootstrap; see

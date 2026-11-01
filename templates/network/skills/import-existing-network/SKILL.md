@@ -8,17 +8,16 @@ tested: none
 # `import-existing-network` skill (pull → verify → adopt → plan-from-observed) [template v1 draft]
 
 Promoted from the executed pull-first adopt drill
-(t28-adopt-proof.md, twin1/7.26beta3): `pull.ts` capture
+(a 7.26beta3 CHR twin): `pull.ts` capture
 (status ok, 5 files), `checker.ts` clean (no problems),
 full adopt read, and a plan derived SOLELY from observed
-state (/tmp/t28-adopt-plan.md, cited by shape) — with ZERO
+state (cited by shape) — with ZERO
 writes to the box. This skill holds the ONE allowed
 plan-from-capture direction: capture → plan is permitted;
 plan → capture (writing a capture to fit a plan) is forgery.
 Import (writing the plan back) is `change-apply`'s procedure
-with approvals — a separate, later act. Build-tracker
-references (T/K IDs, notes paths) are pointers pending
-staging scrub. No secrets below.
+with approvals — a separate, later act.
+No secrets below.
 
 ## Part 1 — The checklist (read everything, write nothing)
 
@@ -44,12 +43,9 @@ under the normal approval rules.
 
 ### 0. Pull first (reads — the mandatory opening)
 
-```sh
-cd pull && bun pull.ts --quickchr <device> --out out
-# -> {"status":"ok","dir":"out/<device>/<ts>/","files":5,"notes":[...]}
-```
+Capture the target using state-pull §1, including its identity gate and manifest-last assembly.
 
-- Grounded (t28-adopt-proof.md): twin1 pull returned
+- Grounded: the twin pull returned
   `status: ok` with 5 files + manifest; the CHR note
   ("no routerboard; identity is license system-id") rode
   along in `notes` — device identity established at capture.
@@ -68,12 +64,9 @@ cd pull && bun pull.ts --quickchr <device> --out out
 
 ### 1. Checker-verify (no router contact — the trust step)
 
-```sh
-cd pull && bun checker.ts --device <device> --out out
-# -> {"device":"<device>","ok":true,"dir":"out/<device>/latest","totalBytes":2073,"files":5,"problems":[]}
-```
+Verify the capture using state-pull §2 before adoption. Use manual verification in a scaffolded workspace; checkout-only helpers are optional.
 
-- Grounded (t28-adopt-proof.md): twin1 `ok: true`, 5
+- Grounded: the twin `ok: true`, 5
   files, zero problems. The checker re-hashes every file
   against the manifest and validates schema + `latest`
   symlink — adoption rests on THIS verdict, not on the
@@ -89,7 +82,7 @@ cd pull && bun checker.ts --device <device> --out out
 ### 2. Adopt by reading (facts AND absences)
 
 ```text
-# twin1 adopt read (t28-adopt-proof.md), sysid redacted:
+# twin adopt read, sysid redacted:
 O1: CHR, x86_64, 7.26beta3, 512 MB            (system-resource.json)
 O2: routeros package ONLY — no container/UM/dude/cmr/zerotier/wireless
 O3: 1 ether via DHCP; placeholders-only firewall + hotspot; default users
@@ -101,18 +94,17 @@ A3: no firewall policy                        (placeholders only)
 A4: factory-default identity                  (no /system/identity line)
 ```
 
-- Grounded (t28-adopt-proof.md + /tmp/t28-adopt-plan.md):
-  five facts, four absences, each traced to its source
+- Grounded: five facts, four absences, each traced to its source
   file. The adopt read fits on one screen and says what
   the box IS, not what to do about it.
 - Absences are findings: "no firewall rows" is the plan
-  input for #8; "only routeros installed" is the STOP
+  input for firewall-apply; "only routeros installed" is the STOP
   rule for container/UM/dude steps. An adopt read with
   no absences section skipped half the capture.
 - Factory rows are not dirt: the disabled `unused-hs-chain`
   placeholders appear in a FRESH capture (proven here) —
   don't plan their removal, don't read intent into them.
-- Coverage honesty (#5 step 0): the export omits UM state,
+- Coverage honesty (backup-restore-upgrade step 0): the export omits UM state,
   dude DB, cert bodies, file bytes. The adopt read states
   which omitted classes apply to THIS box and what extra
   reads would close them — or marks them unknown.
@@ -120,17 +112,17 @@ A4: factory-default identity                  (no /system/identity line)
 ### 3. Plan from observed (the one allowed direction)
 
 ```text
-# twin1 plan lines (each traces to O/A above):
-P1: bind device (serial+arch+version) in inventory #40   <- O1 O4 manifest
-P2: snapshot: export (have) + binary backup #5            <- A1
-P3: register first-contact path #14                       <- O5
-P4: stage monitoring #13                                  <- A2
-P5: propose firewall baseline #8 (approval)               <- A3
-P6: set identity via change-apply (approval)              <- A4
-P7: STOP: O2 forbids container/UM/dude/cmr/wireless steps <- O2
+# twin plan lines (each traces to O/A above):
+P1: bind device (serial+arch+version) in inventory (network-workspace-bootstrap) <- O1 O4 manifest
+P2: snapshot: export (have) + binary backup (backup-restore-upgrade)            <- A1
+P3: register first-contact path                                                 <- O5
+P4: stage monitoring (monitoring-alerting)                                      <- A2
+P5: propose firewall baseline (firewall-apply) (approval)                       <- A3
+P6: set identity via change-apply (approval)                                    <- A4
+P7: STOP: O2 forbids container/UM/dude/cmr/wireless steps                       <- O2
 ```
 
-- Grounded by construction (/tmp/t28-adopt-plan.md): seven
+- Grounded by construction: seven
   plan lines, every one carrying its capture citation. A
   plan line without a citation is an invention — cut it
   or ground it with a new read.
@@ -144,15 +136,16 @@ P7: STOP: O2 forbids container/UM/dude/cmr/wireless steps <- O2
   containers on a box without the package.
 - capture → plan is the ONLY allowed direction. Writing
   or editing a capture to fit a plan is forgery: captures
-  are evidence (K15/K23 claim discipline), and the
+  are evidence (claim discipline), and the
   checker's hashes are the seal. Re-pull, don't rewrite.
 
 ### 4. Import under approvals (writes — adoption ends here)
 
 - Import = executing P-lines back onto the box. Each line
   runs under its own skill's procedure with its own
-  approvals: #5 snapshot, #14 contact, #13 probes, #8
-  firewall proposal, change-apply identity. This skill
+  approvals: backup-restore-upgrade snapshot, first-contact contact,
+  monitoring-alerting probes, firewall-apply firewall proposal,
+  change-apply identity. This skill
   does not contain a write procedure — it HANDS OFF to
   the ones that do.
 - Order: snapshot (P2) before ANY write; reads/registry
@@ -162,7 +155,7 @@ P7: STOP: O2 forbids container/UM/dude/cmr/wireless steps <- O2
 - Post-import capture: re-pull after the import and diff
   against the adopt capture. The diff is the proof the
   plan landed — and the only honest "done" for an import.
-- bigdude rule throughout: reads free, ANY write asks the
+- Production rule throughout: reads free, ANY write asks the
   developer first. Adoption (steps 0–3) asks nothing
   because it writes nothing; import (step 4) asks per write.
 
@@ -179,9 +172,7 @@ infrastructure; asking what a box can/cannot do; any
 
 - centrs on PATH; target reachable for the pull
   (`first-contact` establishes the path when unknown).
-- pull/ + checker.ts runnable (`cd pull && make test`
-  green); `out/` local and git-ignored-equivalent
-  (never published — no repo here, keep it that way).
+- The state-pull capture and verification procedure available; captures local and excluded from publication.
 - Know the device's last manifest (serial continuity) or
   be prepared to ESTABLISH the device binding deliberately.
 
@@ -189,7 +180,7 @@ infrastructure; asking what a box can/cannot do; any
 
 - Steps 0–3 are reads + local compute: safe on any box,
   including production (pull-first is the polite opening).
-- Step 4 is writes: bigdude rule — ANY write asks first,
+- Step 4 is writes: production rule — ANY write asks first,
   per the owning skill's approval shape.
 - Captures stay local: never print/commit/paste serials,
   IDs, addresses, or secrets from them. Cite paths +
@@ -241,7 +232,7 @@ infrastructure; asking what a box can/cannot do; any
 
 - The pull shape covers export + 4 JSON menus: UM rows,
   dude DB, cert bodies, file bytes need their own reads
-  (#5 coverage audit) and stay unknown until then.
+  (backup-restore-upgrade coverage audit) and stay unknown until then.
 - Volatile is stripped by design: no traffic, counter,
   or behavioral claims from captures, ever.
 - Device binding is trust-on-first-pull: the FIRST capture

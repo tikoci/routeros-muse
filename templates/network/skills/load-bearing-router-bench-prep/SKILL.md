@@ -7,11 +7,11 @@ tested: none
 
 # `load-bearing-router-bench-prep` skill (unbundle → back up → budget → re-prove) [template v1 draft]
 
-Promoted from the load-bearing journal (homework §4: VPN
-controller + cross-site RADIUS roles), the bench-loan probes
-(P7/P8), the sizing notes (512 MB budgets, L009/RB5009 roles),
-the re-prove-per-box rule (demo-hardware-notes), and the
-bench-vs-manage table (feedback §4). Backlog #39. No secrets
+Promoted from a journaled load-bearing loan (VPN
+controller + cross-site RADIUS roles), bench-loan probes,
+sizing notes (512 MB budgets, L009/RB5009 roles),
+the re-prove-per-box rule, and a
+bench-vs-manage table from pilot feedback. No secrets
 below; identities travel as backup-exists, never as values.
 
 ## Part 1 — The checklist (the site survives the loan)
@@ -31,11 +31,10 @@ doesn't happen.
 
 ### 0. Roles (what breaks if it leaves)
 
-The demo router is load-bearing on the real network TODAY
-[JOURNALED, homework §4]: besides the dashboard, it's the VPN
-controller for its site AND the RADIUS server the OTHER site
-uses for human router logins. A reset, a netinstall, or taking
-it to the bench has effects beyond its own site.
+A demo router can be load-bearing on the real network TODAY.
+A journaled deployment demonstrated both dependencies: VPN control
+for one site and RADIUS login service for another. A reset, a
+netinstall, or taking it to the bench has effects beyond its own site.
 
 - Inventory roles per box before ANY loan/reset/netinstall:
   VPN controller/member, RADIUS server/client, dashboard
@@ -47,21 +46,21 @@ it to the bench has effects beyond its own site.
   logins depending on THIS box's RADIUS is invisible from
   this site's dashboard. Check both directions (who I serve
   + who serves me) before the loan.
-- Role split across units is normal (demo-hardware-notes):
-  beep-vs-container requirements split the RB953 (cold open)
-  from the L009 (container story). One box needn't do
+- Role split across units is normal (from an earlier field run):
+  beep-vs-container requirements may split the casting across
+  two units (cold open vs container story). One box needn't do
   everything — but every role needs an OWNER, on-bench or
   in-service.
-- Applicant's call on timing (journal): the owner knows it's
-  a test site — what matters is the DEPENDENCY analysis, not
-  permission theater. Record the dependency either way.
+- Timing is the owner's call (journal): what matters is the
+  DEPENDENCY analysis, not permission theater. Record the
+  dependency either way.
 
 ### 1. Unbundle (backup identity, fallback logins)
 
-P8 probe (homework): "Demo router unbundled from the real
+P8 probe: "Loaned router unbundled from the real
 network (VPN identity backed up, other site's login fallback)"
-→ pass signal: "A reset of the demo router doesn't affect the
-other site" → fallback: "Don't reset it; film Set up on a
+→ pass signal: "A reset of the loaned router doesn't affect the
+other site" → fallback: "Don't reset it; do Set up on a
 bench box." The fallback is a first-class outcome: no
 unbundle, no loan — use a different box.
 
@@ -84,7 +83,7 @@ unbundle, no loan — use a different box.
   take over (or the outage is scheduled + announced),
   tunnels re-home or wait. Each dependent gets one line:
   moved / paused / scheduled-outage — no silent gaps.
-- Bench-vs-manage table (feedback §4): on the bench,
+- Bench-vs-manage table (from pilot feedback): on the bench,
   lockout is EXPECTED AND CHEAP (console рядом, reset free);
   remote, lockout is the main risk. The unbundle is what
   converts the loan from "remote risk" to "bench cheap" —
@@ -93,31 +92,30 @@ unbundle, no loan — use a different box.
 
 ### 2. Budget (RAM, roles, power, console)
 
-P7 probe (homework): "Free RAM on the demo router with the
+P7 probe: "Free RAM on the loaned router with the
 dashboard + cloudflared running" → "Headroom for one more
-Bun container" → fallback: "Run centrs on the Mac side, not
+Bun container" → fallback: "Run centrs on the workstation side, not
 the router." Budgets are measured-with-stack-running, not
 nameplate.
 
 - RAM: measure FREE with the current stack running BEFORE
-  adding containers (homework §4: dashboard + cloudflared +
-  centrs service in 512 MB). Sizing opinions (feedback):
+  adding containers (from an earlier field run: dashboard + cloudflared +
+  centrs service in 512 MB). Sizing opinions (from pilot feedback):
   L009/512 MB hosts a THIN bridge/dashboard comfortably —
   NOT an agent harness (that needs the RB5009-class box or
-  the Mac; Codex §5 test list before promising
-  harness-in-container). No RAM headroom = the work moves
-  (Mac-side, bigger box), not "try anyway and OOM".
-- Roles per unit (demo-hardware-notes): RB953 fleet (beep +
-  industrial look, older silicon fine), L009 ("works even on
-  this" proof point, containers proven on two units),
-  RB5009 (headroom default), Audience (retail face). Match
+  a workstation; don't promise harness-in-container
+  until it's verified on a twin). No RAM headroom = the work moves
+  (workstation-side, bigger box), not "try anyway and OOM".
+- Roles per unit (from an earlier field run): match
   the unit to the job's needs (radios? containers? beep?
-  CPU?) — and record WHY this unit (the next session
-  shouldn't re-derive the casting).
+  CPU?) — e.g. an older beep-capable unit for beep demos,
+  a 512 MB unit for thin-bridge proofs, a headroom-class
+  unit as the default — and record WHY this unit (the next
+  session shouldn't re-derive the casting).
 - Power + console: bench boxes need reachable power
-  (managed PoE = remote power-cycle — the voice vignette's
-  "reset the PoE port" is one atomic reversible command;
-  netinstall skill notes a PoE switch saves button-holding)
+  (managed PoE = remote power-cycle — "reset the PoE port"
+  is one atomic reversible command; the netinstall skill
+  notes a PoE switch saves button-holding)
   and a console path that ISN'T the network under test
   (serial, or a second link). A bench box whose only access
   is the config being changed is a lockout waiting to
@@ -130,17 +128,17 @@ nameplate.
 
 ### 3. Re-prove (on THAT box, not its cousin)
 
-The Cloudflare path was proven on the WRONG router for the
-demo (homework §4, VERIFIED box identity: arm64/2-core/
+The Cloudflare path was once proven on the WRONG router
+(JOURNALED, VERIFIED box identity: arm64/2-core/
 512 MB/128 MB flash/7.26beta3 vs the RB1100AHx4 ARM32 the
 path was proven on): three of four fixes depend on the
 router's own config — origin address the container can
 reach, macvlan vs bridge, input-chain accept rule. Rule:
 
 - P0–P9 probes run against THE unit on the bench, not
-  against the lab's memory of a different box
-  (demo-hardware-notes, verbatim rule). Re-run the path
-  sequence day 0–1 on the bench unit (homework: use the
+  against memory of a different box
+  (verbatim rule from an earlier field run). Re-run the path
+  sequence day 0–1 on the bench unit (from an earlier field run: use the
   official arm64 cloudflared image there; the community
   ARM32 build isn't needed).
 - Input rules must survive restarts (JOURNALED): a rule
@@ -150,7 +148,7 @@ reach, macvlan vs bridge, input-chain accept rule. Rule:
   `in-interface-list=!WAN` + port held up. Pick either
   form, but TEST IT ACROSS A CONTAINER RESTART. Rules
   that die on restart are the bench's favorite heisenbug.
-- Twin support per unit (feedback bench-vs-manage): the
+- Twin support per unit (bench-vs-manage, from pilot feedback): the
   twin tests the WHOLE RENDERED config before hardware is
   touched (except radios) — bench twin at the unit's
   firmware (twin-ops). Sticker→device binding + install
@@ -171,7 +169,7 @@ reach, macvlan vs bridge, input-chain accept rule. Rule:
 Load when: borrowing a production router for lab/demo/bench
 work; planning what runs on which bench unit; RAM/headroom
 questions; "can we reset this box" questions; returning a
-box to service. (Entry-skill + capability-probe pattern: K22.)
+box to service. (Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
@@ -236,17 +234,17 @@ box to service. (Entry-skill + capability-probe pattern: K22.)
 
 ### Limits
 
-- Journals are demo-fleet-shaped (L009/RB5009/RB953/Audience,
+- The grounding journals are demo-fleet-shaped (L009/RB5009/RB953/Audience,
   512 MB budgets, 7.26beta3): other fleets re-measure P7/P8,
   they don't cite these numbers.
 - VPN-identity mechanics differ per VPN (ZeroTier files vs
   WireGuard keys vs BTH binding): this skill demands the
   backup + restore-test, it doesn't prescribe the bytes —
   each VPN's procedure lives with its own docs/runbook.
-- Twin support excludes radios (twin-ops K23): bench units
+- Twin support excludes radios (twin-ops CHR limits): bench units
   with radio-dependent roles need hardware proof for the
   radio half — the twin covers config, not coverage.
 - Opinion halves marked inline (bench-for-a-week Set-up
-  beat, sizing judgments): applicant/developer calls, not
+  beat, sizing judgments): owner/developer calls, not
   doctrine. The dependency analysis (§0) is the load-bearing
   part either way.

@@ -1,9 +1,11 @@
+# Local captures created by state-pull.
+/out/
 # Capture boundary (committed summaries, local-only raw).
 # See conventions.md. Raw pull dirs never commit; the _sample
 # self-test fixture is the one committed exception.
 observations/*/pull-*/
 observations/*/latest
 !observations/_sample/latest
-# Credential store: the workspace device.cdb never commits (T9 rule 1).
+# Credential store: the workspace device.cdb never commits.
 # The star covers centrs siblings too: .bak.* snapshots and init temps.
 *.cdb*

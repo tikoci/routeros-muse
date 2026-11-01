@@ -7,8 +7,8 @@ tested: none
 
 # `work-flag-note` skill (set → work → clear) [template v1 draft]
 
-Skill form of K11 (concepts.toml:97-103): the `/system/note` WIP
-convention. Small on purpose — this is a coordination habit, not a
+Skill form of the WIP-flag coordination concept: the `/system/note`
+WIP convention. Small on purpose — this is a coordination habit, not a
 procedure. Referenced normatively by `first-contact`, `change-apply`,
 and `incident-response`. No secrets below.
 
@@ -43,7 +43,7 @@ centrs execute --host <addr> --via native-api --format json -- \
 ### 1. Respect (what a non-empty note means)
 
 - `/system/note` shows at SSH login: a non-empty note is the first
-  thing the next hands see (K11; concepts.toml:97-103).
+  thing the next hands see.
 - Non-empty note + you did not set it → someone's work is in flight
   (or crashed mid-flight): read the what + date, check for staged
   scripts (`/system/script/print`) and artifact files before doing
@@ -53,7 +53,7 @@ centrs execute --host <addr> --via native-api --format json -- \
   clear a fresh flag without asking the owner — that is someone's
   live work.
 - The flag is NOT a lock and NOT security: it coordinates willing
-  parties; it enforces nothing. Cross-vendor convention (K11).
+  parties; it enforces nothing. Cross-vendor convention.
 
 ### 2. Clear (after the last verify)
 
@@ -79,7 +79,7 @@ centrs execute --host <addr> --via native-api --format json -- \
 Load when: starting multi-step work on a shared/twin box; spotting a
 non-empty `/system/note` on login or in a capture; coordinating work
 across sessions; any procedure says "set the WIP flag". (Entry-skill
-+ capability-probe pattern: K22.)
++ capability-probe pattern.)
 
 ### Prereqs
 

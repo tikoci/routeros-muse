@@ -8,15 +8,15 @@ tested: twin-run
 
 # `container-render-surface` skill (adopt → write-safe → deploy → sync → teardown) [template v1 draft]
 
-Backlog #56 (last-mile template; extends T26). The
+A last-mile template extending the /app groundwork. The
 container as escape hatch + render surface: serve a
 directory as a website (file copy + HTML link) and run
 quick-check pages for needs too hot for per-prompt
-directory reads. Proven on twin-app (CHR 7.26beta3,
+directory reads. Proven on a CHR twin (7.26beta3,
 this run — references/twin-run.md): t28-render v1
 deployed, served bytes hash-matched on two paths, v2
 synced via recreate with hash-tracked change, teardown
-to pre-state. Consumes T26's /app groundwork
+to pre-state. Consumes the /app groundwork
 (use-https=no testing pattern, disk rules, quirk list)
 and verifies per `deployment-readback-verification`
 (hash compare over the serving path, never trust the
@@ -57,16 +57,16 @@ bytes hash match, every drill ends at pre-state.
   work — observed, fingerprinted, left untouched.
   Your teardown restores YOUR delta against THIS
   fingerprint, not against factory.
-- Non-disturbance rule: twin-app is the shared dirty
-  box (T26 keeps T26's app live). Never disable/
+- Non-disturbance rule: the shared dirty box keeps
+  other drills' apps live. Never disable/
   remove another drill's rows; name yours distinctly
-  (t28- prefix) so the orphan-hunt (step 4) cannot
+  (a drill prefix — t28- here) so the orphan-hunt (step 4) cannot
   misfire.
 
 ### 1. Write transport-safe YAML (three layers, all observed)
 
 - Layer 1 — YAML: single-quote style, ASCII-only
-  (T26: em-dash rejected offline). Validate with
+  (an em-dash was rejected offline). Validate with
   `centrs explain '/app/add yaml="…"'` BEFORE sending:
   this run's 656-byte v1 passed offline (`verdict:
   pass`, canonical path /app verb add).
@@ -84,9 +84,9 @@ bytes hash match, every drill ends at pre-state.
 - Command form: `command: 'node /app.js'` (plain
   string, zero commas/quotes/braces) stores as cmd
   `node /app.js` — no comma mangling on the /app
-  path (T26's comma-hostility is the plain-container
+  path (comma-hostility is the plain-container
   CLI path). Ports: `'8081:80/tcp'` (old OCI style,
-  closest to T26-proven; pick a port no live app uses).
+  closest to the proven shape; pick a port no live app uses).
 - references/ ships the proven pair:
   t28-render-v1/v2.tikapp.yaml. The self-test asserts
   every rule above mechanically (ASCII, no-doubles,
@@ -97,7 +97,7 @@ bytes hash match, every drill ends at pre-state.
 - Add: `/app/add yaml="…"` → capture the returned id
   (*69 v1, *CF v2 — ids are NOT reused after remove).
   Fresh apps arrive `disabled=true`: `/app/set
-  use-https=no` (T26 testing pattern — default true
+  use-https=no` (the testing pattern — default true
   needs paid-license cloud certs) then `disabled=no`.
 - Poll, don't trust: start-load causes transient REST
   timeouts (observed twice); a timeout is not a
@@ -105,32 +105,32 @@ bytes hash match, every drill ends at pre-state.
   `/container` (running=true) until the row says so.
   This run: *A at 172.18.0.4 (v1), *B at 172.18.0.5
   (v2) — read the IP from the row, never assume it.
-- Read back over the serving path (T26 shape):
+- Read back over the serving path:
   `/tool/fetch url=http://<container-ip>/<path>
   dst-path=<tmp>` → 200 → download + sha256 vs the
   record-time hash. Observed v1: root 131 B
   0aeeb5cd… + note 38 B e754a7b1… — both exact.
   Published ports verify at RULE level on CHR (dstnat
-  8081 → .5 observed); packet-level shares T26's
+  8081 → .5 observed); packet-level shares the
   dstnat-bypass caveat (router-originated packets
   skip dstnat — needs hardware or a host forward).
-- Redaction rides the read-back (#37): the served
-  bytes get the tiering test — a quick-check page
-  must serve status, never secrets. Ours serves two
+- Redaction rides the read-back (deployment-readback-verification):
+  the served bytes get the tiering test — a quick-check page
+  must serve status, never secrets. This drill serves two
   static strings; the rule still ran.
 
 ### 3. Sync (recreate with hash tracking)
 
-- Config/content changes need the RECREATE path (#37
-  §1: a config edit beside a running container serves
-  stale): `/app/remove` → re-add with new YAML →
+- Config/content changes need the RECREATE path
+  (deployment-readback-verification §1: a config edit beside a
+  running container serves stale): `/app/remove` → re-add with new YAML →
   re-enable → re-read. Observed: v1 root/note
   0aeeb5cd…/e754a7b1… became v2 e732a341…/622d9eb8…
   (131 B / 49 B), each matching its own record hash
   and differing from v1 — the sync is proven by the
   hash delta, not by the smooth sequence.
 - Canonical source lives OFF-router (git/desktop —
-  #37 §0); the box holds only deployed bytes. This
+  deployment-readback-verification §0); the box holds only deployed bytes. This
   drill's canonical pair is references/*.tikapp.yaml
   — the drill deployed FROM the shipped files, so the
   proof and the artifact cannot skew.
@@ -142,7 +142,7 @@ bytes hash match, every drill ends at pre-state.
   this rule prevents.
 - Prescribed, pending: container SELF-pull sync (box
   re-pulls on a tick) and hot-path per-prompt checks
-  ("tower solar volts" without an agent round-trip) —
+  (a sensor reading without an agent round-trip) —
   the drill proves agent-push only.
 
 ### 4. Teardown + record (pre-state or it didn't happen)
@@ -163,10 +163,10 @@ bytes hash match, every drill ends at pre-state.
   fetch targets — all four True) and stop the twin.
   Final fingerprint (observed): containers *7/*8/*9,
   103 apps / 1 custom (*1), nat t26-only, twin stopped.
-- Record the deploy per #37: artifact (YAML version +
-  content hash), target, reload action (recreate),
-  read-back hashes with times. This drill's record is
-  references/twin-run.md + notes/t28-render-proof.md.
+- Record the deploy per deployment-readback-verification:
+  artifact (YAML version + content hash), target, reload action
+  (recreate), read-back hashes with times. This drill's record is
+  references/twin-run.md.
 
 ## Part 2 — Skill doc
 
@@ -180,10 +180,10 @@ live surface for a site.
 
 ### Prereqs
 
-- T26 groundwork read (t26-app-proof.md): install-disk
+- The /app groundwork read: install-disk
   setup, use-https=no pattern, quirk list. This skill
-  assumes a working /app host (twin-app class).
-- #37 deployment-readback-verification (hash discipline,
+  assumes a working /app host (CHR twins qualify).
+- deployment-readback-verification (hash discipline,
   reload rows, mismatch layers).
 - routeros-app-yaml + routeros-container domain skills
   for format/lifecycle depth.
@@ -192,8 +192,8 @@ live surface for a site.
 ### Access
 
 - Deploys are writes: twin-first always (this drill ran
-  twin-app only); production /app + container lifecycle
-  needs the developer per #37 Access.
+  on a twin only); production /app + container lifecycle
+  needs the developer per deployment-readback-verification Access.
 - Read-backs are reads: free anywhere — run them
   generously, they are the only deploy proof.
 - Dirty-box discipline (§0): fingerprint first, prefix
@@ -238,9 +238,9 @@ every read-back).
   and succeeded; re-issuing risks double-remove).
 - App won't start → read `.about` (the real error;
   native-api may hide transitory ones — a listen may
-  be needed, T26 precedent), then configs/cmd layers.
-- Serve mismatch (hash differs) → #37 mismatch layers
-  in order: reload skipped (stale container — recreate),
+  be needed, earlier precedent), then configs/cmd layers.
+- Serve mismatch (hash differs) → deployment-readback-verification
+  mismatch layers in order: reload skipped (stale container — recreate),
   wrong target, transfer short, wrong fetch path.
 - Supout/crash mid-drill → drill pauses, box state
   re-fingerprinted before continuing; the anomaly
@@ -256,13 +256,13 @@ every read-back).
   The drill completed hash-exact regardless — but /app
   churn on this beta can hiccup services. Supout file
   stays on the box (local-only, not exfiltrated);
-  upstream filing is T26 Lane-3's bucket, not filed here.
-- Published-path packet level unverified (T26's CHR
+  upstream filing is left for the /app follow-up work, not filed here.
+- Published-path packet level unverified (the CHR
   dstnat-bypass limit, inherited — rule-level only).
 - Self-pull sync + hot-path checks prescribed, not
   executed (agent-push is the proven half).
 - Plain-container file-into-container still unresolved
-  (T26: inline mount= fails all forms) — this drill
+  (inline mount= fails all forms) — this drill
   routes files via /app configs:, which is the
   workaround, not the fix.
 - One app, one page: fleet render surfaces (many

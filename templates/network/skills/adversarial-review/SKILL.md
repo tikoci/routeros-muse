@@ -7,10 +7,10 @@ tested: none
 
 # `adversarial-review` skill (draft → review → delta → attach) [template v1 draft]
 
-Promoted from the executed evidence-critic precedent (T2/T20/T21/
-T22 research notes, all critic-verified with recorded deltas), the
-second-agent doctrine (corpus AGENTS.md:101), and the approval-card
-shape (homework §2/P5). Backlog #33. No secrets below; findings
+Promoted from the executed evidence-critic precedent (earlier
+research notes, all critic-verified with recorded deltas), the
+second-agent doctrine, and the approval-card
+shape. No secrets below; findings
 travel by shape, never by pasted secret.
 
 ## Part 1 — The checklist (fresh eyes, one job)
@@ -31,7 +31,7 @@ rubber stamp: one job — find what's wrong.
 
 - A reviewable draft: the change (commands, config, proof, or
   publish set), the ledger behind it (evidence-ledger: commands
-  + outputs + habitat), the claim it makes, and what would
+  + outputs + environment), the claim it makes, and what would
   prove it wrong. A draft the reviewer can't check cold isn't
   ready — it goes back, and the bounce is recorded, not
   resented.
@@ -46,12 +46,12 @@ rubber stamp: one job — find what's wrong.
 
 ### 1. Staff (second agent, no stake)
 
-Doctrine (corpus AGENTS.md:101): "Before a change reaches the
+Doctrine (workspace AGENTS.md): "Before a change reaches the
 applicant (in the build) or the owner (in the product), a second
 agent reviews it with one job: find what's wrong."
 
 - During the build: parallel agents reviewing each other (the
-  research batches ran this way — T20/T21/T22/T2 drafts each
+  research batches ran this way — drafts each
   carry "evidence-critic verified" provenance with the critic's
   method named: DB counts re-run, gap table re-checked, file
   refs + tracker state re-checked via gh).
@@ -71,13 +71,13 @@ agent reviews it with one job: find what's wrong."
 "Write the reviewer's findings, and what changed because of them,
 next to the change." Executed shape from the research notes:
 
-- T20: draft said 43 device-matrix columns; critic verified 39
+- One draft said 43 device-matrix columns; the critic verified 39
   via `.schema` + `PRAGMA table_info` — the delta (43→39 +
   method) is IN the note, not in a chat log.
-- T2: critic added the nuance that row 12's gap holds only for
+- Another: the critic added the nuance that row 12's gap holds only for
   `--once`/non-interactive use (interactive number-select opens
   full pages) — a scope correction with the code path cited.
-- T21/T22: critic re-verified GitHub Free facts live and file
+- A third: the critic re-verified GitHub Free facts live and file
   refs + tracker state via gh — method named per note.
 
 Finding hygiene:
@@ -95,18 +95,17 @@ Finding hygiene:
 
 ### 3. Attach (findings ride the approval)
 
-- The approval carries plan + reviewer findings: the demo
-  catalog's P5 probe states the pass signal as "card shows plan
-  + reviewer findings; tap → action runs" (homework P5). The
+- The approval carries plan + reviewer findings: the pass signal
+  is "card shows plan + reviewer findings; tap → action runs". The
   approver approves the REVIEWED change, with the review
   visible — never the draft alone.
 - Approval UI halves: Muse's per-action approval cards on the
   phone are the proposed surface [OPINION, ASK MUSE — the card
   UI itself is uncommitted platform surface]; the fallback is a
-  WebFig "run it yourself" link as the approval (same P5 row).
+  WebFig "run it yourself" link as the approval.
   Either way the FINDINGS ATTACH — the card-vs-link question is
   UI, the findings-on-approval rule is doctrine.
-- Staged-script approvals (change-apply/K19: human runs the
+- Staged-script approvals (change-apply: a human runs the
   script under their own login): the script IS the immutable
   plan (one copy, read back, run-count visible) and the review
   findings attach to the proposal record it came from. RouterOS
@@ -123,7 +122,7 @@ Finding hygiene:
 Load when: a change, proof, publish set, or close-out is ready
 for another pair of eyes; staffing a review (as author or
 reviewer); "who checked this?" questions; designing an approval
-flow. (Entry-skill + capability-probe pattern: K22.)
+flow. (Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
@@ -165,7 +164,7 @@ flow. (Entry-skill + capability-probe pattern: K22.)
 
 - Every draft claim traces to a reviewer check or an explicit
   out-of-scope (scope line + "checked / not checked" per
-  claim — the T20/T21/T22 provenance-line shape).
+  claim — the provenance-line shape).
 - Deltas re-verified, not assumed: a fixed finding gets its
   fix checked, ideally by the same reviewer.
 - Approval shows the review: an approval record without
@@ -181,8 +180,8 @@ flow. (Entry-skill + capability-probe pattern: K22.)
 - Author disputes a finding: re-run to settle (the disputed
   command, the cited file, the live check). Persistent dispute
   escalates to the approver WITH both positions attached.
-- Review overturned by events (firmware moved, habitat
-  changed): the review is habitat-dated like any claim —
+- Review overturned by events (firmware moved, environment
+  changed): the review is environment-dated like any claim —
   re-scope and re-review the affected half, keep the rest.
 - Rubber-stamp suspicion ("LGTM" in 30 seconds on a 40-claim
   draft): the provenance line convicts or clears — method per
@@ -190,7 +189,7 @@ flow. (Entry-skill + capability-probe pattern: K22.)
 
 ### Limits
 
-- WITH-SOURCE DEDUPE vs workflow (backlog Q1, answered here by
+- WITH-SOURCE DEDUPE vs workflow (answered here by
   reading the skill): workflow covers lifecycle stages +
   GitHub adapter + bootstrap; its Configuring step applies via
   staged-script but names NO review procedure. This skill IS
@@ -202,7 +201,7 @@ flow. (Entry-skill + capability-probe pattern: K22.)
   Independent re-derivation beats re-checking for high-stakes
   claims — say which the review was.
 - Approval-card UI is opinion/ask (platform surface may differ
-  by harness — presentation-layer, backlog #55): the
+  by harness — see presentation-layer): the
   findings-ride-approval rule holds regardless of surface.
 - Cost: review doubles agent-tokens on the reviewed change
   (build-time: affordable per doctrine; product-time: budget

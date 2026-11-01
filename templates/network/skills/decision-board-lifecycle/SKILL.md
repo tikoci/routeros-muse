@@ -7,11 +7,12 @@ tested: none
 
 # `decision-board-lifecycle` skill (author → discuss → link → retire → correct) [template v1 draft]
 
-Promoted from the concept-review §10 whiteboard contract
-(source-verified in the private workspace checkout), the
-showing-the-owner presentation rules, demo beats O1–O3, and the
+Promoted from a whiteboard contract
+(source-verified in a private workspace checkout),
+presentation practice from earlier field runs, demo
+beats O1–O3, and the
 `/app` deployment semantics (re-read on request, verified).
-Backlog #44. Core rule: a board is DISCUSSION — not
+Core rule: a board is DISCUSSION — not
 authorization, not the accepted plan. Decisions belong in the
 decision register; agreed work belongs in the backlog. No secrets
 below; boards carry shapes and estimates, never credentials.
@@ -35,7 +36,7 @@ linked, nothing load-bearing left only on the board.
 
 ### 0. Author (a fragment, not an app)
 
-Source-verified contract (collected: concept review §10): the
+Source-verified contract (collected: the concept review): the
 workspace's `whiteboard/` holds HTML fragments with a small
 opening metadata comment. The portal discovers them, sorts by
 date, lists summaries, and wraps each in normal navigation and
@@ -59,8 +60,8 @@ summary: Two options for restoring guest access, with tests and remaining questi
 
 - The contract is four fields: `title`, `status`, `date`,
   `summary` — plus the fragment. That is the whole authoring
-  surface an agent must produce (collected: §10 + the
-  title/status/date/summary row in the §10 schema table).
+  surface an agent must produce (collected: the contract's
+  schema table).
 - Template posture (observed `templates/network/whiteboard/README.md`):
   working drafts, no formality tax. Drafts link forward to the
   decision or proposal they become; the board itself never owes
@@ -69,34 +70,34 @@ summary: Two options for restoring guest access, with tests and remaining questi
   related site/device/incident IDs, source revision, generated
   time, status, superseding artifact — plus a small artifact
   index if needed. Avoid mandatory lifecycle bureaucracy for a
-  one-off sketch (collected: §10 recommendation).
+  one-off sketch (collected: the contract's recommendation).
 - Making an explanatory page is an ordinary tool of
   conversation: it must not require commissioning a permanent
   app or a product-building workflow every time (collected:
-  §10 lesson for Muse). Demo status: metadata contract
+  a lesson for Muse). Demo status: metadata contract
   journaled, Muse-generated boards design (collected: demo
-  catalog O2).
+  beat O2).
 
 ### 1. Discuss (stable page, answer first)
 
-What works in the structure (collected: §10): a human returns to
+What works in the structure (collected: the whiteboard contract): a human returns to
 a stable page, compares options, points to a drawing, and asks
 for revision; the agent modifies the artifact as the discussion
 develops. Shared styling and navigation make a temporary
 explanation feel like part of the workspace.
 
-- House rules for board prose (collected: §10 + showing-the-owner
-  owner-deciding row): plain words, the ANSWER before the
+- House rules for board prose (collected: the whiteboard contract +
+  the owner-deciding row): plain words, the ANSWER before the
   numbers, estimates marked as estimates, cited specifications.
   Owner-deciding shape: the answer first, options, what the test
   showed, what it can't show, estimates marked.
-- Pre-apply beat O2 (collected: demo catalog): before applying a
+- Pre-apply beat O2 (collected: a demo run): before applying a
   change, the temporary page says what's broken, what it will
   change, what the test showed, and what it can't prove — then
   the owner asks about one part of it. "What it can't prove" is
   load-bearing, not modest: it scopes the approval.
 - Field sheets are the same pattern aimed at hands work
-  (collected: §10): generate the artifact for the person's
+  (collected: the whiteboard contract): generate the artifact for the person's
   immediate task — device labels, ports, a picture, an
   observable success check — all deriving from the same records
   without forcing the same screen on reviewer, installer, and
@@ -107,19 +108,19 @@ explanation feel like part of the workspace.
 
 ### 2. Link (the verdict lives elsewhere)
 
-- The boundary (collected: §10): draft → discussed/revised →
+- The boundary (collected: the whiteboard contract): draft → discussed/revised →
   accepted or superseded, WITH LINKS from the board to the
   actual decision and work record. The lifecycle is a
   recommendation, not an existing automated state machine —
   implement it as links and statuses, not workflow software.
-- Provenance pattern (collected: §10 inputs list):
+- Provenance pattern (collected: the inputs list):
   `operations/decisions.toml` (D-01, D-02, D-08 shape),
   `operations/backlog.toml`, and whiteboard commit history
   together carry ownership, identity, capture provenance, and
   recorded evolution. A board that cannot point at its decision
   entry is still a draft, whatever its status field says.
 - Review-against-shape: every accepted board resolves to one
-  decision entry (id/date/title/decision/why — K7) and zero or
+  decision entry (id/date/title/decision/why) and zero or
   more backlog/work items with owners. Superseded boards point
   at the superseding artifact, never into the void.
 
@@ -130,43 +131,43 @@ explanation feel like part of the workspace.
   archives (or deletes, once nothing points at it except
   history). "Make a temporary page to help the owner decide"
   includes how to retire it without losing the decision
-  (collected: §10).
-- Dashboard-panel precedent O1 (collected: demo catalog): during
+  (collected: the whiteboard contract).
+- Dashboard-panel precedent O1 (collected: a demo run): during
   an incident the agent adds a TEMPORARY panel (Wi-Fi logins,
   reboot times, check results), then archives it when resolved
   while keeping the incident record. Statuses: router-hosted
-  dashboard journaled (running since 2026-10-10),
+  dashboard journaled (long-running),
   equipment-aware views journaled, agent-added panels design.
   Proposed close-out line: "I added a panel comparing guest
   checks, uplink loss, and recent changes; now resolved, I can
   archive that view while retaining the incident and
-  observations" (collected: §10 — proposed workflow, not an
-  existing autonomous feature).
+  observations" (collected: the whiteboard contract — proposed
+  workflow, not an existing autonomous feature).
 - Generated explanations and widgets may evolve; the meaning of
   a measurement must not change silently. Do not regenerate the
-  whole interface on every poll (collected: §10 dashboard
+  whole interface on every poll (collected: the dashboard
   guidance).
 
 ### 4. Deploy (re-read rules, PNG delivery, corrections back)
 
-- Deployment semantics (verified, collected: claude-code-feedback
-  §1 + §10 inputs): a change to the app's SCRIPT needs an `/app`
+- Deployment semantics (verified, collected: the agent-feedback
+  notes): a change to the app's SCRIPT needs an `/app`
   restart; data files and whiteboard pages are RE-READ ON EACH
   REQUEST. Editing a source checkout does not update the
   router's copy. Different edits have different publication
   behavior — put reload/restart semantics in the recipe; do not
-  guess (collected: §10 table).
-- PNG delivery for the non-expert owner (journaled, collected:
-  showing-the-owner §2): the owner looks at things on a phone in
+  guess (collected from pilot feedback).
+- PNG delivery for the non-expert owner (journaled, collected
+  from earlier field runs): the owner looks at things on a phone in
   a text thread, so the useful output is often a PNG, not a web
   page — 1080×1350 phone-portrait pages, `?p=N` rendering one
   page, headless Chrome screenshotting each to its own PNG for
   iMessage/RCS. Whiteboards show up on the dashboard and can be
   screenshotted the same way. Day-0 ASK MUSE checks (still
   open): can a sandbox-generated PNG/HTML be shown inline in the
-  app on the phone? Is a headless browser available in Habitat
-  A? Do tile/endpoint hosts pass the egress proxy?
-- Correction flowback O3 (collected: §10 + demo catalog): the
+  app on the phone? Is a headless browser available in the sandbox?
+  Do tile/endpoint hosts pass the egress proxy?
+- Correction flowback O3 (collected: the whiteboard contract + a demo run): the
   map's "Fix GPS" mode is the concrete human → artifact → agent
   → structured-record loop — drag pins, edits persist in browser
   localStorage, the page copies TOML-like corrections (original
@@ -176,7 +177,7 @@ explanation feel like part of the workspace.
   Limits that travel with the pattern: browser-local edits are
   NOT inventory updates; copying a correction is NOT proof the
   agent applied it; the page text must say "copy changes for
-  your agent" (it names Claude today); recommended additions are
+  your agent" (it names a specific agent today); recommended additions are
   a revision identifier and a visible saved / applied-to-
   inventory / published distinction. Generalize to port-label
   corrections, "this device is in the other room", annotated
@@ -192,7 +193,7 @@ Load when: the owner must choose between options; a change
 needs a temporary explanation page; a discussion artifact
 outlived its discussion; "where is the verdict for X"
 questions; retiring a dashboard panel or board; correction
-flowback design. (Entry-skill + capability-probe pattern: K22.)
+flowback design. (Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
@@ -201,7 +202,7 @@ flowback design. (Entry-skill + capability-probe pattern: K22.)
 - The serving path known (router `/app`, local render, or chat
   PNG) with its reload semantics stated, not assumed.
 - For PNG delivery: a headless renderer available, or the
-  Habitat A checks in §4 run first.
+  sandbox checks in §4 run first.
 
 ### Access
 
@@ -272,8 +273,8 @@ take part in the board lifecycle.
   statuses are the whole implementation until built.
 - Muse-generated boards and agent-added panels are DESIGN, not
   running features — quoted as pending, never as available.
-- Habitat A delivery checks (inline PNG, headless browser,
+- Sandbox delivery checks (inline PNG, headless browser,
   tile egress) are open ASK MUSE items — phone delivery is
-  proven on the Mac path only.
+  proven on the macOS path only.
 - One-off sketches owe no bureaucracy: forcing the full
   lifecycle on a sketch is a heavier failure than skipping it.

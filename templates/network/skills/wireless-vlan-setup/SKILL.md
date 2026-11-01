@@ -9,12 +9,12 @@ tested: twin-run
 # `wireless-vlan-setup` skill (pull → propose → twin-build → counter-verify → tag) [template v1 draft]
 
 Promoted from the executed guest-VLAN drill
-(t28-wifivlan-proof.md, twin1/7.26beta3): office VLAN 10 +
+(a 7.26beta3 twin): office VLAN 10 +
 guest VLAN 20 on one CHR, address + pool + DHCP-server build,
 guest→office log+drop rows with position-exact read-back, a
 dstnat-diverted forward-counter proof (6 packets / 264 bytes,
 dstnat and forward counts agreeing), a static-lease read-back
-(`waiting`/`never` — no L2 client in the lab), and teardown to
+(`waiting`/`never` — no L2 client available), and teardown to
 pristine in dependency order. Consumes the `routeros-firewall`
 DOMAIN skill (forward/drop/log/dstnat semantics), plus
 `routeros-scripting` (print/find/tag idioms) and
@@ -24,8 +24,7 @@ handling, verification, ledger). Follows the `firewall-apply`
 counter-proof + placement precedent and the `hotspot-ops`
 VLAN-build precedent (pool/address shapes agree). No
 `routeros-wireless` domain skill exists yet: radio/AP behavior
-is PRESCRIBED, not consumed. Build-tracker references (T/K
-IDs, notes paths) are pointers pending staging scrub. No
+is PRESCRIBED, not consumed. No
 secrets below.
 
 ## Part 1 — The checklist (isolation is a claim until counters say so)
@@ -46,7 +45,7 @@ non-twin box before step 3 passes on a twin AND the proposal
 4. Twin-verify separation: placement-exact isolation rows,
    a live forward-counter proof for the method, a lease
    check for the serving path, and an honest zero-hit
-   statement for what no lab client exercised.
+   statement for what no test client exercised.
 5. Apply tagged, ledger, clear: every owned row carries
    the change tag; rollback is one tag remove per menu +
    re-print against the pre-change prints.
@@ -63,7 +62,7 @@ centrs execute --quickchr <twin> '/ip/dhcp-server/lease/print'
 centrs execute --quickchr <twin> '/ip/firewall/filter/print'
 ```
 
-- Grounded (t28-wifivlan-proof.md): twin1 baseline read `{}` on
+- Grounded: the twin baseline read `{}` on
   vlan/pool/dhcp/network, DHCP-only ether1 address, factory
   `unused-hs-chain` placeholder — the clean floor the drill
   built on and returned to.
@@ -90,7 +89,7 @@ centrs execute --quickchr <twin> '/ip/firewall/filter/print'
 #  rollback: tag remove per menu (dependency order) + pre-change prints attached
 ```
 
-- Grounded shape (t28-wifivlan-proof.md): VLAN 10 office /
+- Grounded shape: VLAN 10 office /
   VLAN 20 guest on ether1, `10.10.10.1/24` + `10.20.20.1/24`
   gateways, pool `10.20.20.100-199`, server bound to the
   guest VLAN, g2o log-above-drop in forward.
@@ -102,9 +101,9 @@ centrs execute --quickchr <twin> '/ip/firewall/filter/print'
   hits → ~6 packets on the forward probe" is falsifiable; "it
   should work" is not. The twin run (step 3) checks it.
 - The radio line is always present and always prescribed:
-  SSID→VLAN datapath, per-person VLAN via RADIUS (demo S1),
+  SSID→VLAN datapath, per-person VLAN via RADIUS,
   and AP hardware behavior need hardware or an L2-capable
-  lab — a CHR twin never proves them (twin-ops K23).
+  bench — a CHR twin never proves them (twin-ops CHR limits).
 
 ### 2. Twin-build the serving path (writes — the build step)
 
@@ -120,7 +119,7 @@ centrs execute --quickchr <twin> '/ip/dhcp-server/print'   # invalid=false, disa
 centrs execute --quickchr <twin> '/ip/route/print where dst-address in 10.10.10.0/24'  # DAc connected
 ```
 
-- Grounded end to end (t28-wifivlan-proof.md): every add
+- Grounded end to end: every add
   returned its `.id`; server read back `invalid=false`;
   the office connected route showed `DAc ... main 0`.
 - The DHCP server needs the FULL triple — pool + network
@@ -146,10 +145,10 @@ centrs execute --quickchr <twin> '/ip/dhcp-server/lease/add mac-address=AA:BB:CC
 centrs execute --quickchr <twin> '/ip/dhcp-server/lease/print'      # static path: waiting / never
 ```
 
-- Grounded (t28-wifivlan-proof.md): 3 diverted hits → 6
+- Grounded: 3 diverted hits → 6
   packets / 264 bytes on BOTH the dstnat diverter and the
   forward probe (same packets, dstnat→forward path), with
-  `in:ether1 out:t28-wv-guest` in the log lines. The
+  `in:ether1 out:<guest-vlan>` in the log lines. The
   diverter used port 443 so the port-80 REST session
   survived — never divert the port you are driving through.
 - Zero-hit honesty (`firewall-apply` rule): the g2o rows
@@ -178,7 +177,7 @@ centrs execute --quickchr <twin> '/ip/address/remove [find comment="<tag>"]' --y
 centrs execute --quickchr <twin> '/interface/vlan/remove [find comment="<tag>"]' --yes
 ```
 
-- Grounded (t28-wifivlan-proof.md): 8 removes, each
+- Grounded: 8 removes, each
   `{"ret":""}`; vlan/pool/dhcp/network/lease back to `{}`,
   address back to DHCP-only ether1, filter+nat back to the
   factory placeholder. Pristine proof is the re-print set,
@@ -191,7 +190,7 @@ centrs execute --quickchr <twin> '/interface/vlan/remove [find comment="<tag>"]'
   with counter/lease numbers + pre/post prints, labeled
   observed (ran it) / collected (source path) / inferred /
   pending (radio half). Production applies run under
-  `change-apply` with owner approval (bigdude rule).
+  `change-apply` with owner approval (production rule).
 
 ## Part 2 — Skill doc
 
@@ -200,9 +199,9 @@ centrs execute --quickchr <twin> '/interface/vlan/remove [find comment="<tag>"]'
 Load when: adding a guest, staff, or IoT VLAN; isolating
 wireless clients from office subnets; attaching an SSID to a
 VLAN; proving VLAN separation on a twin; rolling back a VLAN
-or guest-network change. (Demo lineage: A1 guest-WiFi question,
-S1 WiFi-logins-to-VLAN, L5 guest-isolation repair; concept
-review §7 guest operating loop.)
+or guest-network change. (Collected from earlier field runs: guest-WiFi setup,
+WiFi-logins-to-VLAN, guest-isolation repair, and the guest
+operating loop.)
 
 ### Prereqs
 
@@ -223,10 +222,10 @@ review §7 guest operating loop.)
 
 - Twins: anything goes — but divert an UNUSED port, never
   the one your session drives through; no radio claims ever.
-- bigdude (production): reads free; ANY write asks the
+- Production: reads free; ANY write asks the
   developer first — including log-rule probes and DHCP
   rows, not just drops.
-- Operator Unknown → ask before any write (concepts K14).
+- Operator Unknown → ask before any write.
 
 ### Envs
 
@@ -278,7 +277,7 @@ review §7 guest operating loop.)
 - Diverter breaks your own session → you diverted your
   driving port: console in via quickchr and tag-remove;
   on production → escalate with proposal + twin evidence.
-- Redaction: scrub secrets from stored prints per C1;
+- Redaction: scrub secrets from stored prints;
   DHCP prints can carry client MACs/hostnames worth
   treating as sensitive off-box.
 
@@ -286,7 +285,7 @@ review §7 guest operating loop.)
 
 - The twin proves L3 + VLAN + DHCP + firewall only. CHR
   has no radios and no wireless menus: SSID→VLAN datapath,
-  WPA-Enterprise/RADIUS per-person VLAN (demo S1), AP
+  WPA-Enterprise/RADIUS per-person VLAN, AP
   roaming, and real-client DHCP/DNS behavior are
   PRESCRIBED for hardware — the first hardware run must
   update this skill with its evidence.

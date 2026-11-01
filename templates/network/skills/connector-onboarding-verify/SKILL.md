@@ -7,11 +7,11 @@ tested: none
 
 # `connector-onboarding-verify` skill (scaffold → read-only → probe → escalate) [template v1 draft]
 
-Promoted from two live proofs, not a design: the Habitat A T3
+Promoted from two live proofs, not a design: a sandboxed T3
 Connect MCP onboarding (read-only proof, then a Supervised
-hello-world thread) and the Habitat A Cloudflare MCP connector
+hello-world thread) and a sandboxed Cloudflare MCP connector
 (`custom.cloudflare`, verified read set, writes explicitly untested).
-Backlog #41. Core rule, earned twice: "connected" is not verified —
+Core rule, earned twice: "connected" is not verified —
 print the capability probe. No secrets below; URLs, tokens, and
 identifiers appear as shapes only.
 
@@ -44,7 +44,7 @@ escalated after the read set printed).
 - Tool allowlist is explicit and small: after schema review, list
   each tool by name. Precedent: the Cloudflare wrapper allowlists
   exactly four tools (`whoami`, `search`, `docs`, `execute`) and
-  names what each does (collected: cloudflare-onboarding-notes).
+  names what each does (collected: the Cloudflare onboarding notes).
 - For RouterOS-facing MCP, the allowlist is the CDB: `centrs mcp`
   serves scoped tools gated by the CDB allowlist over stdio
   (observed `centrs mcp --help` 2026-10-29: `--cdb-file`,
@@ -59,23 +59,21 @@ escalated after the read set printed).
 - Request read-only scopes to start. Precedent: Cloudflare scopes
   were read-only (`user:read account:read zone.read dns.read
   registrar-domains.read offline_access`); T3's first approval was
-  Read only with a read-scope token (collected: onboarding notes +
-  coord 544).
+  Read only with a read-scope token (collected: the onboarding notes).
 - OAuth on first use, no key pasting: dynamic client registration
   (token endpoint auth `none`), PKCE S256, hosted connect page.
-  Both live proofs used DCR + PKCE (collected: onboarding notes
-  issuer/registration lines + coord 544: DCR 201, PKCE S256,
-  pairing-code approval, token exchange 200).
+  Both live proofs used DCR + PKCE (collected: the onboarding notes:
+  DCR 201, PKCE S256, pairing-code approval, token exchange 200).
 - T3's approval shape: OAuth sign-in with dynamic discovery (no
   client secret), approval via a pairing code from the host, Read
   only default, Supervised..Full selectable, ~30-day sign-ins
-  (collected: coord 540 key finding + coord 556 recon addenda).
+  (collected: the recon notes).
 - Never design a step that asks for the user's IdP password: the
   Cloudflare account was Google-SSO-only, the applicant refused the
   vault password prompt, and OAuth issued by the target service was
-  the path (collected: friction log #1). Detect SSO-only early and
+  the path (collected: an earlier field run). Detect SSO-only early and
   say so instead of walking into a password wall.
-- Gotchas actually hit (collected: coord 544 + coord 556): pairing
+- Gotchas actually hit (collected: the onboarding recon notes): pairing
   codes are single-use with a ~14 min TTL; authorization codes
   expire in minutes — feed the callback immediately; browser
   loopback is not sandbox loopback, so hand-carry the callback URL
@@ -83,7 +81,7 @@ escalated after the read set printed).
   agent-approval; where urllib is blocked, use curl.
 - Deliver OAuth URLs as raw code blocks, not rendered link cards:
   the card "gets furl'ed" twice; code-block cut-and-paste worked
-  first try (collected: friction log #2).
+  first try (collected: an earlier field run).
 
 ### 2. Probe (harmless live reads, printed as a banner)
 
@@ -92,17 +90,16 @@ escalated after the read set printed).
   (zones) → one detail read (DNS records) → empty-state check
   (tunnels: none). T3's read-only rung verified `tools/list`
   (66 tools incl. project/thread tools) and initialize OK
-  (collected: coord 544).
+  (collected: the recon notes).
 - Print the banner in plain language with evidence: account email
   shape, inventory names + statuses, counts, and what is still
   untested. The platform marks the connector connected the moment
   OAuth completes, with no credential check — the printed probe is
-  what makes the setup trustworthy (collected: friction log #4).
+  what makes the setup trustworthy (collected: an earlier field run).
 - State what was NOT proven alongside what was: Cloudflare writes
   through `execute` were explicitly untested whatever the token
   scopes allow; the T3 token was one-shot (process memory only) —
-  proof, not a durable connection (collected: onboarding notes +
-  coord 544).
+  proof, not a durable connection (collected: the onboarding notes).
 - Label every probe claim per evidence-ledger: observed (ran here,
   output in the ledger), collected (cited source), inferred (chain
   shown), pending (named, un-run). A connector verdict without
@@ -112,7 +109,7 @@ escalated after the read set printed).
   and recorded in the connector doc — e.g. the sandbox's urllib
   signature ban (Error 1010) needed curl + a 0600 temp config
   deleted after each call, so no future agent re-diagnoses it or,
-  worse, re-registers the credential (collected: friction log #5).
+  worse, re-registers the credential (collected: an earlier field run).
 
 ### 3. Escalate (one rung, re-probed, re-recorded)
 
@@ -120,17 +117,17 @@ escalated after the read set printed).
   Supervised rung was a fresh OAuth flow (read+operate scopes,
   approval-required runtime), then a hello-world thread on a
   scratch project — run completed, no edits, no tool use, no
-  pending approvals (collected: coord 545).
+  pending approvals (collected: the escalation notes).
 - Re-probe after every escalation: the new grant's scope gets its
   own banner showing what the wider grant can now do — and what it
   still cannot. Provider/feature availability can be per-project
   (one provider disabled for the scratch project while another
-  worked there — collected: coord 545), so probe on the project
+  worked there), so probe on the project
   you will actually use.
 - Sessions needing fresh pairing codes + approval each time (~1
   min) are an acceptable steady state until the durable path is
-  understood; tokens are not persisted on the agent side
-  (collected: coord 545). Say so in the doc instead of letting a
+  understood; tokens are not persisted on the agent side.
+  Say so in the doc instead of letting a
   "reconnect" become mystery downtime.
 - Never escalate past what the task needs: read-only answers
   read-only questions. A write-shaped need gets its own approval
@@ -146,13 +143,13 @@ escalated after the read set printed).
   reads + recovery, collected).
 - Carry expected-weird states with the connector: a 522 with a
   known-benign cause still costs a diagnosis cycle unless the
-  "lab router, no web origin by design" fact travels with the zone
-  (collected: friction log #6). Lab twins and test targets get the
+  "test router, no web origin by design" fact travels with the zone
+  (collected: an earlier field run). Test twins and test targets get the
   same treatment.
 - The evidence ledger points at the probe outputs (command +
-  output, trimmed honestly, secrets redacted to shapes); coord
-  carries the verdict + pointer + pending list for other sessions.
-  Never edit another session's post — append a follow-up citing it.
+  output, trimmed honestly, secrets redacted to shapes); a handoff
+  note carries the verdict + pointer + pending list for other sessions.
+  Never edit another session's note — append a follow-up citing it.
 - Close checks: every allowlisted tool is probed or pending; no
   secrets in the doc (grep token/key/serial patterns); the doc
   states the grant's expiry story (TTL, one-shot vs durable).
@@ -165,7 +162,7 @@ Load when: adding an MCP server or API as a connector; onboarding
 an agent to a new service; reviewing whether a "connected"
 connector is actually verified; re-approving a grant after expiry;
 "can this agent reach X" questions. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
@@ -183,7 +180,7 @@ capability-probe pattern: K22.)
 - Reads-first always: identity/inventory reads before any grant
   above read-only, mirroring first-contact's reads-first rule.
 - Production connectors: reads free; ANY write-shaped approval
-  asks the developer first (bigdude rule carries over).
+  asks the developer first (the production rule carries over).
 - Credentials are surrogated or vaulted — the agent never holds
   raw tokens in chat, notes, or env dumps; local CLIs cannot
   borrow connector OAuth (friction precedent: vault releases

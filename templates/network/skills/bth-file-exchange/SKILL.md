@@ -7,11 +7,11 @@ tested: none
 
 # `bth-file-exchange` skill (share → drop → list → fetch) [template v1 draft]
 
-Promoted from the BTH Files design (connectivity notes: scheme
-from forum topic #181789), the live access matrix (A recon: relay
-refuses the sandbox, works from residential nets), bigdude's BTH
-presence (orca-setup), and fresh-CHR menu probes
-(t28-cf-proof.md). Backlog #35. No secrets below; share URLs are
+Promoted from the BTH Files design (collected
+HTTP exchange shape; round-trip verification pending), the live access matrix (recon: relay
+refuses the sandbox, works from residential nets), a production
+router's BTH presence, and fresh-CHR menu probes.
+No secrets below; share URLs are
 bearer-shaped and never quoted with real IDs.
 
 ## Part 1 — The checklist (a share link, nothing to install)
@@ -20,7 +20,7 @@ Run top to bottom. BTH Files is the rung with zero new accounts
 and zero new infrastructure: a directory on the router, a relay
 URL, a plain-HTTP scheme.
 
-1. Confirm the habitat can reach the relay (§0): LAN-side and
+1. Confirm the environment can reach the relay (§0): LAN-side and
    residential yes, cloud sandbox no — matrix first.
 2. Create the share (§1): directory + upload flag on the
    router (collected shape — first creation grounds it).
@@ -34,31 +34,31 @@ URL, a plain-HTTP scheme.
 Live access matrix (measured, not assumed):
 
 - From residential networks / LAN-side agents: the relay works
-  (brief §hard-blocks: "working fine from residential networks";
+  ("working fine from residential networks";
   Safari reaches the BTH share fine on a real network). This is
-  the habitat the rung is FOR: Muse Code on the owner's Mac,
+  the environment the rung is FOR: Muse Code on the owner's workstation,
   any LAN-side agent, and humans with browsers.
 - From the Muse-app sandbox: the relay REFUSES — connection
   closed before any HTTP response, from curl/Python/Chromium
-  alike (brief §hard-blocks; A recon §2). BTH Files cannot be
-  the cloud agent's rung today. When reach differs by habitat,
-  that's data: record which habitat each result came from.
+  alike. BTH Files cannot be
+  the cloud agent's rung today. When reach differs by environment,
+  that's data: record which environment each result came from.
 - The relay host's real DNS (single A record, TTL 60, from a
   real network) vs sandbox fake-IP answers: never treat a
   sandbox-side DNS answer as real — check from a normal
-  network (brief §DNS-intercepted).
+  network.
 
 BTH presence check: a router with BTH enabled shows a BTH entry
 in `/ip/address`; share mechanics are un-run. Fresh CHR has NO enumerable BTH file-share
 menu with BTH off (`/ip/cloud/file-share`,
 `/ip/cloud/back-to-home-file`, `/ip/cloud/shares` all
-`validation/unknown-path`; `:parse` rejects the guessed forms —
-t28-cf-proof.md). Menus appear with the feature, and enabling
+`validation/unknown-path`; `:parse` rejects the guessed forms).
+Menus appear with the feature, and enabling
 phones home: share creation stays pending a deliberate run.
 
 ### 1. Share (collected shape, pending first creation)
 
-Design shape (connectivity notes, applicant 2026-10-23; feature
+Design shape (collected 2026-10-23; feature
 debuted 7.18 as `/ip/cloud/file-share`): a BACK-TO-HOME-FILE
 share of a directory (e.g. `disk1/bthf/muse-test-1`,
 `allow-uploads=yes`), reachable at
@@ -83,14 +83,13 @@ share of a directory (e.g. `disk1/bthf/muse-test-1`,
 
 ### 2. Exchange (plain HTTP, append-only)
 
-Scheme from the forum writeup (topic #181789 — collected, the
-round-trip itself is the pending proof):
+Collected HTTP exchange shape; round-trip verification pending:
 
 - `GET ?list` → JSON directory listing.
 - `GET <path>?dl` → download.
 - `POST` multipart field `file` WITH trailing slash → upload.
-  (The trailing slash is load-bearing per the writeup — first
-  uploader confirms or corrects.)
+  (The trailing slash is load-bearing in the collected shape —
+  first uploader confirms or corrects.)
 - No DELETE: the share is append-only. Supersede by versioned
   names (`plan-2.toml` beside `plan-1.toml`), never by
   overwrite-then-pretend. Stale files are removed router-side
@@ -103,16 +102,15 @@ Exchange discipline:
   report, owner downloads it. "A share link" is the familiar
   end-user model — meet the human there, not at a CLI.
 - Agent ↔ agent (LAN-side): same share as a drop box between
-  habitats on the same network. Cross-habitat (cloud sandbox
+  environments on the same network. Cross-environment (cloud sandbox
   involved): NOT this rung — the relay refuses it (§0); use
-  the Cloudflare mailbox half (mailbox-envelope-exchange,
-  backlog #36).
+  the Cloudflare mailbox half (mailbox-envelope-exchange).
 - Envelopes over drops: signed/encrypted job blobs ride as
   files with identical format across BTH and Cloudflare
   carriers (the envelope format is the design asset; the
-  carrier differs by habitat). Manifest-last, one writer per
-  folder (#36 rules apply once that skill lands).
-- Every transfer checks size + sha256 after (homework §13
+  carrier differs by environment). Manifest-last, one writer per
+  folder (mailbox-envelope-exchange rules apply).
+- Every transfer checks size + sha256 after (the
   transfer rule — REST/native byte-count history). A download
   isn't "received" until it verifies.
 
@@ -124,7 +122,7 @@ Exchange discipline:
   so removal is clean.
 - Record the exchange (evidence-ledger): share name (never the
   full URL — the key half is bearer-shaped), file names +
-  sizes + sha256, directions, habitats both ends. The ledger
+  sizes + sha256, directions, environments both ends. The ledger
   proves what moved without re-exposing it.
 - Test shares die after use (`muse-test-1` is not a pet):
   remove + verify-list-empty, same session. Lingering test
@@ -141,12 +139,12 @@ Exchange discipline:
 Load when: moving files owner↔agent without new accounts;
 handing a human a download/upload link; staging job envelopes
 for the mailbox path; "how do I get this file on/off the
-router" questions from LAN-side habitats. (Entry-skill +
-capability-probe pattern: K22.)
+router" questions from LAN-side environments. (Entry-skill +
+capability-probe pattern.)
 
 ### Prereqs
 
-- Habitat check FIRST (§0 matrix): LAN-side/residential, or
+- Environment check FIRST (§0 matrix): LAN-side/residential, or
   stop and re-pick the rung.
 - Router with BTH available + a directory to share + the
   upload decision (yes/no per share).
@@ -157,8 +155,8 @@ capability-probe pattern: K22.)
 ### Access
 
 - Share creation/removal: router writes — approval per item
-  (bigdude: developer). Share URLs are bearer-capable: treat
-  the full URL like a password in every channel (coord,
+  (production: developer). Share URLs are bearer-capable: treat
+  the full URL like a password in every channel (handoff notes,
   chat, notes quote the share NAME, never the URL).
 - Upload/download: whoever holds the link. Scope shares so
   link-holders are exactly who you mean.
@@ -176,27 +174,27 @@ capability-probe pattern: K22.)
 - Share record: router, directory, upload flag, share name
   (URL key redacted to shape).
 - Transfer log: files + sizes + sha256 + directions +
-  habitats, verify line each.
+  environments, verify line each.
 - Closure: share removed (or handed off with an owner) +
   list-empty verify.
 
 ### Verification
 
 - List works (`GET ?list` JSON) before first upload — the
-  share is reachable from the consuming habitat, not just
+  share is reachable from the consuming environment, not just
   configured.
 - Every file verifies post-transfer (size + sha256).
 - Round-trip pending until run: share → upload → list →
-  download from the habitat that will use it. NO round-trip
+  download from the environment that will use it. NO round-trip
   has executed yet — this is the skill's open proof.
 - Closure verified (list-empty or owner-accepted handoff),
   not assumed from the remove command.
 
 ### Recovery
 
-- Relay refuses (closed before HTTP response): habitat
+- Relay refuses (closed before HTTP response): environment
   problem, not a share problem — re-check §0, switch rungs
-  (Cloudflare half) for that habitat. Don't debug the share.
+  (Cloudflare half) for that environment. Don't debug the share.
 - Upload fails: trailing slash first (scheme's known
   sharp edge), then upload-flag state, then the writeup
   against current firmware (2026 writeup vs today's
@@ -214,13 +212,13 @@ capability-probe pattern: K22.)
 - Share-create shape + HTTP round-trip BOTH pending: the
   two halves this skill most needs are its two open proofs.
   First runner grounds them (or corrects the writeup).
-- Cloud-sandbox habitats can never use this rung (relay
+- Cloud-sandbox environments can never use this rung (relay
   refusal measured, twice). No fallback, no retry logic —
   different rung.
 - Append-only is protocol truth (no DELETE): workflows
   needing revoke-one-file or overwrite need versioning
   discipline, not wishes.
 - Relay dependence: MikroTik's cloud is the middleman —
-  outages and policy changes there are outside our control
-  and outside our logs. Critical paths note the
+  outages and policy changes there are outside operator control
+  and outside operator logs. Critical paths note the
   dependency; they don't assume it.

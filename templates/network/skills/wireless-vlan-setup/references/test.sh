@@ -19,5 +19,5 @@ for h in Trigger Prereqs Access Envs Outputs Verification Recovery Limits; do
 done
 grep -Eq '[0-9]{4}-[0-9]{2}-[0-9]{2}' "$TWINRUN" || fail "twin-run.md needs a date"
 grep -Eqi 'twin|chr|hardware|routeros' "$TWINRUN" || fail "twin-run.md needs a target"
-grep -qi 'orca' "$TWINRUN" || fail "twin-run.md needs the machine"
+grep -qi 'kvm host' "$TWINRUN" || fail "twin-run.md needs the machine"
 echo "PASS: wireless-vlan-setup static shapes ok"

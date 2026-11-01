@@ -7,14 +7,15 @@ tested: self-test
 
 # `site-plan-multi-ap` skill (survey → schematic → deconflict → verify) [template v1 draft]
 
-Backlog #52. The common MikroTik shape (several APs on
-one router, large home / small business) where the
-backlog ruled Leaflet NOT the useful view and left the
+The common MikroTik shape (several APs on
+one router, large home / small business) where an
+earlier scoping pass ruled Leaflet NOT the useful view and left the
 scheme TBD. This skill DECIDES the scheme (§0, proposed
 — ratify or amend with the first real site): a
 schematic per-floor grid, no geo, no traced floorplans.
-Topology halves route to #45, install content to #18,
-per-AP SSID→VLAN builds to #7. The reference renderer
+Topology halves route to truthful-topology-graphviz, install content
+to field-sheets, per-AP SSID→VLAN builds to wireless-vlan-setup.
+The reference renderer
 proves the pipeline on a synthetic two-floor fixture:
 SVG schematic + AP table with computed channel
 warnings + PNG. No twin, no box writes: local render
@@ -39,7 +40,7 @@ survey — hand-moved markers are forgery.
 
 ### 0. Decide the scheme (the TBD, closed as proposed)
 
-- REJECTED (a): Leaflet geo map — the backlog's own
+- REJECTED (a): Leaflet geo map — an earlier scoping
   ruling stands. Reasons recorded: indoor scale is
   meters (geo tiles answer nothing at that zoom),
   there is no GPS indoors to pin against, and the
@@ -64,9 +65,9 @@ survey — hand-moved markers are forgery.
   survey cost (one walk, no tools), with the lowest
   privacy cost (no real plans change hands), and the
   sketch label keeps it honest (collected precedent:
-  #16's "a sketch, not a survey" coverage rule).
+  map-reports's "a sketch, not a survey" coverage rule).
 - Corpus note (observed): a full-text search of
-  triage/corpus-local for multi-AP/floorplan/dead-
+  the design corpus for multi-AP/floorplan/dead-
   spot/roaming/coverage-placement content returned
   nothing on point — this scheme is designed, not
   collected. First real site either ratifies or
@@ -79,16 +80,16 @@ survey — hand-moved markers are forgery.
   of living") suffice — the renderer lays boxes out,
   it does not need measurements.
 - Per AP intent: device, room, model shortlist or
-  installed model (rosetta card per #49 — observed
+  installed model (rosetta card per device-selection — observed
   this run: cAP RBcAP2nD 2×2.4 af/at $49.95; wAP LR2
   kit 2×2.4 passive PoE; DB v0.11.3), SSIDs it must
   serve, PoE source, uplink port → which switch/router
-  port (that mapping is #45's input, recorded here).
+  port (that mapping is truthful-topology-graphviz's input, recorded here).
 - The complaint in the owner's words ("garage drops
   under load") + where it happens (room, floor).
   A survey without a complaint is a guess about what
   problem the APs solve — ask.
-- Absences to list (same force as #2): rooms with no
+- Absences to list (same force as import-existing-network): rooms with no
   AP intent, SSIDs with no AP assigned, PoE budget
   unknown, uplink ports unmapped. Empty absences =
   skipped questions, not a complete survey.
@@ -106,7 +107,7 @@ survey — hand-moved markers are forgery.
   carries device + channel; coverage circles are
   dashed with a per-floor "estimate" legend; the
   table cites rosetta cards per AP row.
-- Coverage sketch rule (adopted from #16): circles
+- Coverage sketch rule (adopted from map-reports): circles
   are free-space-plus-clutter-margin sketches, phone-
   uplink-limited, antenna gain from what the radio
   reports — and the page says "estimate" on them.
@@ -114,7 +115,7 @@ survey — hand-moved markers are forgery.
 - Pending: first render from a real site survey
   (room boxes from a real walk, installed-model
   cards); DnD-draggable markers are explicitly NOT
-  planned (Fix-GPS-style loops stay #16's).
+  planned (Fix-GPS-style loops stay map-reports's).
 
 ### 3. Deconflict (channels, mechanically)
 
@@ -145,15 +146,15 @@ survey — hand-moved markers are forgery.
   cite rosetta cards; no real addresses/floorplans in
   fixtures (synthetic grid coords only).
 - Hand off the halves this skill does not own:
-  uplink paths + switch-port mapping → #45 topology
+  uplink paths + switch-port mapping → truthful-topology-graphviz
   (DOT→SVG, observed/inferred marking); per-AP
-  SSID→VLAN builds → #7 wireless-vlan-setup;
-  install/aiming sheets for the AP work → #18
-  field-sheets (pending — the handoff is filed,
-  #18 stays listed).
+  SSID→VLAN builds → wireless-vlan-setup;
+  install/aiming sheets for the AP work → field-sheets
+  (pending — the handoff is filed,
+  field-sheets stays listed).
 - Observed PNG path (self-test): headless-chromium
   screenshot of the inlined SVG at 1080×1350 (same
-  flags as #16/#55), checker threshold 32.
+  flags as map-reports/presentation-layer), checker threshold 32.
 - Record per `evidence-ledger`: survey + scheme
   choice + warning count + handoffs filed. First
   real site also records: scheme ratified or amended.
@@ -164,13 +165,13 @@ survey — hand-moved markers are forgery.
 
 Load when: placing APs across rooms/floors; answering
 which AP serves where; deconflicting channels; scoping
-wifi work or a coverage complaint; or extending a #49
+wifi work or a coverage complaint; or extending a device-selection
 shortlist with placement.
 
 ### Prereqs
 
-- Backlog #52 read (the TBD this skill closes).
-- #49 device-selection for AP model cards (specs
+- The scheme TBD read (this skill closes it).
+- device-selection for AP model cards (specs
   from lookups, never memory).
 - python3 + chromium for the reference renderer and
   self-test (stdlib only + local tools).
@@ -199,8 +200,8 @@ is part of any path here.
   PNG, dated, estimate-labeled).
 - AP table with model citations + computed channel
   warnings (count printed, zero or tolerated).
-- Filed handoffs: #45 topology input, #7 build list,
-  #18 install-sheet request.
+- Filed handoffs: truthful-topology-graphviz input, wireless-vlan-setup
+  build list, field-sheets install-sheet request.
 
 ### Verification
 
@@ -212,7 +213,7 @@ is part of any path here.
   tolerated warnings carry reasons on the page.
 - AP specs trace to rosetta lookups with DB release.
 - No real floorplans, addresses, or credentials
-  anywhere (D1).
+  anywhere (privacy rule).
 
 ### Recovery
 
@@ -222,7 +223,7 @@ is part of any path here.
   APs) → record as tolerated-with-reason + capacity
   note; never delete the warning.
 - Rosetta lacks an installed model → vendor/manual
-  fallback per #49 Recovery, marked
+  fallback per device-selection Recovery, marked
   collected-from-vendor.
 - Scheme fails the first real site → amend §0 with
   what the site taught; the TBD reopens honestly.
@@ -236,8 +237,8 @@ is part of any path here.
   neighbor scans, no roaming analysis — the labels
   say so, and the skill refuses heatmap realism.
 - This skill places and deconflicts; it never builds
-  (#7), never maps uplinks (#45), never writes
-  install sheets (#18). Halves are handed off, named.
+  (wireless-vlan-setup), never maps uplinks (truthful-topology-graphviz),
+  never writes install sheets (field-sheets). Halves are handed off, named.
 - One site, one schematic: fleet/multi-site AP
   planning has no skill yet — do not stretch this
   one's fixture shape across sites.

@@ -2,7 +2,7 @@
 """render-views.py — presentation-layer reference renderer (stdlib only).
 
 Findings fixture in, four harness-suited views out:
-  views-orca.html — self-contained status page (inline CSS, no refs, no script)
+  views-local.html — self-contained status page (inline CSS, no refs, no script)
   views-board.svg — hand-built 1080x1350 status board
   shot.html       — SVG inlined at exact board size for headless screenshot
   views-links.md  — harness routing table + WebFig deep links (fixture host only)
@@ -89,7 +89,7 @@ def main():
 </body>
 </html>
 """
-    with open(os.path.join(args.out, "views-orca.html"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(args.out, "views-local.html"), "w", encoding="utf-8") as fh:
         fh.write(page)
 
     y = 200
@@ -130,8 +130,8 @@ def main():
         f"# views for {fx['site']} ({synth}, matrix {fx['matrix_date']})",
         "",
         "Routing (keyed off harness-capability matrix v1):",
-        "- orca / Habitat C: views-orca.html (served loopback) or views-board.png (file)",
-        "- muse-app / Habitat A: views-board.png attached + this list in a Drive .md (no loopback)",
+        "- local workstation agent: views-local.html (served loopback) or views-board.png (file)",
+        "- sandboxed agent app: views-board.png attached + this list in a Drive .md (no loopback)",
         "- unprobed harnesses: PNG + short text; channel assumed, not observed",
         "",
         "Check one thing (WebFig deep links):",

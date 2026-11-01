@@ -7,24 +7,22 @@ tested: self-test
 
 # `sidecar-projects` skill (name → stand up → link → run → integrate-or-retire)
 
-Backlog #57. Sometimes the right answer is not a bigger
+Sometimes the right answer is not a bigger
 product but a smaller build: the parable is
-heltec-victron — an agent-built ESP32 solar monitor for
-the ginny pig INSTEAD of an overkill/mismatched Victron
+a custom ESP32 solar monitor for
+a test deployment INSTEAD of an overkill/mismatched Victron
 product. It lives in its own directory, is known to the
 managed network's records, and keeps a LoRa-gateway
 future optional. That flexibility — a directory over
 one-size-fits-all SaaS — is the point of this skill.
 
-Honest sourcing: the parable paragraph in backlog v3 is
-the ONLY source. The unpublished victron-heltec project
-tree was excluded from the corpus mirror (venv-bloated)
-and is not drawn on here; the reference fixture is
+Collected from pilot feedback: the parable is secondhand; no
+source project tree was inspected. The reference fixture is
 synthetic, shaped like the parable. The manifest schema
 (v1) is PROPOSED — the first real sidecar ratifies or
-amends it. Repo grounding: D5 (records track), K15
-(pre-issue layer: unshaped work with no formality tax,
-promotion needs an owner + done), #40
+amends it. Repo grounding: structured records track state
+(not prose), the pre-issue layer (unshaped work with no
+formality tax, promotion needs an owner + done), and
 network-workspace-bootstrap (the workspace the sidecar
 sits BESIDE — boundary, not parent). No twin, no box
 writes: directories + records only.
@@ -60,7 +58,7 @@ a wish. The reference checker enforces both halves.
   fit, and complexity are all valid reasons;
   "we build everything ourselves" is not.
 - Status starts at `spike`: unshaped work, no
-  formality tax (K15). Promotion to `active` needs
+  formality tax. Promotion to `active` needs
   an owner + a definition of done — same bar as
   pre-issue → issue.
 - Observed (self-test): the parable-shaped fixture
@@ -70,7 +68,7 @@ a wish. The reference checker enforces both halves.
 ### 1. Stand up (a sibling, not a fork)
 
 - Directory beside the managed network (or beside
-  the workspace per #40), never inside it: the
+  the workspace per network-workspace-bootstrap), never inside it: the
   sidecar's deps, venvs, and build mess must not
   leak into network records. Name == dir (rule S2).
 - Own build from day one: README (what + how to
@@ -158,7 +156,7 @@ does this custom build live".
 
 ### Prereqs
 
-- Backlog #57 parable + schema v1 read (this doc).
+- The parable + schema v1 read (this doc).
 - A named owner problem + a rejected alternative
   with reasons (step 0 inputs).
 - python3 (3.11+ tomllib) for the reference
@@ -173,7 +171,7 @@ does this custom build live".
   sidecar that needs those goes through the
   network's skills like any other change.
 - Sidecar contents (firmware, keys, readings) stay
-  in the sidecar dir under D1 tiers; the manifest
+  in the sidecar dir under privacy tiers; the manifest
   + records page carry no secrets.
 
 ### Envs

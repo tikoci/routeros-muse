@@ -9,17 +9,16 @@ tested: none
 # `hotspot-ops` skill (isolate → build → verify live → tag → tear down) [template v1 draft]
 
 Promoted from the executed hotspot-on-VLAN drill
-(t28-hsmon-proof.md, twin1/7.26beta3): VLAN + address + pool
+(a 7.26beta3 CHR twin): VLAN + address + pool
 + profile + instance built on an isolated VLAN, live state
 verified (`proxy-status: running`, 28 auto NAT rules),
 walled-garden tag row added, full teardown to pristine with
 auto-rules gone. Consumes the `routeros-hotspot` DOMAIN skill
-(chain semantics, option 114, templates, RADIUS) and adds OUR
+(chain semantics, option 114, templates, RADIUS) and adds this
 procedure. The CLIENT FLOW (DHCP → intercept → login → auth)
 is PRESCRIBED, not executed — no L2 client exists on the
-CHR lab VLAN; router-local fetch 404s (documented below).
-Build-tracker references (T/K IDs, notes paths) are pointers
-pending staging scrub. No secrets below.
+CHR drill VLAN; router-local fetch 404s (documented below).
+No secrets below.
 
 ## Part 1 — The checklist (never intercept the management path)
 
@@ -49,7 +48,7 @@ flow (step 5) has a proof plan with a real client.
   (routeros-hotspot): binding a hotspot to the management
   interface intercepts the agent's own HTTP path. The drill
   used `vlan99` on `ether1` with `10.99.9.1/24` — the
-  uplink stayed clean throughout (t28-hsmon-proof.md).
+  uplink stayed clean throughout.
 - Build the L2 isolation, then address it, then bind the
   hotspot to it. Order: `/interface/vlan/add` →
   `/ip/address/add` → pool → profile → instance. Each
@@ -74,8 +73,8 @@ centrs execute --quickchr <twin> '/ip/hotspot/add name=t28-hs interface=vlan99 p
 # -> {"ret": "*1"}
 ```
 
-- Grounded verbatim (t28-hsmon-proof.md): all five layers
-  built on twin1, every ID returned, instance enabled.
+- Grounded verbatim: all five layers
+  built on the twin, every ID returned, instance enabled.
 - Minimal profile first: `hotspot-address` + one
   `login-by` method + `dns-name`. HTTPS login, RADIUS,
   and html overrides are follow-on changes with their own
@@ -97,7 +96,7 @@ centrs execute --quickchr <twin> '/file/print' | grep -i hotspot
 # -> hotspot/ dir + rlogin.html + img/ : default templates ship on CHR
 ```
 
-- Grounded (t28-hsmon-proof.md): `proxy-status: running`
+- Grounded: `proxy-status: running`
   with `invalid: false`; `ip-of-dns-name` resolved to the
   hotspot address; 28 auto NAT rules present; default
   `hotspot/` templates on disk with `$(...)` substitution
@@ -109,7 +108,7 @@ centrs execute --quickchr <twin> '/file/print' | grep -i hotspot
 - Router-local fetch does NOT prove the portal:
   `/tool/fetch url="http://10.99.9.1/login"` from the
   router 404s — intercept applies to traffic ENTERING the
-  interface, not router-originated (t28-hsmon-proof.md).
+  interface, not router-originated.
   (Side finding: `/tool/fetch` is write-gated, needs `--yes`.)
 
 ### 3. Walled garden with tags (writes — idempotent rows)
@@ -120,7 +119,7 @@ centrs execute --quickchr <twin> '/ip/hotspot/walled-garden/ip/add dst-host=exam
 # rollback: /ip/hotspot/walled-garden/ip/remove [find comment="<tag>"]
 ```
 
-- Grounded (t28-hsmon-proof.md): add + tagged remove both ran.
+- Grounded: add + tagged remove both ran.
 - HTTPS destinations go in `walled-garden/ip` (layer-3,
   pre-auth); the L7 `walled-garden` match is HTTP-only
   and silently misses HTTPS (domain skill). Wrong list =
@@ -146,7 +145,7 @@ centrs execute --quickchr <twin> '/ip/hotspot/walled-garden/ip/add dst-host=exam
 #         nat shows only the disabled unused-hs-chain placeholder
 ```
 
-- Grounded verbatim (t28-hsmon-proof.md): all six removes
+- Grounded verbatim: all six removes
   ran; hotspot/vlan/pool back to `{}`; profile back to the
   single factory `default`; all 28 drill auto-NAT rules
   gone with the instance — the only remaining hs match is
@@ -200,10 +199,10 @@ access; any "guests can't reach X" report on a hotspot segment.
 
 - Twins: anything goes — but keep the drill on an
   isolated VLAN even on twins; intercepting the
-  management path slows the lab for everyone.
-- bigdude (production): reads free; ANY write asks the
+  management path slows everyone.
+- Production: reads free; ANY write asks the
   developer first — including walled-garden rows.
-- Operator Unknown → ask before any write (concepts K14).
+- Operator Unknown → ask before any write.
 
 ### Envs
 
@@ -247,7 +246,7 @@ access; any "guests can't reach X" report on a hotspot segment.
   the wrong interface: disable the instance FIRST
   (`set disabled=yes`), then re-plan. Never debug
   intercept live on the management path.
-- Redaction: scrub secrets from stored prints per C1.
+- Redaction: scrub secrets from stored prints (pre-publish-scrub tiers).
 
 ### Limits
 

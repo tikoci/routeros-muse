@@ -19,7 +19,7 @@ Tool versions this setup was built and verified against. Unpinned
 entries are TODOs, not defaults — pin before trusting a fresh
 machine's output against old observations.
 
-Resolution is driven by the routeros-muse package.json (D26), not by
+Resolution is driven by the routeros-muse package.json, not by
 these pins: the bootstrap and server front the package's own tool
 bundle on PATH, so the UI, the CLI, and agent shells all resolve the
 identical builds. [pins] records what this setup was verified

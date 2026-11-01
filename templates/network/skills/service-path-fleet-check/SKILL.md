@@ -7,11 +7,11 @@ tested: none
 
 # `service-path-fleet-check` skill (order → poll → correlate → notify) [template v1 draft]
 
-Promoted from the source-verified status layer (concept review §10:
-outward-from-main, per-device outcomes, retained errors), the
-cadence recommendation (§11: collect/investigate/notify +
+Promoted from the source-verified status layer
+(outward-from-main, per-device outcomes, retained errors), the
+cadence recommendation (collect/investigate/notify +
 hysteresis + dedup + recovery), the scheduler shape (60s
-non-overlapping jobs, /about diagnostics), and K20. Backlog #38.
+non-overlapping jobs, /about diagnostics), and the look-after chain.
 No secrets below; device names are roles.
 
 ## Part 1 — The checklist (places first, then boxes)
@@ -31,7 +31,7 @@ path a symptom would travel.
 
 ### 0. Order (outward from main)
 
-Source-verified shape (concept review §10): inventory is network
+Source-verified shape: inventory is network
 → sites → devices with explicit links and each site's main
 device. The status layer filters by site and ORDERS DEVICES
 OUTWARD ALONG LINKS FROM THE MAIN ROUTER, then includes
@@ -57,7 +57,7 @@ site navigation.
 
 ### 1. Poll (per-device outcomes, failures retained)
 
-- Bounded parallel reads (recommendation §10): independent
+- Bounded parallel reads: independent
   reads fan out with a bound (centrs fan-out > shell loops —
   one envelope, per-target errors that don't abort the rest);
   dependency-sensitive WRITES sequence deliberately. Reads
@@ -70,17 +70,17 @@ site navigation.
   output is the same shape, different tool.
 - Failed reads are RETAINED AS ERRORS, never discarded
   (source-verified): a failed collection renders as
-  UNRESOLVED, never green (muse feedback §4.1; K20: "a failed
+  UNRESOLVED, never green ("a failed
   check never renders green"). A silent "all green" from a
   run that never reached the router is the worst outcome
-  (homework §3) — the poll proves contact per device or says
+  — the poll proves contact per device or says
   which device it never reached.
 - Live link checks inspect BOTH ends (source-verified):
   radio/link state from each side; one-sided reads mislead
   (the far end's view of the link is data the near end
   can't supply). Asymmetric results (A sees B, B silent)
   are a directional finding, not a flapping one.
-- Scheduler shape (source-verified §11): small in-process
+- Scheduler shape (source-verified): small in-process
   loop, ~60s delays, each job awaits completion before
   rescheduling (a job never overlaps ITSELF; separate jobs
   may run concurrently). Diagnostics per job: name,
@@ -92,30 +92,30 @@ site navigation.
 ### 2. Correlate (shared path before broken boxes)
 
 - An unreachable downstream GROUP is a possible SHARED-PATH
-  failure first (recommendation §10): main-down explains
+  failure first: main-down explains
   edge-silence. Correlation is a HYPOTHESIS until checked —
   verify the path device before declaring the leaves dead,
   but don't page N device owners for one uplink.
-- Expected-absence states (recommendation §10): include
+- Expected-absence states: include
   expected-offline, not-yet-installed, and maintenance in
   the state model so planned absence never becomes alarm
-  noise. (Private workspace already handles expected
+  noise. (Some workspaces already handle expected
   absence; general maintenance workflow stays a proposal —
   mark which half you're using.)
 - Scope proposals to the SERVICE: list all affected devices
-  INCLUDING the router hosting the agent's own access path
-  (recommendation §10). The poll that kills its own route
+  INCLUDING the router hosting the agent's own access path.
+  The poll that kills its own route
   to report is a special kind of wrong — the access-path
   device gets named before any action touching the path.
 - Site copies serve pages separately: report which site
   copy serves a view and which copies received a
-  publication (recommendation §10) — a whole-network
+  publication — a whole-network
   workspace can still have per-site deployments, and
   "the dashboard says X" needs a WHICH-dashboard.
 
 ### 3. Notify (three cadences, change-only, recovery announced)
 
-K20 + recommendation §11 (proposed there — the inspected
+Look-after chain + cadence recommendation (proposed — the inspected
 scheduler does NOT implement a complete notification service;
 this skill carries the recommendation as the target shape):
 
@@ -128,7 +128,7 @@ this skill carries the recommendation as the target shape):
 - Hysteresis on intermittent faults: flap × N inside window T
   before the first notify (numbers per deployment, stated —
   the five-minute collection / eleven-minute stale-threshold
-  pair in §11 is deployment-specific, NOT a default).
+  pair in the source review is deployment-specific, NOT a default).
 - Dedup repeated alerts: one incident, one notification
   thread, count attached ("still down, 14th poll") — never
   14 messages. Persist the incident state if restarts must
@@ -137,8 +137,8 @@ this skill carries the recommendation as the target shape):
   load-bearing as the alert ("site X reachable again after
   22m" closes the human's open loop). A system that pages
   down but never up trains owners to ignore it.
-- Escalate on MEANINGFUL change only (K20: notify on change
-  only): new failure, state flip, threshold cross, recovery.
+- Escalate on MEANINGFUL change only: new failure, state flip,
+  threshold cross, recovery.
   Steady-state — good or bad — is a dated view, not a
   notification (workflow Reports rule).
 
@@ -149,7 +149,7 @@ this skill carries the recommendation as the target shape):
 Load when: checking fleet health; multiple devices symptom
 at once; designing or debugging a poll loop; "is the fleet
 ok?" questions; deciding poll vs CMR-consume architecture.
-(Entry-skill + capability-probe pattern: K22.)
+(Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
@@ -162,7 +162,7 @@ ok?" questions; deciding poll vs CMR-consume architecture.
 
 ### Access
 
-- Polling is reads: safe on all boxes anytime (bigdude
+- Polling is reads: safe on all boxes anytime (production
   included). Poll loops are the gentlest fleet load —
   keep them read-only and they stay welcome.
 - Investigation may write (diagnostic toggles, test peers):
@@ -215,17 +215,17 @@ ok?" questions; deciding poll vs CMR-consume architecture.
 
 ### Limits
 
-- Source-verified SHAPES (§10 status layer, §11 scheduler
-  mechanics) + PROPOSED alerting (§11 cadences/hysteresis/
+- Source-verified SHAPES (status layer, scheduler
+  mechanics) + PROPOSED alerting (cadences/hysteresis/
   dedup/recovery unimplemented in the inspected code):
   the poll half is prior art, the notify half is target
   shape. First implementation grounds §3's numbers.
-- Complements look-after-ops (#3) and monitoring-alerting
-  (#13), not a dup: those own the loop lifecycle + what
+- Complements the look-after loop and monitoring-alerting,
+  not a dup: those own the loop lifecycle + what
   to watch; this owns the fleet CHECK (order, outcomes,
   correlation). Cite, don't re-derive.
 - Expected-absence exists; general maintenance workflow
-  is proposal-only (§10) — maintenance windows are manual
+  is proposal-only — maintenance windows are manual
   until someone builds that workflow.
 - Radio/link truth needs both ends live: single-ended
   checks during an outage are explicitly one-sided —

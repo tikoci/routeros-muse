@@ -8,10 +8,10 @@ tested: none
 
 # `agent-access-bootstrap` skill (reader → admin → break-glass → audit) [template v1 draft]
 
-Promoted from the twin account-matrix proof (t28-acl-proof.md), the
-corpus CHR policy matrix (review-of-reviews §2), the D-09 access
-decision + RADIUS outage journal (claude code feedback.md §6/§8),
-and the default-group trap (homework §5). Backlog #26. No secrets
+Promoted from a twin account-matrix proof, an
+earlier CHR policy matrix, the standing access
+decision + a RADIUS outage journal,
+and the default-group trap. No secrets
 below; passwords are throwaways-never-recorded by rule.
 
 ## Part 1 — The checklist (least privilege, local first)
@@ -30,8 +30,8 @@ before it is created.
 
 ### 0. Groups (custom minimal, never default)
 
-Re-verified 2026-10-29 on twin-acl, CHR 7.26beta3
-(t28-acl-proof.md). The default `read` group carries
+Re-verified 2026-10-29 on a CHR twin, 7.26beta3.
+The default `read` group carries
 `local,telnet,ssh,reboot,read,test,winbox,password,web,sniff,
 sensitive,api,romon,rest-api` — reboot, sensitive, password, and
 sniff ride along with "read". Never give an agent a default group.
@@ -44,12 +44,12 @@ centrs execute --quickchr <twin> --yes \
 # !test,!winbox,!password,!web,!sniff,!sensitive,!romon
 ```
 
-Version rule (corpus CHR matrix, 7.23.8 → 7.26beta3): before
+Version rule (CHR matrix, 7.23.8 → 7.26beta3): before
 7.26beta3, REST needs `api` as well as `rest-api` or every request
 fails `not allowed (9)`; 7.26beta3 fixed REST login for
 `rest-api`-without-`api`. A recipe for stable/long-term routers
 still adds `api`. The twin read `ok:true via rest-api` as
-`read,api,rest-api` on 7.26beta3 — that row is ours.
+`read,api,rest-api` on 7.26beta3 — that row is verified.
 
 Admin-shaped group: reader policies + `write`, still without
 `policy`, `sensitive`, `reboot`, `sniff`, `password`
@@ -60,7 +60,7 @@ runs under it), so the centrs remote profile — not RouterOS — is
 what stops direct writes. A dedicated account with no
 `policy/sensitive/reboot` bounds the blast radius of a centrs bug.
 
-Script-policy trap [VERIFIED CHR 7.25, corpus]: a user without
+Script-policy trap [VERIFIED CHR 7.25]: a user without
 `write` running a `policy=read,write` script is refused `(9)` —
 RouterOS checks the runner's rights at approval time, which is what
 makes human-run approval sound. And a user creating a script wider
@@ -70,26 +70,26 @@ the script back and fail closed on `invalid` or empty source.
 
 ### 1. Accounts (local reader, local admin, local break-glass)
 
-Decision D-09 (journaled operating guide): agent accounts encode
+The standing decision (journaled operating guide): agent accounts encode
 their level — a *reader* (no write, reboot, sniff, sensitive) and
 an *admin* for writes; a local *break-glass* for humans. Humans
 normally log in through RADIUS. Agents never do:
 
 > The agent's access path must not depend on the service it may be
-> asked to fix. (Outage lesson, §8: when the RADIUS database failed
-> to open after a reboot, human logins at both sites failed because
-> one site authenticates against the other. The agent kept access
+> asked to fix. (Outage lesson: when the RADIUS database failed
+> to open after a reboot, human logins failed because
+> one site authenticates against another. The agent kept access
 > because its accounts are local to each router.)
 
 ```sh
 centrs execute --quickchr <twin> --yes \
   '/user/add name=<reader> group=<reader-group> password="<throwaway>"' --json
-# ok:true {"ret":"*2"} — password value NEVER enters notes/ledger/coord
+# ok:true {"ret":"*2"} — password value NEVER enters notes/ledger/handoff notes
 ```
 
 - Passwords are set from shell variables holding throwaways,
   rotated before each credentialed probe, and redacted to
-  `<throwaway>` in every record (t28-acl-proof.md convention).
+  `<throwaway>` in every record.
 - One agent identity per router: local accounts, per-device
   credentials, no shared agent password across the fleet.
 - Break-glass is human-only, full-adjacent rights, sealed (sealed
@@ -112,7 +112,7 @@ access:
 ```sh
 centrs execute --quickchr <twin> --yes \
   '/user/group/add name=<no-policy> policy=' --json
-# ok:true — empty policy accepted, reads back all-negated (twin-acl run)
+# ok:true — empty policy accepted, reads back all-negated (twin run)
 centrs execute --quickchr <twin> --yes \
   '/user/aaa/set default-group=<no-policy>' --json
 # read back /user/aaa to confirm; twin restored to read afterwards
@@ -124,22 +124,22 @@ drops. Per-person WPA-Enterprise logins each land on their VLAN via
 explicit RADIUS group attributes; after the default-group fix, a
 login with NO group attribute gets router access nowhere. Audit
 shape: list UM users → each has an explicit group → default-group
-is the no-policy group. (Collected from the demo-catalog S1 + trap
+is the no-policy group. (Collected from an earlier access demo + trap
 write-ups; the twin run proved the group/aaa mechanics, not a live
 WPA-Enterprise join — radio truth needs hardware.)
 
-Show-sensitive verify (reproduced on twin-acl): with a RADIUS
+Show-sensitive verify (reproduced on the twin): with a RADIUS
 secret on-box, `/export show-sensitive` as the reader renders
 `secret=*****`, while the admin sees the clear value. Run this
 verify after every bootstrap: it proves the reader's policy gap is
-real, not assumed. Caveat carried from the field (Codex §12): the
+real, not assumed. Caveat carried from the field: the
 pull STILL redacts container env values after finding `/export`
 prints them in clear even WITHOUT show-sensitive — "safe to share"
 is a tested transformation, never a flag.
 
 ### 3. Record + revocation (bound every account)
 
-- Ledger entry per bootstrap (evidence-ledger): date + habitat +
+- Ledger entry per bootstrap (evidence-ledger): date + environment +
   box, groups with full read-back policies, accounts by name +
   group (never secrets), AAA read-back, show-sensitive verify
   output, pending list.
@@ -163,21 +163,22 @@ is a tested transformation, never a flag.
 Load when: onboarding agent access to a new or adopted router;
 adding reader/admin/break-glass accounts; auditing logins, groups,
 or AAA defaults; any credential incident or rotation; "who can log
-in here" questions. (Entry-skill + capability-probe pattern: K22.)
+in here" questions. (Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
 - The box reachable over an admin path (first-contact if new).
 - Twin at matching firmware for the proof half (matrix rows are
   version-sensitive — 7.26beta3 vs stable differ).
-- The credential scheme in force (CDB once T9 lands; throwaway
+- The credential scheme in force (the device CDB once the
+  credential-handoff design lands; throwaway
   discipline until then). No password ever touches notes or chat.
 
 ### Access
 
 - Twin: full freedom, teardown after, groups/users removed.
-- Production: account changes are writes — approval per item,
-  bigdude needs the developer. The bootstrap proposal names every
+- Production: account changes are writes — approval per item;
+  the developer approves. The bootstrap proposal names every
   group policy verbatim (read-back shape, not shorthand).
 - Break-glass secret: owner custody, sealed, never in agent-visible
   storage. Its NAME is recorded; its VALUE never is.
@@ -203,7 +204,7 @@ in here" questions. (Entry-skill + capability-probe pattern: K22.)
 
 - Every group read back after creation (negations explicit).
 - Reader REST read ok; reader write denied with
-  `routeros/permission-denied` (post-#541 — never retryable).
+  `routeros/permission-denied` (post-centrs#541 — never retryable).
 - `default-group` reads back the no-policy group.
 - Show-sensitive renders `*****` for the reader.
 - Revocation rehearsed or explicitly pending with an owner.
@@ -226,10 +227,10 @@ in here" questions. (Entry-skill + capability-probe pattern: K22.)
 - CHR proof only (7.26beta3): local users, no live RADIUS server,
   no WPA-Enterprise join (no radios on CHR). The outage rule and
   Wi-Fi halves are journaled, not re-run here.
-- Pre-7.26beta3 matrix rows collected from the corpus, not re-run
+- Pre-7.26beta3 matrix rows collected from earlier runs, not re-run
   on this twin. Mixed-firmware fleets re-prove per firmware.
 - Admin-half group recipe is help-verified shape + same-mechanics
   reasoning: first applier runs the add + read-back and records it.
 - Active-session kill semantics pending (`/user/active` unprobed).
-- Cloudflare Access user/group shapes out of scope here (T26
-  boundary question, backlog Q3).
+- Cloudflare Access user/group shapes out of scope here (an
+  open /app-playbook boundary question).

@@ -7,11 +7,11 @@ tested: none
 
 # `mailbox-envelope-exchange` skill (wrap → drop → poll → collect) [template v1 draft]
 
-Promoted from the envelope design (brief §transport-never-authority
-+ ladder §2), the signing-key open decision (AGENTS.md:94, concept
-review), the lived coord precedent (one draft per post, 19/19 tests
-green this session), and the pull manifest-last mechanics (pull.ts).
-Backlog #36. No secrets below; envelope contents are never quoted.
+Promoted from the envelope design (transport-never-authority
++ the rung ladder), the signing-key open decision,
+a single-writer precedent (one file per envelope, never edit
+another writer's), and the pull manifest-last mechanics (pull.ts).
+No secrets below; envelope contents are never quoted.
 
 ## Part 1 — The checklist (async, signed, manifest-last)
 
@@ -22,7 +22,7 @@ slow, certain, andiveness-proof by construction.
    expiry, encryption for the mailbox path.
 2. Drop manifest-last, one writer per folder (§1): files first,
    manifest final, never two writers.
-3. Pick the carrier by habitat (§2): BTH, Cloudflare, or the
+3. Pick the carrier by environment (§2): BTH, Cloudflare, or the
    Drive boundary — each with its hard limits.
 4. Poll, collect, close (§3): poll pickup, verify-then-act,
    receipt, cleanup.
@@ -44,9 +44,9 @@ an open decision, see Limits):
 - The envelope format is IDENTICAL across carriers (BTH Files
   and Cloudflare Worker+KV): same signed + encrypted job blobs
   in a directory. The format is the design asset; the carrier
-  differs by habitat (brief ladder §2).
-- Envelope contents: job id (self-minting, coord-style:
-  timestamp + habitat — no counter lock), payload, scope,
+  differs by environment (the rung ladder).
+- Envelope contents: job id (self-minting:
+  timestamp + environment — no counter lock), payload, scope,
   expiry, signature. Scope says what the job may touch; expiry
   bounds replay; the id makes duplicates detectable.
 
@@ -54,18 +54,17 @@ an open decision, see Limits):
 
 Mechanics grounded in two lived systems:
 
-- **Manifest-last** (pull.ts, read this session): files land
+- **Manifest-last** (collected from an earlier field run): files land
   first, each hashed; `manifest.json` (file list + sha256 +
   status + notes) is written AFTER all files; `latest` flips
   last. The mailbox mirrors it: envelope files first, manifest
   (ids + hashes + completeness) final. A reader that sees no
   manifest sees nothing-yet — never a half-written job. The
   manifest is the completeness statement, not a nicety.
-- **One writer per folder** (coord protocol + corpus rule):
-  coord runs one draft per post, never edit another's (Gmail
-  whole-body replace → append races; self-minting IDs; 19/19
-  protocol tests green, re-run this session). Corpus: "one
-  writer per file" across habitats. Mailbox extension: one
+- **One writer per folder** (single-writer convention):
+  one file per envelope, never edit another writer's (whole-body
+  replace → append races; self-minting IDs). House rule: "one
+  writer per file" across environments. Mailbox extension: one
   writer per FOLDER — the writer owns the drop dir, the reader
   only reads. Two writers to one folder is how whole-file
   replace races eat jobs; split folders instead.
@@ -78,7 +77,7 @@ Mechanics grounded in two lived systems:
   "Exactly once" is claimed by NOBODY on this path — at-least-
   once + idempotence is the contract.
 
-### 2. Carry (habitat picks, limits bind)
+### 2. Carry (environment picks, limits bind)
 
 - **BTH Files** (LAN-side + humans): zero setup, append-only,
   plain-HTTP scheme (bth-file-exchange: list/dl/upload, no
@@ -87,15 +86,15 @@ Mechanics grounded in two lived systems:
   sandbox — never the cloud agent's carrier.
 - **Cloudflare Worker+KV** (cloud agent): ordinary
   Cloudflare-fronted HTTPS, reachable from the sandbox. Limit:
-  new infra (Worker + KV + account) vs BTH's zero; build-week
-  verification #1 (quick-tunnel round-trip from Habitat A)
+  new infra (Worker + KV + account) vs BTH's zero; the first
+  verification (quick-tunnel round-trip from the sandbox)
   still open at design time — first use proves the carrier.
 - **Drive boundary** (publication-boundary/poll ONLY —
   reconcile with anti-drive-live, performed here): Drive is
   NEVER live interchange (guardrail: FUSE pain, whole-file
   races, conflict copies). A Drive folder MAY carry mailbox
   drops ONLY under all of: one writer per folder (§1),
-  manifest-last (§1), dated drops (age on everything, K12),
+  manifest-last (§1), dated drops (age on everything),
   POLL pickup (reader polls rarely; no sync-watch, no "sync
   will handle it"), and never live state (jobs + receipts,
   not plans/captures/CDB). This reconcile DERIVES from the
@@ -113,7 +112,7 @@ Mechanics grounded in two lived systems:
   (look-after rhythm, not filesystem events — events don't
   cross relays). Poll interval is the latency statement:
   minutes-scale for email/mailbox checks, stated honestly
-  (habitat-A verdict: no push on new email; same honesty
+  (sandbox verdict: no push on new email; same honesty
   here — the mailbox promises eventual, never instant).
 - Verify-then-act per envelope: manifest hash matches file
   bytes → signature verifies (key the transport doesn't
@@ -142,7 +141,7 @@ Load when: no live path reaches the other side (air gap,
 sandbox egress, offline router); staging jobs for later
 execution; carrying envelopes on any file carrier; "how do
 two agents talk without a connection" questions. (Entry-skill
-+ capability-probe pattern: K22.)
++ capability-probe pattern.)
 
 ### Prereqs
 
@@ -150,7 +149,7 @@ two agents talk without a connection" questions. (Entry-skill
   sandbox can't? see Limits): unsigned envelopes are drafts,
   not jobs. Nothing acts on an unsigned drop.
 - Carrier agreed + reachable from BOTH ends (matrix-checked
-  per habitat — BTH ≠ sandbox, §2).
+  per environment — BTH ≠ sandbox, §2).
 - Folder layout + poll cadences + retention stated before
   the first drop. The discipline precedes the data.
 
@@ -211,15 +210,14 @@ two agents talk without a connection" questions. (Entry-skill
 
 ### Limits
 
-- SIGNER UNDECIDED (open, blocking real use): the brief asks
-  the sandbox to sign while AGENTS.md:94 confirms it holds no
-  keys (concept review :136). Until someone decides who signs
-  with what, envelopes are format-complete but unactionable —
-  this skill's procedures assume the decision exists.
-- Partially verified: manifest-last + one-writer mechanics are
-  lived (pull.ts, coord 19/19); the ENVELOPE round-trip
-  (wrap → carrier → verify → act → receipt) has NOT executed
-  end-to-end anywhere. First round-trip grounds it.
+- SIGNER UNDECIDED (open, blocking real use): who signs with
+  what remains undecided for this design. Until signing-key
+  custody is decided, envelopes are drafts, not actionable jobs.
+- Collected precedents from earlier field runs: manifest-last
+  captures and a single-writer communication protocol, whose
+  protocol tests passed 19/19. The ENVELOPE round-trip (wrap →
+  carrier → verify → act → receipt) has NOT executed end-to-end
+  anywhere. First round-trip grounds it.
 - Cloudflare-carrier verification #1 open (design-time); BTH
   share-create + round-trip open (bth-file-exchange); Drive
   fence unratified (§2). Three carriers, three pending proofs.
