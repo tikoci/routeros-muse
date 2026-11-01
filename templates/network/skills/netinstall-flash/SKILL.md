@@ -7,7 +7,7 @@ tested: self-test
 
 # `netinstall-flash` skill (model → render → validate → window → first pull)
 
-Backlog #12. This skill PLANS and WINDOWS a flash; the
+This skill PLANS and WINDOWS a flash; the
 etherboot + cable + button half is hands work, and the
 RouterOS domain half (flags, scripts, boot order) lives in
 the `routeros-netinstall` domain skill — consumed here,
@@ -16,7 +16,7 @@ never redefined. Two models, one validator:
 - PRIMARY: the RouterOS netinstall PACKAGE flow — a
   `/tool/netinstall` server entry on a bench/hardware
   router, driven over centrs. Observed live (read-only,
-  bigdude/7.26beta3, 2026-10-31): two server rows with
+  production hardware/7.26beta3, 2026-10-31): two server rows with
   interface/version/extra-packages/mode-file/keep-old/
   apply-default/install-once/remove-branding/auto-reboot
   fields; one row invalid with `.about: Can not run on
@@ -26,12 +26,12 @@ never redefined. Two models, one validator:
   skill + tikoci/netinstall wrapper as reference).
 
 No twin: CHR carries no netinstall server (observed:
-twin1/7.26beta3 exposes no `/tool/netinstall` path and
+a 7.26beta3 CHR exposes no `/tool/netinstall` path and
 ships only the `routeros` package) and cannot etherboot
-as a target. The bench proves a flash, never the lab.
-No executed flash exists yet in this program — the T17
-bigdude window is developer-scheduled (external), and
-the ginny-pig package-flow shape cited in backlog v3
+as a target. The bench proves a flash, never a twin.
+No executed flash exists yet — the production
+window is developer-scheduled (external), and
+the ginny-pig package-flow shape cited in the backlog
 has no in-repo artifact. Until the first window runs,
 every plan below is validated-on-paper, stated as such.
 
@@ -75,8 +75,8 @@ the window; step 5 closes it into the records.
 
 ### 1. Render (template → plan, MAC from the photo)
 
-- Start from the repo config template (feedback §3
-  render/stage: `render` turns a device into a
+- Start from the repo config template (render/stage:
+  `render` turns a device into a
   full script with secrets as placeholders; `stage`
   uploads; the harness asks the human first). Secrets
   enter only the uploaded copy, never the repo plan.
@@ -115,14 +115,14 @@ the window; step 5 closes it into the records.
   never hand-wave the rule — every rule is a past
   failure shape (slave-interface and keep-loses-files
   are observed; the rest are documented).
-- Validation is on-paper until T17 runs: it proves
+- Validation is on-paper until the first window runs: it proves
   the plan is well-formed, not that the target will
   etherboot. The window report records which half
   the validation covered.
 
-### 3. Window (hands + read-back, T17-shaped)
+### 3. Window (hands + read-back)
 
-- The window is developer-scheduled (T17: backup
+- The window is developer-scheduled (backup
   exists, non-critical). Window fields: bench
   location, L2 segment, etherboot method, target MAC,
   serving side (package entry or cli host), config
@@ -147,8 +147,8 @@ the window; step 5 closes it into the records.
   redacted export + stripped JSON + manifest, checker
   clean. The pull is the flash's proof of life.
 - Commit message marks the boundary (collected:
-  feedback §3): "netinstalled …, first pull".
-  Device/label/serial binding follows #1's rule
+  the review feedback): "netinstalled …, first pull".
+  Device/label/serial binding follows unbox-provision's rule
   (system-id + license-id + sticker photo).
 - File the window report next to the plan: window
   time, hands, image set served, etherboot method
@@ -167,7 +167,7 @@ clean; serving images from a RouterOS box; or answering
 
 ### Prereqs
 
-- Backlog #12 + T17 window state read.
+- The flash backlog item + window state read.
 - `routeros-netinstall` domain skill available (flags,
   script order, etherboot notes — this skill does not
   restate them past the validator's needs).
@@ -231,13 +231,13 @@ from this skill's artifacts.
 
 - No executed flash yet: validator + shapes are
   proven on fixtures and read-only probes; the
-  first window (T17) is the skill's real proof.
+  first window is the skill's real proof.
 - The ginny-pig package-flow precedent is cited
-  from backlog v3 without an in-repo artifact —
+  from the backlog without an in-repo artifact —
   collected, not observed. First window ratifies.
 - This skill plans and windows; it never redefines
   RouterOS netinstall behavior (domain skill owns
-  that) and never provisions past first pull (#1
-  owns unbox-provision from the pull forward).
+  that) and never provisions past first pull
+  (unbox-provision owns from the pull forward).
 - CHR cannot prove any of this — do not burn twin
   hours trying; the bench is the testbed.
