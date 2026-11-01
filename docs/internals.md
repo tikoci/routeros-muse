@@ -117,7 +117,11 @@ workspace validation; templates resolve via the package root so
 bunx/npm installs find them. The picker create flow and `init`
 share this path (`scaffoldWorkspace` for create-at-default,
 `scaffoldIntoDir` for init-in-place with its never-overwrite
-conflict list).
+conflict list). Init assumes no concurrent adversary in the
+destination tree: exclusive creates plus ownership-checked
+rollback defeat pre-existing files, accidental races, and partial
+failure, but a mid-copy parent swap is accepted (Node has no
+openat).
 
 ## Workspaces registry (T40)
 
