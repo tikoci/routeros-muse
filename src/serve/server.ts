@@ -1748,8 +1748,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const rel = url.searchParams.get("path") ?? "";
 					const res = resolveArtifact(root, rel);
 					if (!res.ok) return json({ ok: false, why: res.why }, res.status);
-					const file = Bun.file(res.full);
-					return new Response(file, {
+					// The buffer is the checked object itself (fd-read),
+					// never a reopened pathname.
+					return new Response(new Uint8Array(res.body), {
 						headers: {
 							"content-type": res.contentType,
 							...artifactSecurityHeaders(url.searchParams.get("tier")),

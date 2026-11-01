@@ -34,9 +34,9 @@ function makeWs(): string {
 }
 
 const STATIC_CSP =
-	"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:";
+	"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'";
 const SCRIPTS_CSP =
-	"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:";
+	"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'";
 
 describe("artifact allowlist", () => {
 	test("isArtifactPath admits the renderable set, case-insensitively", () => {
@@ -149,12 +149,47 @@ describe("artifact containment", () => {
 		if (!r.ok) expect(r.status).toBe(400);
 	});
 
-	test("a symlink staying inside the workspace still serves", () => {
+	test("no symlink anywhere in the artifact path, even inside", () => {
 		const ws = makeWs();
 		nodeFs.writeFileSync(path.join(ws, "real.html"), "real");
 		nodeFs.symlinkSync(path.join(ws, "real.html"), path.join(ws, "alias.html"));
 		const r = resolveArtifact(ws, "alias.html");
-		expect(r.ok).toBe(true);
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.status).toBe(400);
+			expect(r.why).toBe("artifacts may not be symlinks");
+		}
+	});
+
+	test("a link smuggling a non-artifact name is still a symlink refusal", () => {
+		const ws = makeWs();
+		nodeFs.writeFileSync(path.join(ws, "device.cdb"), "cdb-bytes");
+		nodeFs.symlinkSync(
+			path.join(ws, "device.cdb"),
+			path.join(ws, "alias.html"),
+		);
+		const r = resolveArtifact(ws, "alias.html");
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.status).toBe(400);
+			expect(r.why).toBe("artifacts may not be symlinks");
+		}
+	});
+
+	test("a file under a symlinked dir is refused", () => {
+		const ws = makeWs();
+		nodeFs.mkdirSync(path.join(ws, "realdir"), { recursive: true });
+		nodeFs.writeFileSync(path.join(ws, "realdir", "r.html"), "real");
+		nodeFs.symlinkSync(
+			path.join(ws, "realdir"),
+			path.join(ws, "linkdir"),
+		);
+		const r = resolveArtifact(ws, "linkdir/r.html");
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.status).toBe(400);
+			expect(r.why).toBe("artifacts may not be symlinks");
+		}
 	});
 });
 
@@ -226,6 +261,23 @@ describe("artifact security headers", () => {
 			expect(csp).not.toContain("allow-same-origin");
 			expect(csp).not.toContain("connect-src");
 		}
+	});
+
+	test("the served frame never allows top navigation, popups, or forms", () => {
+		// The iframe sandbox attribute lives in the served UI bytes;
+		// pin the invariant there so a UI edit cannot widen it.
+		const ui = nodeFs.readFileSync(
+			path.join(import.meta.dir, "..", "src", "serve", "ui.html"),
+			"utf8",
+		);
+		for (const token of [
+			"allow-top-navigation",
+			"allow-popups",
+			"allow-forms",
+		]) {
+			expect(ui).not.toContain(token);
+		}
+		expect(ui).toContain('sandbox=""');
 	});
 
 	test("unknown tiers fail closed to static", () => {

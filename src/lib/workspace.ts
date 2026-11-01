@@ -495,7 +495,7 @@ export async function listAlerts(root: string): Promise<{ alerts: Alert[] }> {
 
 export type ArtifactResult =
 	| { ok: false; status: number; why: string }
-	| { ok: true; full: string; contentType: string };
+	| { ok: true; full: string; contentType: string; body: Buffer };
 
 /** Renderable artifact extensions (T83, D17/D19). */
 const ARTIFACT_EXTS: Record<string, string> = {
@@ -518,12 +518,16 @@ export type ArtifactTier = "static" | "scripts";
  * Tier CSPs: both force an opaque origin (sandbox, never
  * allow-same-origin, never connect-src), so agent-authored content
  * framed from /api/artifact cannot touch the session cookie or API.
+ * Fetches and subresources are blocked; forms and base tags too
+ * (form-action/base-uri 'none'). Navigation is NOT blockable by
+ * policy (Chromium has no navigate-to): the UI watches the frame's
+ * load events and blanks a navigating artifact instead.
  */
 export const ARTIFACT_CSP: Record<ArtifactTier, string> = {
 	static:
-		"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:",
+		"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'",
 	scripts:
-		"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:",
+		"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'",
 };
 
 /** True when rel names a servable artifact type (extension allowlist). */
@@ -582,9 +586,19 @@ export function artifactTier(root: string, rel: string): ArtifactTier {
 
 /**
  * Guard + resolve a workspace artifact (GET /api/artifact shape; the
- * route streams the file itself). Any allowlisted path in the
- * workspace serves; containment is lexical (safeJoin) plus a
- * realpath check so a symlink cannot escape.
+ * route serves the returned buffer). Any allowlisted path in the
+ * workspace serves; containment is lexical (safeJoin) plus an lstat
+ * walk from the root down — no symlink anywhere in the path, final
+ * component included. The file is then opened O_NOFOLLOW,
+ * fstat-checked (regular file, 8 MiB cap) and read through the fd,
+ * so one opened object is checked and served: no check/use split
+ * across reopened pathnames.
+ *
+ * Residual race (accepted, same class as the T97 preflight-vs-write
+ * window): a directory component swapped between the lstat walk and
+ * the open could redirect the open. This defends against workspace
+ * content (symlinks, forged metadata), not a same-user shell racing
+ * the server.
  */
 export function resolveArtifact(root: string, rel: string): ArtifactResult {
 	if (!isArtifactPath(rel)) {
@@ -597,25 +611,42 @@ export function resolveArtifact(root: string, rel: string): ArtifactResult {
 	const full = safeJoin(root, rel);
 	if (!full)
 		return { ok: false, status: 400, why: "path escapes the workspace" };
-	try {
-		const real = nodeFs.realpathSync(full);
-		const realRoot = nodeFs.realpathSync(root);
-		if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
-			return { ok: false, status: 400, why: "path escapes the workspace" };
+	// lstat every component below the root. The root itself is not
+	// judged: it may live under a system link (macOS /tmp) that is
+	// the caller's, not the workspace's.
+	const base = path.resolve(root);
+	let cursor = base;
+	for (const part of path.relative(base, full).split(path.sep)) {
+		cursor = path.join(cursor, part);
+		let lst: nodeFs.Stats;
+		try {
+			lst = nodeFs.lstatSync(cursor);
+		} catch {
+			return { ok: false, status: 404, why: "no such artifact" };
 		}
-	} catch {
+		if (lst.isSymbolicLink())
+			return { ok: false, status: 400, why: "artifacts may not be symlinks" };
+	}
+	const { O_NOFOLLOW, O_RDONLY } = nodeFs.constants;
+	let fd: number;
+	try {
+		fd = nodeFs.openSync(full, O_RDONLY | O_NOFOLLOW);
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException)?.code === "ELOOP")
+			return { ok: false, status: 400, why: "artifacts may not be symlinks" };
 		return { ok: false, status: 404, why: "no such artifact" };
 	}
 	try {
-		const st = nodeFs.statSync(full);
-		if (st.isDirectory() || st.size > ARTIFACT_MAX_BYTES) {
+		const st = nodeFs.fstatSync(fd);
+		if (!st.isFile() || st.size > ARTIFACT_MAX_BYTES) {
 			return { ok: false, status: 400, why: "not a servable artifact" };
 		}
-	} catch {
-		return { ok: false, status: 404, why: "no such artifact" };
+		const body = nodeFs.readFileSync(fd);
+		const ext = `.${(full.split(".").pop() ?? "").toLowerCase()}`;
+		return { ok: true, full, contentType: ARTIFACT_EXTS[ext] ?? "", body };
+	} finally {
+		nodeFs.closeSync(fd);
 	}
-	const ext = `.${(full.split(".").pop() ?? "").toLowerCase()}`;
-	return { ok: true, full, contentType: ARTIFACT_EXTS[ext] ?? "" };
 }
 
 /**
