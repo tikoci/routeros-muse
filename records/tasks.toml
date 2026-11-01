@@ -924,9 +924,9 @@ updated = "2026-11-01"
 [[task]]
 id = "T93"
 title = "CLI reshape per D35 (start|serve, init, code, doctor)"
-status = "active"
+status = "done"
 detail = "Implement D35 on the moved repo: shared workspace resolution (cwd, TTY prompt for code, browser picker for start), browser open, init into cwd from templates/, code passthrough to muse, doctor print-only, drop devices subcommand and its tests, README leads with start."
-evidence = "D35 2026-11-01; includes templates/minimal as the single init source (T14 scaffold reconcile); staffed to muse in a worktree"
+evidence = "D35 2026-11-01; includes templates/minimal as the single init source (T14 scaffold reconcile); staffed to muse in a worktree DONE 2026-11-01: ae4c769..64cf753 rebased onto e124f5d (README conflict resolved keeping loopback-default wording); orchestrator gate biome 56 clean + tsc clean, suite 263/0, smoke green; hands-on: init scaffolds minimal with [template] provenance, re-init refuses with exit 1, doctor print-only exit 0, start serves loopback. Calls accepted: code --help is ours (code -- --help reaches muse), existing device.cdb is an init conflict."
 blocked_by = ["T14"]
 agent = "claude-orch"
 updated = "2026-11-01"
