@@ -637,25 +637,34 @@ function resolveTemplate(
 	return { dir, name: meta.name, version: meta.version };
 }
 
-/** `centrs devices init` into target; null on success, else the why. */
+/**
+ * `centrs devices init` into target; null on success, else the why.
+ * A spawn throw (e.g. an un-runnable centrs on PATH) is a plain
+ * failure too: it never rejects past the scaffold.
+ */
 async function runDevicesInit(
 	target: string,
 	env: Record<string, string>,
 ): Promise<string | null> {
-	if (!have("centrs", env)) return "centrs not on PATH";
-	const init = await run(
-		[
-			"centrs",
-			"devices",
-			"init",
-			"--cdb-file",
-			path.join(target, "device.cdb"),
-		],
-		{ timeoutMs: 30_000, env },
-	);
-	if (init.ok) return null;
-	const line = `${init.stdout}\n${init.stderr}`.trim().split("\n")[0] ?? "";
-	return `centrs devices init failed${line ? `: ${line.slice(0, 200)}` : ""}`;
+	try {
+		if (!have("centrs", env)) return "centrs not on PATH";
+		const init = await run(
+			[
+				"centrs",
+				"devices",
+				"init",
+				"--cdb-file",
+				path.join(target, "device.cdb"),
+			],
+			{ timeoutMs: 30_000, env },
+		);
+		if (init.ok) return null;
+		const line = `${init.stdout}\n${init.stderr}`.trim().split("\n")[0] ?? "";
+		return `centrs devices init failed${line ? `: ${line.slice(0, 200)}` : ""}`;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return `centrs devices init failed: ${msg.slice(0, 200)}`;
+	}
 }
 
 /**
