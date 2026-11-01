@@ -48,9 +48,8 @@ Live access matrix (measured, not assumed):
   sandbox-side DNS answer as real — check from a normal
   network (brief §DNS-intercepted).
 
-BTH presence on the pilot router: bigdude's `/ip/address` shows
-a BTH entry (orca-setup) — the feature is live there, share
-mechanics un-run. Fresh CHR has NO enumerable BTH file-share
+BTH presence check: a router with BTH enabled shows a BTH entry
+in `/ip/address`; share mechanics are un-run. Fresh CHR has NO enumerable BTH file-share
 menu with BTH off (`/ip/cloud/file-share`,
 `/ip/cloud/back-to-home-file`, `/ip/cloud/shares` all
 `validation/unknown-path`; `:parse` rejects the guessed forms —

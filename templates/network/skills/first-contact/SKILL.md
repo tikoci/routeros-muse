@@ -82,7 +82,7 @@ read. Never SSH-first blind (specimen: coord UID 517 — agent burned turns on
 - RouterOS ≥7.21 default `/ip/ssh password-authentication=yes-if-no-key`
   refuses password login once the user HAS a key (ssh.ts:111;
   terminal/README.md:124). Installing a key disables password SSH for that
-  user — owner-accepted side effect on bigdude (orca-setup.md:195-202).
+  user — an owner-accepted side effect; say so before installing a key.
 - SSH user needs `ssh` policy; SFTP file access needs `ftp` policy
   (ssh.ts:103-105; terminal/README.md:128).
 - mac-telnet: MTWEI required; stock RouterOS offers 16-byte MD5 salt but

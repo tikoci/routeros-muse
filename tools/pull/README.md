@@ -12,18 +12,20 @@ Serial gate: a capture whose serial differs from the slot's last manifest is
 refused (exit 2, `attempt.json` only, nothing published). Partial failures
 keep the last good files and say so in `manifest.notes`.
 
-Layout: `out/<slot>/<timestamp>/` + `out/<slot>/latest` symlink.
+Layout: `out/<device>/pull-<timestamp>/` + `out/<device>/latest` symlink
+(the `pull-` prefix matches the template capture boundary, which git-ignores
+`observations/*/pull-*/`).
 
 ## Run
 
 ```sh
 make test          # anchor tests
 make pull-twin     # full pull of twin1 (export + JSON)
-make pull-bigdude  # JSON-shape pull of bigdude (export skipped, see gap)
+make pull-host host=<addr> name=<device>  # pull a real router (export skipped, see gap)
 ```
 
-`pull-bigdude` maps `~/.env` (`ROUTEROS_*`) to `CENTRS_*`. That mapping is
-explicitly temporary — the durable credential scheme is a later decision.
+`pull-host` takes credentials from the environment (`CENTRS_USERNAME` /
+`CENTRS_PASSWORD`) or the bound CDB; never put them on the command line.
 
 ## Known gaps
 

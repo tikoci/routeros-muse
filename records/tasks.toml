@@ -134,9 +134,9 @@ updated = "2026-10-31"
 [[task]]
 id = "T14"
 title = "Work/ repo skeleton"
-status = "active"
+status = "done"
 detail = "Local git skeleton of the promotable subset; repo shape template/ plus tools/ plus docs plus dev TBD, no-CLI confirmed (agent-plus-skills runtime, tools/ holds pull/checker), owner/builder surfaces strictly split. D10: local landing no longer waits on skill polish; shape must leave room for the T29-T31 bunx bootstrap and server."
-evidence = "notes/backlog.md queued; repo sketch agreed 2026-10-28; D10 gate ruling 2026-10-31; T40 child: scaffold-vs-template drift must reconcile at move (no backup/upstreams, missing dirs, home type, router sample); T80 review: D25 rename is proposed rather than a move gate; reconcile generated scaffold with full template, keep D10/Mode-A landing independent of Mode-B polish; no new authorization to promote or publish. D34 2026-11-01: move first into local git; claimed by claude-orch, implementation staffed to muse."
+evidence = "notes/backlog.md queued; repo sketch agreed 2026-10-28; D10 gate ruling 2026-10-31; T40 child: scaffold-vs-template drift must reconcile at move (no backup/upstreams, missing dirs, home type, router sample); T80 review: D25 rename is proposed rather than a move gate; reconcile generated scaffold with full template, keep D10/Mode-A landing independent of Mode-B polish; no new authorization to promote or publish. D34 2026-11-01: move first into local git; claimed by claude-orch, implementation staffed to muse. DONE 2026-11-01: 279ded1 import (237 files; gate biome+tsc clean, suite 225/0, smoke 107/107, orchestrator re-ran lint+suite); codex gpt-6.1-sol review found 3 must-fix (capture ignore vs pull dir name, real-router service/access profile in backlog.md + 2 skills, home-dir handle in t30-proof), 2 should-fix (checker --device, loopback wording), 1 nit (pin text); all fixed on review-fixes, gate green, ignore verified with git check-ignore. Residual lab naming across skills split to T96."
 blocked_by = ["D1"]
 agent = "claude-orch"
 updated = "2026-11-01"
@@ -906,7 +906,7 @@ id = "T91"
 title = "Align pull/ prototype CLIs with the D25 device vocabulary"
 status = "needed"
 detail = "T90 renamed template docs to --device/observations/<device>/ but pull/checker.ts still implements --slot and pull/pull.ts still documents [--name <slot>]. Rename the prototype CLI flags/usage/comments to device (or document the split if prototypes are frozen); pull/*.ts never reads router.toml so nothing breaks either way."
-evidence = "T90 review 2026-11-01: pull/checker.ts:4,117,126 --slot; pull/pull.ts:15 [--name <slot>]; template/checks/README.md now documents --device."
+evidence = "T90 review 2026-11-01: pull/checker.ts:4,117,126 --slot; pull/pull.ts:15 [--name <slot>]; template/checks/README.md now documents --device. 2026-11-01 review-fixes: checker CLI flag --slot renamed --device (Makefile var device); pull.ts internals and remaining vocabulary still open."
 blocked_by = []
 agent = ""
 updated = "2026-11-01"
@@ -948,5 +948,15 @@ status = "needed"
 detail = "Per D36: cheaper than a twin workflow and more useful near term. Candidate only, off the demo critical path; scope after T86."
 evidence = "developer 2026-11-01"
 blocked_by = ["T86"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T96"
+title = "De-lab the network template skills before GitHub"
+status = "needed"
+detail = "35 skill files cite the pilot lab router by name plus orca-setup/notes line refs as grounding provenance. D1 allows lab device names, but site-specific service/access/VPN facts and dangling ~/Work note pointers do not belong in a shipped template. Rewrite as generic lessons (tested-on: a RouterOS 7.26 arm router) and drop archive line refs; keep the grounding claims. Gates the D34 GitHub step."
+evidence = "T14 codex review 2026-11-01 (three flagged spots fixed; grep -c bigdude over templates/ shows the rest)"
+blocked_by = []
 agent = ""
 updated = "2026-11-01"

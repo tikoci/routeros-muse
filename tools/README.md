@@ -14,5 +14,5 @@ Each tool is a Bun script with a co-located `*.test.ts` run by
 - `pull/` — router capture (`pull.ts`) plus capture verifier
   (`checker.ts`) over shared `sanitize.ts` (redact, volatile-strip,
   hash, serial gate). Captures land in `out/` (local-only, never
-  committed). Make targets: `pull-twin`, `pull-bigdude`, `check`,
+  committed). Make targets: `pull-twin`, `pull-host`, `check`,
   `check-all`. Details in `pull/README.md`.

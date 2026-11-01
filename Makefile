@@ -20,15 +20,13 @@ gate: lint test smoke
 pull-twin:
 	bun tools/pull/pull.ts --quickchr twin1 --out out
 
-pull-bigdude:
-	set -a; . ~/.env; set +a; \
-	CENTRS_USERNAME="$$ROUTEROS_USER" CENTRS_PASSWORD="$$ROUTEROS_PASSWORD" \
-	bun tools/pull/pull.ts --host 192.168.74.1 --name bigdude --out out
+pull-host:
+	bun tools/pull/pull.ts --host $(host) --name $(name) --out out
 
 check:
-	bun tools/pull/checker.ts --slot $(slot) --out out
+	bun tools/pull/checker.ts --device $(device) --out out
 
 check-all:
 	bun tools/pull/checker.ts --all --out out
 
-.PHONY: test smoke lint gate pull-twin pull-bigdude check check-all
+.PHONY: test smoke lint gate pull-twin pull-host check check-all

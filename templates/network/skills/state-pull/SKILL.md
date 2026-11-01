@@ -56,7 +56,7 @@ bun pull.ts --host <addr> --name <device> --out out
 ```
 
 - Grounded: `make pull-twin` status ok, 5 files (export + 4 JSON +
-  manifest); `make pull-bigdude` status ok, 5 files, checker clean
+  manifest); a real-router `make pull-host` status ok, 5 files, checker clean
   (pull/README.md; orca-setup.md:145-156, 186-190).
 - Serial FIRST (identity gate): hardware reads
   `/system/routerboard serial-number`; CHR has no routerboard, so

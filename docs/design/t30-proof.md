@@ -19,7 +19,7 @@ inbox note, one `doctor.local.toml` addition):
   defined / 0 running, MNDP 1 neighbor), doctor reports all tiers +
   the merged `demo-relay` MISS (helpful, non-blocking), handoff
   listed with owner/status/DoD, `Next: run \`muse\``.
-- `bun src/index.ts /home/amm0bot/Work/template --print-only` →
+- `bun src/index.ts ~/Work/template --print-only` →
   exit 2 at 4b: `Unpinned [pins] entries block the bootstrap
   ([pins].centrs, [pins].rosetta)` with per-entry TODOs naming the
   installed versions + resume line. Exactly the §6 load-bearing rule.

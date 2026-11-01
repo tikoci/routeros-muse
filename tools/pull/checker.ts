@@ -1,7 +1,7 @@
 // checker.ts — verify pull captures on disk: manifest schema, sha256 per file,
 // latest symlink, total bytes. No router contact; captures on disk are input.
 //
-//   bun checker.ts --slot <name> [--out DIR]
+//   bun checker.ts --device <name> [--out DIR]
 //   bun checker.ts --all [--out DIR]
 // Exit: 0 clean, 1 problems. Prints one JSON line per slot.
 import {
@@ -166,7 +166,7 @@ export function verifySlot(slotDir: string, slot: string): SlotReport {
 
 function usage(): never {
 	console.error(
-		"usage: bun checker.ts --slot <name> [--out DIR] | --all [--out DIR]",
+		"usage: bun checker.ts --device <name> [--out DIR] | --all [--out DIR]",
 	);
 	process.exit(1);
 }
@@ -178,7 +178,7 @@ if (import.meta.main) {
 		outRoot = "out",
 		all = false;
 	for (let i = 0; i < args.length; i++) {
-		if (args[i] === "--slot") slot = args[++i] ?? "";
+		if (args[i] === "--device") slot = args[++i] ?? "";
 		else if (args[i] === "--out") outRoot = args[++i] ?? "out";
 		else if (args[i] === "--all") all = true;
 		else usage();

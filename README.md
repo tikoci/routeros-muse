@@ -22,7 +22,7 @@ plus `muse` installed and signed in. Then, from a checkout:
 ```sh
 bun install
 bun src/index.ts [workspace]        # check the machine, then launch muse in the workspace
-bun src/index.ts serve [workspace]  # web UI on loopback; open the printed URL
+bun src/index.ts serve [workspace]  # web UI on 127.0.0.1 by default; open the printed URL
 ```
 
 `workspace` is a local folder or a git URL (cloned next to you).
@@ -76,7 +76,7 @@ workspace. `--yes` is the one-yes for echoed user-level installs;
 the launch line instead of running it. Nothing installs without
 asking.
 
-`serve` (Mode B): loopback-only web UI over the workspace — devices
+`serve` (Mode B): web UI bound to loopback by default (`--host` overrides it; only do that on a trusted network) over the workspace — devices
 left, chat center, render/status right. Defaults: host `127.0.0.1`,
 ephemeral port, provider `meta`. `--no-workspace` serves
 centrs/quickchr only with a workspace picker; `--allow-open-cdb` is

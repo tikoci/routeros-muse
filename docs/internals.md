@@ -32,9 +32,9 @@ Steps (T29 §4 order):
    but showing no login, print `muse`'s own auth flow and stop.
 4. Workspace: clone or open, then validate (parses, canonical,
    AGENTS.md, conflict-copy guard).
-4b. Pins: `[pins]` vs installed. Unpinned entries block with a named
-    TODO; mismatches align via echoed `bun install -g` under the
-    one-yes, or stop with the fix + resume line.
+4b. Pins: `[pins]` vs the package bundle (D26). Unpinned entries block
+    with a named TODO; mismatches stop with refresh-or-re-verify
+    remedies plus the resume line. Nothing installs globally.
 5. Probe: twins (`quickchr doctor --json`), LAN (`centrs discover`
    MNDP, plus `--router` TCP probe), packaged + workspace doctor
    spec. Prints the mode: full / twin-only / real-box-only /
@@ -60,7 +60,7 @@ source, dir, and detected versions.
 
 ## Server (Mode B)
 
-`serve` starts a loopback-only Bun server over the workspace.
+`serve` starts a Bun server over the workspace, bound to 127.0.0.1 by default; `--host` overrides the bind address (no other network restriction exists).
 `src/msp/client.ts` drives `muse serve` over stdio JSONL
 (single-flight host init — page load races once split the drive
 grant); `src/serve/server.ts` bridges chat (send/history/SSE stream),

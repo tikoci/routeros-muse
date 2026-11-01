@@ -127,7 +127,9 @@ if (existsSync(latestManifest)) {
 	}
 }
 const refusal = checkSerial(prev, serial);
-const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+// Dir name matches the template capture boundary (`observations/*/pull-*/`
+// is git-ignored); a bare timestamp would be committable.
+const stamp = `pull-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 if (refusal) {
 	const dir = join(slotDir, `${stamp}-refused`);
 	mkdirSync(dir, { recursive: true });
