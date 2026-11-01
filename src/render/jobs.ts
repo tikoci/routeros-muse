@@ -8,6 +8,7 @@
 
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { have, run } from "../lib/run";
 
 export type RenderContext = "web" | "cli";
@@ -42,11 +43,19 @@ function finishJob(
 	dir: string,
 	files: string[],
 	source: string,
+	tier: "static" | "scripts",
 ): JobResult {
 	nodeFs.writeFileSync(
 		path.join(dir, "job.json"),
 		`${JSON.stringify(
-			{ job, time: new Date().toISOString(), source, files, workspace: root },
+			{
+				job,
+				time: new Date().toISOString(),
+				source,
+				files,
+				workspace: root,
+				tier,
+			},
 			null,
 			2,
 		)}\n`,
@@ -127,7 +136,40 @@ export function topologyText(input: TopologyInput): string {
 	return `${lines.join("\n")}\n`;
 }
 
-function mermaidPage(title: string, mmd: string): string {
+/**
+ * Resolve the packaged mermaid browser bundle (pinned dependency,
+ * UMD build) via the module resolver, so bunx installs find it in
+ * their own node_modules. Null when it cannot be resolved.
+ */
+export function mermaidBundlePath(): string | null {
+	try {
+		const bundle = fileURLToPath(
+			import.meta.resolve("mermaid/dist/mermaid.min.js"),
+		);
+		return nodeFs.existsSync(bundle) ? bundle : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Self-contained topology page: the mermaid bundle is inlined, so
+ * the file renders offline, opened directly or framed. A null
+ * bundle throws — the job fails honestly, never a CDN fallback.
+ */
+export function topologyHtmlOrThrow(
+	title: string,
+	mmd: string,
+	bundle: string | null,
+): string {
+	if (bundle === null) {
+		throw new Error(
+			"mermaid browser bundle not found: reinstall routeros-muse so the pinned mermaid dependency is present",
+		);
+	}
+	// Keep the inline script inert to parse: a bundle carrying a
+	// literal </script would close the element early.
+	const safe = bundle.replace(/<\/script/gi, "<\\/script");
 	return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -139,9 +181,9 @@ pre.src{background:#070a0f;border:1px solid #222c3a;border-radius:8px;padding:12
 <h1>${escHtml(title)}</h1>
 <div class="mermaid">
 ${escHtml(mmd)}</div>
-<details><summary>source (.mmd — shown when mermaid.js cannot load)</summary>
+<details><summary>source (.mmd — shown when the diagram cannot render)</summary>
 <pre class="src">${escHtml(mmd)}</pre></details>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>${safe}</script>
 <script>try{mermaid.initialize({startOnLoad:true});}catch(e){}</script>
 </body></html>
 `;
@@ -250,8 +292,19 @@ export async function runTopology(
 	write("topology.mmd", mmd);
 	write("topology.dot", dot);
 	if (ctx === "web") {
-		write("topology.html", mermaidPage(title, mmd));
-		return finishJob(root, "topology", dir, files, "topology.mmd");
+		const bundlePath = mermaidBundlePath();
+		if (bundlePath === null) {
+			return {
+				ok: false,
+				job: "topology",
+				why: "mermaid browser bundle not found: reinstall routeros-muse so the pinned mermaid dependency is present",
+			};
+		}
+		write(
+			"topology.html",
+			topologyHtmlOrThrow(title, mmd, nodeFs.readFileSync(bundlePath, "utf8")),
+		);
+		return finishJob(root, "topology", dir, files, "topology.mmd", "scripts");
 	}
 	if (have("dot")) {
 		const r = await run(["dot", "-Tsvg", path.join(dir, "topology.dot")], {
@@ -259,11 +312,11 @@ export async function runTopology(
 		});
 		if (r.ok && r.stdout.includes("<svg")) {
 			write("topology.svg", r.stdout);
-			return finishJob(root, "topology", dir, files, "topology.dot");
+			return finishJob(root, "topology", dir, files, "topology.dot", "scripts");
 		}
 	}
 	write("topology.txt", topologyText(input));
-	return finishJob(root, "topology", dir, files, "topology.dot");
+	return finishJob(root, "topology", dir, files, "topology.dot", "scripts");
 }
 
 /** Report job: markdown → self-contained HTML (+ .md source). */
@@ -287,7 +340,7 @@ export async function runReport(
 		markdownHtml(input.title, input.markdown),
 	);
 	files.push("report.html");
-	return finishJob(root, "report", dir, files, "report.md");
+	return finishJob(root, "report", dir, files, "report.md", "static");
 }
 
 export type MapInput = {

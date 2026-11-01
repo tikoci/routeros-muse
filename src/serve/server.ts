@@ -38,7 +38,10 @@ import {
 } from "../lib/tools";
 import {
 	ageOf,
+	artifactSecurityHeaders,
+	artifactTier,
 	CDB_ENCRYPT_STEERING,
+	isArtifactPath,
 	listAlerts,
 	listRecents,
 	readTomlSections,
@@ -1079,7 +1082,14 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				if (p === "/api/tree") {
 					const out: TreeEntry[] = [];
 					walkTree(root, 0, out);
-					return json({ root, entries: out });
+					// Artifact entries carry their sandbox tier so the
+					// viewer opens render-job scripts without a re-fetch.
+					const entries = out.map((e) =>
+						isArtifactPath(e.path)
+							? { ...e, tier: artifactTier(root, e.path) }
+							: e,
+					);
+					return json({ root, entries });
 				}
 				if (p === "/api/recents") {
 					return json({ recents: listRecents(root) });
@@ -1740,7 +1750,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					if (!res.ok) return json({ ok: false, why: res.why }, res.status);
 					const file = Bun.file(res.full);
 					return new Response(file, {
-						headers: { "content-type": res.contentType },
+						headers: {
+							"content-type": res.contentType,
+							...artifactSecurityHeaders(url.searchParams.get("tier")),
+						},
 					});
 				}
 				if (p.startsWith("/api/past/")) {

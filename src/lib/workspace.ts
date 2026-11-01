@@ -495,35 +495,125 @@ export type ArtifactResult =
 	| { ok: false; status: number; why: string }
 	| { ok: true; full: string; contentType: string };
 
+/** Renderable artifact extensions (T83, D17/D19). */
+const ARTIFACT_EXTS: Record<string, string> = {
+	".html": "text/html; charset=utf-8",
+	".htm": "text/html; charset=utf-8",
+	".svg": "image/svg+xml",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".webp": "image/webp",
+};
+
+/** Artifacts get their own cap: rendered files dwarf editor text. */
+export const ARTIFACT_MAX_BYTES = 8 * 1024 * 1024;
+
+export type ArtifactTier = "static" | "scripts";
+
 /**
- * Guard + resolve a render artifact (GET /api/artifact shape; the
- * route streams the file itself).
+ * Tier CSPs: both force an opaque origin (sandbox, never
+ * allow-same-origin, never connect-src), so agent-authored content
+ * framed from /api/artifact cannot touch the session cookie or API.
+ */
+export const ARTIFACT_CSP: Record<ArtifactTier, string> = {
+	static:
+		"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:",
+	scripts:
+		"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:",
+};
+
+/** True when rel names a servable artifact type (extension allowlist). */
+export function isArtifactPath(rel: string): boolean {
+	const base = rel.split("/").pop() ?? "";
+	const dot = base.lastIndexOf(".");
+	if (dot <= 0) return false;
+	return (ARTIFACT_EXTS[base.slice(dot).toLowerCase()] ?? null) !== null;
+}
+
+/**
+ * Security headers for one artifact response. Unknown tiers fail
+ * closed to static.
+ */
+export function artifactSecurityHeaders(
+	tier: string | null,
+): Record<string, string> {
+	const csp = tier === "scripts" ? ARTIFACT_CSP.scripts : ARTIFACT_CSP.static;
+	return {
+		"content-security-policy": csp,
+		"x-content-type-options": "nosniff",
+		"cache-control": "no-store",
+	};
+}
+
+/**
+ * Sandbox tier for one artifact: scripts only when the file sits
+ * directly in a render dir whose job.json says scripts; static
+ * everywhere else (missing/malformed/foreign tiers fail closed).
+ */
+export function artifactTier(root: string, rel: string): ArtifactTier {
+	const parts = rel.split("/");
+	if (
+		parts.length !== 4 ||
+		parts[0] !== "reports" ||
+		parts[1] !== "render" ||
+		parts[3] === "job.json"
+	) {
+		return "static";
+	}
+	const jobFile = safeJoin(
+		root,
+		`${parts[0]}/${parts[1]}/${parts[2]}/job.json`,
+	);
+	if (!jobFile) return "static";
+	try {
+		const job = JSON.parse(nodeFs.readFileSync(jobFile, "utf8")) as Record<
+			string,
+			unknown
+		>;
+		return job["tier"] === "scripts" ? "scripts" : "static";
+	} catch {
+		return "static";
+	}
+}
+
+/**
+ * Guard + resolve a workspace artifact (GET /api/artifact shape; the
+ * route streams the file itself). Any allowlisted path in the
+ * workspace serves; containment is lexical (safeJoin) plus a
+ * realpath check so a symlink cannot escape.
  */
 export function resolveArtifact(root: string, rel: string): ArtifactResult {
-	if (!rel.startsWith("reports/render/")) {
+	if (!isArtifactPath(rel)) {
 		return {
 			ok: false,
 			status: 400,
-			why: "artifacts live under reports/render/",
+			why: "not a renderable artifact (want html/htm/svg/png/jpg/jpeg/gif/webp)",
 		};
 	}
 	const full = safeJoin(root, rel);
 	if (!full)
 		return { ok: false, status: 400, why: "path escapes the workspace" };
 	try {
+		const real = nodeFs.realpathSync(full);
+		const realRoot = nodeFs.realpathSync(root);
+		if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+			return { ok: false, status: 400, why: "path escapes the workspace" };
+		}
+	} catch {
+		return { ok: false, status: 404, why: "no such artifact" };
+	}
+	try {
 		const st = nodeFs.statSync(full);
-		if (st.isDirectory() || st.size > MAX_FILE_BYTES) {
+		if (st.isDirectory() || st.size > ARTIFACT_MAX_BYTES) {
 			return { ok: false, status: 400, why: "not a servable artifact" };
 		}
 	} catch {
 		return { ok: false, status: 404, why: "no such artifact" };
 	}
-	const contentType = full.endsWith(".html")
-		? "text/html; charset=utf-8"
-		: full.endsWith(".svg")
-			? "image/svg+xml"
-			: "text/plain; charset=utf-8";
-	return { ok: true, full, contentType };
+	const ext = `.${(full.split(".").pop() ?? "").toLowerCase()}`;
+	return { ok: true, full, contentType: ARTIFACT_EXTS[ext] ?? "" };
 }
 
 /**

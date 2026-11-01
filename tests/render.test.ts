@@ -10,6 +10,7 @@ import {
 	runRenderJob,
 	runTopology,
 	topologyDot,
+	topologyHtmlOrThrow,
 	topologyMermaid,
 	topologyText,
 } from "../src/render/jobs";
@@ -67,6 +68,54 @@ describe("render jobs", () => {
 		);
 		expect(html).toContain("mermaid");
 		expect(html).toContain("gateway");
+	});
+
+	test("topology html is offline: inlined mermaid, no external script", async () => {
+		const root = makeRoot();
+		const res = await runTopology(root, TOPO, "web");
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("topology job failed");
+		const html = nodeFs.readFileSync(
+			path.join(root, res.dir, "topology.html"),
+			"utf8",
+		);
+		expect(html).not.toContain('src="http');
+		expect(html).not.toContain("src='http");
+		expect(html).toContain("mermaid.initialize");
+		// the browser bundle rides inside the file, not the network.
+		expect(html.length).toBeGreaterThan(1_000_000);
+	});
+
+	test("job.json carries the sandbox tier: topology scripts, report static", async () => {
+		const root = makeRoot();
+		const topo = await runTopology(root, TOPO, "web");
+		expect(topo.ok).toBe(true);
+		if (!topo.ok) throw new Error("topology job failed");
+		const topoJob = JSON.parse(
+			nodeFs.readFileSync(path.join(root, topo.dir, "job.json"), "utf8"),
+		) as Record<string, unknown>;
+		expect(topoJob["tier"]).toBe("scripts");
+		const rep = await runRenderJob(
+			root,
+			"report",
+			{ title: "R", markdown: "# hi" },
+			"web",
+		);
+		expect(rep.ok).toBe(true);
+		if (!rep.ok) throw new Error("report job failed");
+		const repJob = JSON.parse(
+			nodeFs.readFileSync(path.join(root, rep.dir, "job.json"), "utf8"),
+		) as Record<string, unknown>;
+		expect(repJob["tier"]).toBe("static");
+	});
+
+	test("a missing mermaid bundle fails the job honestly", () => {
+		expect(() => topologyHtmlOrThrow("t", "flowchart LR\n", null)).toThrow(
+			/mermaid browser bundle/,
+		);
+		const html = topologyHtmlOrThrow("t", "flowchart LR\n", "/*bundle*/");
+		expect(html).toContain("/*bundle*/");
+		expect(html).not.toContain('src="http');
 	});
 
 	test("cli context emits dot plus svg-or-text", async () => {
@@ -165,10 +214,15 @@ describe("render routes", () => {
 				).json()) as { ok: boolean; dir: string; files: string[] };
 				expect(r.ok).toBe(true);
 				const art = await fetch(
-					`${srv.url}api/artifact?path=${encodeURIComponent(`${r.dir}/topology.mmd`)}`,
+					`${srv.url}api/artifact?path=${encodeURIComponent(`${r.dir}/topology.html`)}`,
 				);
 				expect(art.status).toBe(200);
-				expect(await art.text()).toContain("flowchart LR");
+				expect(await art.text()).toContain("mermaid.initialize");
+				// T83: source files are not renderable artifacts.
+				const src = await fetch(
+					`${srv.url}api/artifact?path=${encodeURIComponent(`${r.dir}/topology.mmd`)}`,
+				);
+				expect(src.status).toBe(400);
 				const outside = await fetch(
 					`${srv.url}api/artifact?path=${encodeURIComponent("workspace.toml")}`,
 				);
