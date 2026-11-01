@@ -183,10 +183,7 @@ describe("artifact containment", () => {
 		const ws = makeWs();
 		nodeFs.mkdirSync(path.join(ws, "realdir"), { recursive: true });
 		nodeFs.writeFileSync(path.join(ws, "realdir", "r.html"), "real");
-		nodeFs.symlinkSync(
-			path.join(ws, "realdir"),
-			path.join(ws, "linkdir"),
-		);
+		nodeFs.symlinkSync(path.join(ws, "realdir"), path.join(ws, "linkdir"));
 		const r = resolveArtifact(ws, "linkdir/r.html");
 		expect(r.ok).toBe(false);
 		if (!r.ok) {
@@ -236,9 +233,9 @@ describe("artifact tiers", () => {
 		const ws = makeWs();
 		const dh = makeDir("t83-prov-dh-");
 		// Hand-written metadata, no signature from any render job.
-		expect(
-			artifactTier(ws, renderDir(ws, "scripts"), { dataHome: dh }),
-		).toBe("static");
+		expect(artifactTier(ws, renderDir(ws, "scripts"), { dataHome: dh })).toBe(
+			"static",
+		);
 	});
 
 	test("a genuine render job verifies into the scripts tier", async () => {

@@ -326,7 +326,15 @@ export async function runTopology(
 			"topology.html",
 			topologyHtmlOrThrow(title, mmd, nodeFs.readFileSync(bundlePath, "utf8")),
 		);
-		return finishJob(root, "topology", dir, files, "topology.mmd", "scripts", dataHome);
+		return finishJob(
+			root,
+			"topology",
+			dir,
+			files,
+			"topology.mmd",
+			"scripts",
+			dataHome,
+		);
 	}
 	if (have("dot")) {
 		const r = await run(["dot", "-Tsvg", path.join(dir, "topology.dot")], {
@@ -334,11 +342,27 @@ export async function runTopology(
 		});
 		if (r.ok && r.stdout.includes("<svg")) {
 			write("topology.svg", r.stdout);
-			return finishJob(root, "topology", dir, files, "topology.dot", "scripts", dataHome);
+			return finishJob(
+				root,
+				"topology",
+				dir,
+				files,
+				"topology.dot",
+				"scripts",
+				dataHome,
+			);
 		}
 	}
 	write("topology.txt", topologyText(input));
-	return finishJob(root, "topology", dir, files, "topology.dot", "scripts", dataHome);
+	return finishJob(
+		root,
+		"topology",
+		dir,
+		files,
+		"topology.dot",
+		"scripts",
+		dataHome,
+	);
 }
 
 /** Report job: markdown → self-contained HTML (+ .md source). */
