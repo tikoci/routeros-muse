@@ -5,6 +5,7 @@ import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
+import { listRecents, type TierMemo } from "../src/lib/workspace";
 import {
 	markdownHtml,
 	runRenderJob,
@@ -222,6 +223,30 @@ describe("render jobs", () => {
 		const root = makeRoot();
 		const res = await runRenderJob(root, "topology", { nodes: [] }, "web");
 		expect(res.ok).toBe(false);
+	});
+
+	test("after running a job, recents lists its primary artifact", async () => {
+		const root = makeRoot();
+		try {
+			const dh = makeDataHome();
+			nodeFs.writeFileSync(
+				path.join(root, "workspace.toml"),
+				"canonical = true\n",
+			);
+			const res = await runTopology(root, TOPO, "web", dh);
+			expect(res.ok).toBe(true);
+			if (!res.ok) throw new Error("topology job failed");
+			const rows = listRecents(root, {
+				dataHome: dh,
+				cache: new Map<string, TierMemo>(),
+			});
+			const hit = rows.find((r) => r.path === `${res.dir}/topology.html`);
+			expect(hit).toBeDefined();
+			expect(hit?.kind).toBe("artifact");
+			expect(hit?.tier).toBe("scripts");
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

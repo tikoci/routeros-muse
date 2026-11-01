@@ -2044,6 +2044,7 @@
           row.dataset.goto = "pane-toml";
         } else if (r.kind === "artifact") {
           row.dataset.goto = "pane-artifact";
+          row.dataset.tier = r.tier === "scripts" ? "scripts" : "static";
         } else {
           row.dataset.goto = "pane-doc";
         }

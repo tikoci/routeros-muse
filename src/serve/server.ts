@@ -1099,7 +1099,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json({ root, entries });
 				}
 				if (p === "/api/recents") {
-					return json({ recents: listRecents(root) });
+					// One tier memo per request, as in /api/tree.
+					const cx = {
+						dataHome: opts.dataHome,
+						cache: new Map<string, TierMemo>(),
+					};
+					return json({ recents: listRecents(root, cx) });
 				}
 				if (p === "/api/file" && req.method === "GET") {
 					const rel = url.searchParams.get("path") ?? "";

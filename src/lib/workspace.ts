@@ -102,6 +102,8 @@ export type RecentRow = {
 	file: string;
 	kind: "toml" | "md" | "dir" | "artifact";
 	meta: string;
+	/** Sandbox tier for artifact rows (the viewer opens it as-is). */
+	tier?: ArtifactTier;
 };
 
 function firstH1(text: string): string | null {
@@ -120,8 +122,11 @@ function deviceTitle(root: string): string | null {
 		: first.id;
 }
 
+/** Cap on render primaries per recents list: a few at most. */
+const RECENT_RENDER_MAX = 3;
+
 /** Curated recents: topology-adjacent rows ordered by mtime. */
-export function listRecents(root: string): RecentRow[] {
+export function listRecents(root: string, cx?: TierContext): RecentRow[] {
 	const cands: string[] = ["workspace.toml", "router.toml"];
 	for (const dir of ["operations", "inbox", "observations", "reports"]) {
 		const full = path.join(root, dir);
@@ -136,6 +141,29 @@ export function listRecents(root: string): RecentRow[] {
 			cands.push(`${dir}/${n}`);
 		}
 	}
+	// Render-job primaries: each job dir contributes its primary
+	// artifact (topology.html / report.html), newest few first.
+	const primaries: { rel: string; mtime: number }[] = [];
+	try {
+		const jobDirs = nodeFs.readdirSync(path.join(root, "reports", "render"));
+		for (const jd of jobDirs) {
+			if (jd.startsWith(".")) continue;
+			for (const primary of ["topology.html", "report.html"]) {
+				const rel = `reports/render/${jd}/${primary}`;
+				try {
+					const mtime = nodeFs.statSync(path.join(root, rel)).mtimeMs;
+					primaries.push({ rel, mtime });
+					break;
+				} catch {
+					// Not this name; try the next.
+				}
+			}
+		}
+	} catch {
+		// No render dir at all.
+	}
+	primaries.sort((a, b) => b.mtime - a.mtime);
+	for (const p of primaries.slice(0, RECENT_RENDER_MAX)) cands.push(p.rel);
 	const rows: (RecentRow & { mtime: number })[] = [];
 	for (const rel of cands) {
 		const full = path.join(root, rel);
@@ -179,6 +207,7 @@ export function listRecents(root: string): RecentRow[] {
 				: isDir
 					? "unshaped"
 					: ageOf(st.mtimeMs),
+			...(kind === "artifact" ? { tier: artifactTier(root, rel, cx) } : {}),
 			mtime: st.mtimeMs,
 		});
 	}
