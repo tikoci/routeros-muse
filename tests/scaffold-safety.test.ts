@@ -52,6 +52,22 @@ function failingCentrsBin(): string {
 	return dir;
 }
 
+/** Stub bin: centrs init swaps AGENTS.md via temp-then-rename, then fails. */
+function replacingCentrsBin(): string {
+	const dir = mktmp("t97b-replbin-");
+	writeShim(
+		dir,
+		"centrs",
+		`if [ "$1" = "devices" ] && [ "$2" = "init" ]; then\n` +
+			`  while [ $# -gt 0 ]; do if [ "$1" = "--cdb-file" ]; then CDB="$2"; fi; shift; done\n` +
+			`  D=$(dirname "$CDB")\n` +
+			`  printf 'STUB DATA - must survive\\n' > "$D/.agents.tmp"\n` +
+			`  mv "$D/.agents.tmp" "$D/AGENTS.md"\n` +
+			`  exit 1\nfi\nexit 1`,
+	);
+	return dir;
+}
+
 describe("scaffold write safety", () => {
 	tposix(
 		"TOCTOU: a competing write after preflight is not overwritten",
@@ -208,6 +224,25 @@ describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
 				"minimal",
 			);
 			expect(retry.ok).toBe(true);
+		},
+	);
+});
+
+describe("scaffold rollback ownership (T97 follow-up)", () => {
+	tposix(
+		"a centrs-replaced file survives rollback; the rest is gone",
+		async () => {
+			const dir = mktmp("t97b-replaced-");
+			const res = await scaffoldIntoDir(
+				dir,
+				toolEnv(replacingCentrsBin()),
+				"minimal",
+			);
+			expect(res.ok).toBe(false);
+			expect(nodeFs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe(
+				"STUB DATA - must survive\n",
+			);
+			expect(nodeFs.readdirSync(dir)).toEqual(["AGENTS.md"]);
 		},
 	);
 });
