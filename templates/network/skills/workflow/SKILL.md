@@ -150,6 +150,6 @@ forces it), instantiated from the starter layout:
    fresh session orients before touching anything.
 7. First commit is plan/skills/schemes/docs only — no pulls, no
    secrets, no lab identifiers.
-8. Privacy scrub before the first push to anything shared (scrub
-   credentials at minimum; how much of your own lab to include is
-   your call).
+8. Before any shared push, apply pre-publish-scrub:
+   low-sensitivity identifiers may travel; high-sensitivity
+   identifiers and clues never travel.
