@@ -1,0 +1,4 @@
+# Template manifest (never copied into the workspace).
+name = "network"
+description = "Full starter: conventions, skills, checks, and layout."
+version = "0.1.0"

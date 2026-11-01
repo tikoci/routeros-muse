@@ -14,6 +14,12 @@ import { parseToml } from "../lib/toml";
 export type WorkspaceConfig = {
 	home: Record<string, unknown>;
 	pins: Record<string, unknown>;
+	/**
+	 * Scaffold provenance (T93): which template version seeded this
+	 * workspace. A record, never enforced — workspaces drift freely,
+	 * and a missing or malformed table is simply null.
+	 */
+	template: { name: string; version: string } | null;
 };
 
 export function isGitUrl(s: string): boolean {
@@ -168,7 +174,18 @@ export async function readAndValidate(dir: string): Promise<ValidateResult> {
 		pinsRaw !== null && typeof pinsRaw === "object" && !Array.isArray(pinsRaw)
 			? (pinsRaw as Record<string, unknown>)
 			: {};
-	return { ok: true, config: { home: home as Record<string, unknown>, pins } };
+	const tplRaw = parsed.value["template"];
+	let template: WorkspaceConfig["template"] = null;
+	if (tplRaw !== null && typeof tplRaw === "object" && !Array.isArray(tplRaw)) {
+		const t = tplRaw as Record<string, unknown>;
+		if (typeof t["name"] === "string" && typeof t["version"] === "string") {
+			template = { name: t["name"], version: t["version"] };
+		}
+	}
+	return {
+		ok: true,
+		config: { home: home as Record<string, unknown>, pins, template },
+	};
 }
 
 export async function openWorkspace(

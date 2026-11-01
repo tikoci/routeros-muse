@@ -46,6 +46,14 @@ direction. Legal directions: `push/pull` (git remote, main only),
 artifacts). There is no entry whose direction is "both ways" — that
 shape is forbidden, not merely discouraged.
 
+## [template]
+
+Scaffold provenance: `name` + `version` of the template that seeded
+this workspace (see `template.toml` in `templates/<name>/`). A
+record, never enforced — the workspace may drift freely afterwards,
+and the validator accepts a missing or malformed table as long as
+`[home]` is sound.
+
 ## Growth
 
 Second site, second repo, or a split home: extend `[upstreams]`, never

@@ -1,0 +1,7 @@
+# Capture boundary: raw pulls stay local, only redacted summaries travel.
+observations/*/pull-*/
+observations/*/latest
+!observations/_sample/latest
+# Credential store: the workspace device.cdb never commits (T9 rule 1).
+# The star covers centrs siblings too: .bak.* snapshots and init temps.
+*.cdb*

@@ -1,0 +1,11 @@
+# {{name}} — minimal workspace scaffold (T40). The full template
+# (START-HERE, conventions, skills, checks) ships at templates/network;
+# this is the runnable minimum the UI populates from.
+[home]
+type = "single-copy"
+canonical = true
+
+[pins]
+quickchr = "next"
+centrs = "next"
+rosetta = "next"

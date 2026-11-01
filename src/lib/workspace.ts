@@ -7,6 +7,14 @@ import * as path from "node:path";
 import { loadDoctorSpec, runDoctor } from "../steps/doctor";
 import { readDevices } from "./fleet";
 import { have, run } from "./run";
+import {
+	copyTemplateFiles,
+	listTemplateFiles,
+	readTemplateMeta,
+	stampTemplateProvenance,
+	templateDir,
+	templatesRoot,
+} from "./templates";
 import { parseToml } from "./toml";
 
 export type TreeEntry = {
@@ -526,93 +534,38 @@ export function validWorkspaceName(name: string): boolean {
 	return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 }
 
-function scaffoldToml(name: string): string {
-	return `# ${name} — minimal workspace scaffold (T40). The full template
-# (START-HERE, conventions, skills, checks) ships at templates/network;
-# until the scaffold reconciles with it, this is the runnable minimum.
-[home]
-type = "single-copy"
-canonical = true
+/** WinBox-encryption steering for fresh scaffolds, until C14 ships. */
+export const CDB_ENCRYPT_STEERING =
+	"device.cdb starts open: encrypt it in WinBox before trusting it (one-command centrs encryption is tracked upstream at tikoci/centrs#558).";
 
-[pins]
-quickchr = "next"
-centrs = "next"
-rosetta = "next"
-`;
-}
-
-function scaffoldAgents(name: string): string {
-	return `# AGENTS.md — ${name} (minimal scaffold)
-
-Minimal workspace scaffold (T40): the full template (START-HERE.md,
-conventions, skills, checks) ships at templates/network. Until the
-scaffold reconciles with it: read \`workspace.toml\` + \`router.toml\`,
-check capability before promising execution, leave evidence.
-`;
-}
-
-const SCAFFOLD_ROUTER = `# router.toml — devices (minimal scaffold). Uncomment and fill
-# one [device] per box. cdb names the centrs device record (the source
-# of truth for reachability + access); host is break-glass only.
-#
-# [device]
-# id = "office-gw"
-# site = "office"
-# role = "gateway"
-# cdb = "office-gw"
-`;
+export type ScaffoldOpts = {
+	/** Templates-root override (tests isolate here). */
+	templatesRoot?: string | null;
+};
 
 export type ScaffoldResult =
 	| { ok: true; dir: string }
-	| { ok: false; why: string };
+	| { ok: false; why: string; conflicts?: string[] };
 
-/**
- * Create the MINIMAL workspace inline under parent/name: canonical
- * workspace.toml with channel pins, an AGENTS.md pointer, a commented
- * router.toml stub, and device.cdb via `centrs devices init` — an
- * open registry with WinBox-encryption steering until C14
- * (tikoci/centrs#558) ships a centrs-side encryption path. The name
- * is validated before joining, so the target always lands directly
- * under parent; any failure rolls the target back so no
- * half-scaffold survives.
- */
-export async function scaffoldWorkspace(
-	parent: string,
-	name: string,
+function resolveTemplate(
+	template: string,
+	opts?: ScaffoldOpts,
+): { dir: string; name: string; version: string } | { error: string } {
+	const root =
+		opts?.templatesRoot === undefined ? templatesRoot() : opts.templatesRoot;
+	const dir = templateDir(root, template);
+	if (!dir) return { error: `unknown template: ${template}` };
+	const meta = readTemplateMeta(dir);
+	if (!meta) return { error: `template ${template} has no readable manifest` };
+	return { dir, name: meta.name, version: meta.version };
+}
+
+/** `centrs devices init` into target; null on success, else the why. */
+async function runDevicesInit(
+	target: string,
 	env: Record<string, string>,
-): Promise<ScaffoldResult> {
-	if (!validWorkspaceName(name)) {
-		return {
-			ok: false,
-			why: "name must be one path segment: letters, digits, dot, dash, underscore",
-		};
-	}
-	const target = path.join(parent, name);
-	if (nodeFs.existsSync(target)) {
-		return { ok: false, why: `already exists: ${target}` };
-	}
-	const rollback = (): void => {
-		nodeFs.rmSync(target, { recursive: true, force: true });
-	};
-	try {
-		nodeFs.mkdirSync(target, { recursive: true });
-		nodeFs.writeFileSync(
-			path.join(target, "workspace.toml"),
-			scaffoldToml(name),
-		);
-		nodeFs.writeFileSync(path.join(target, "AGENTS.md"), scaffoldAgents(name));
-		nodeFs.writeFileSync(path.join(target, "router.toml"), SCAFFOLD_ROUTER);
-	} catch (err) {
-		rollback();
-		return {
-			ok: false,
-			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
-		};
-	}
-	if (!have("centrs", env)) {
-		rollback();
-		return { ok: false, why: "centrs not on PATH" };
-	}
+): Promise<string | null> {
+	if (!have("centrs", env)) return "centrs not on PATH";
 	const init = await run(
 		[
 			"centrs",
@@ -623,13 +576,132 @@ export async function scaffoldWorkspace(
 		],
 		{ timeoutMs: 30_000, env },
 	);
-	if (!init.ok) {
-		rollback();
-		const line = `${init.stdout}\n${init.stderr}`.trim().split("\n")[0] ?? "";
+	if (init.ok) return null;
+	const line = `${init.stdout}\n${init.stderr}`.trim().split("\n")[0] ?? "";
+	return `centrs devices init failed${line ? `: ${line.slice(0, 200)}` : ""}`;
+}
+
+/**
+ * Create a workspace from a template under parent/name (default
+ * template: minimal): copy the template (template.toml excluded,
+ * {{name}} substituted), stamp [template] provenance, then
+ * device.cdb via `centrs devices init` — an open registry with
+ * WinBox-encryption steering until C14 (tikoci/centrs#558) ships a
+ * centrs-side encryption path. The name is validated before joining,
+ * so the target always lands directly under parent; any failure
+ * rolls the target back so no half-scaffold survives.
+ */
+export async function scaffoldWorkspace(
+	parent: string,
+	name: string,
+	env: Record<string, string>,
+	template = "minimal",
+	opts?: ScaffoldOpts,
+): Promise<ScaffoldResult> {
+	if (!validWorkspaceName(name)) {
 		return {
 			ok: false,
-			why: `centrs devices init failed${line ? `: ${line.slice(0, 200)}` : ""}`,
+			why: "name must be one path segment: letters, digits, dot, dash, underscore",
 		};
 	}
+	const tpl = resolveTemplate(template, opts);
+	if ("error" in tpl) return { ok: false, why: tpl.error };
+	const target = path.join(parent, name);
+	if (nodeFs.existsSync(target)) {
+		return { ok: false, why: `already exists: ${target}` };
+	}
+	const rollback = (): void => {
+		nodeFs.rmSync(target, { recursive: true, force: true });
+	};
+	try {
+		nodeFs.mkdirSync(target, { recursive: true });
+		copyTemplateFiles(tpl.dir, target, name);
+		stampTemplateProvenance(path.join(target, "workspace.toml"), {
+			name: tpl.name,
+			description: "",
+			version: tpl.version,
+		});
+	} catch (err) {
+		rollback();
+		return {
+			ok: false,
+			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+	const failed = await runDevicesInit(target, env);
+	if (failed) {
+		rollback();
+		return { ok: false, why: failed };
+	}
 	return { ok: true, dir: target };
+}
+
+/**
+ * Scaffold a template INTO dir (the CLI init path): dir may exist,
+ * but none of the template's files (nor device.cdb) may already be
+ * there — conflicts are listed and nothing is written. Rollback
+ * removes only what this call wrote, never the pre-existing dir.
+ */
+export async function scaffoldIntoDir(
+	dir: string,
+	env: Record<string, string>,
+	template = "minimal",
+	opts?: ScaffoldOpts,
+): Promise<ScaffoldResult> {
+	const tpl = resolveTemplate(template, opts);
+	if ("error" in tpl) return { ok: false, why: tpl.error };
+	const conflicts = listTemplateFiles(tpl.dir).filter((rel) =>
+		nodeFs.existsSync(path.join(dir, rel)),
+	);
+	if (nodeFs.existsSync(path.join(dir, "device.cdb"))) {
+		conflicts.push("device.cdb");
+	}
+	if (conflicts.length > 0) {
+		return {
+			ok: false,
+			why: `refusing to overwrite in ${dir}: ${conflicts.join(", ")}`,
+			conflicts,
+		};
+	}
+	const existed = nodeFs.existsSync(dir);
+	let written: string[] = [];
+	const rollback = (): void => {
+		for (const rel of written) {
+			nodeFs.rmSync(path.join(dir, rel), { force: true });
+		}
+		nodeFs.rmSync(path.join(dir, "device.cdb"), { force: true });
+		const dirs = new Set(
+			written.map((rel) => path.dirname(path.join(dir, rel))),
+		);
+		for (const d of [...dirs].sort((a, b) => b.length - a.length)) {
+			// rmdir drops only empty dirs: pre-existing content pins its dir.
+			try {
+				nodeFs.rmdirSync(d);
+			} catch {
+				// not empty (or already gone): leave it
+			}
+		}
+		if (!existed) nodeFs.rmSync(dir, { recursive: true, force: true });
+	};
+	try {
+		nodeFs.mkdirSync(dir, { recursive: true });
+		written = copyTemplateFiles(tpl.dir, dir, path.basename(path.resolve(dir)));
+		stampTemplateProvenance(path.join(dir, "workspace.toml"), {
+			name: tpl.name,
+			description: "",
+			version: tpl.version,
+		});
+	} catch (err) {
+		rollback();
+		return {
+			ok: false,
+			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+	const failed = await runDevicesInit(dir, env);
+	if (failed) {
+		rollback();
+		return { ok: false, why: failed };
+	}
+	return { ok: true, dir };
 }

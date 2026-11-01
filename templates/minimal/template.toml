@@ -1,0 +1,4 @@
+# Template manifest (never copied into the workspace).
+name = "minimal"
+description = "Runnable minimum: workspace.toml, router.toml, AGENTS.md."
+version = "0.1.0"
