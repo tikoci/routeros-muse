@@ -16,11 +16,12 @@ import {
 	signJobPayload,
 } from "../lib/renderSig";
 import { have, run } from "../lib/run";
+import { isArtifactPath } from "../lib/workspace";
 
 export type RenderContext = "web" | "cli";
 
 export type JobResult =
-	| { ok: true; job: string; dir: string; files: string[] }
+	| { ok: true; job: string; dir: string; files: string[]; warning?: string }
 	| { ok: false; job: string; why: string };
 
 export type TopologyNode = { id: string; label?: string; kind?: string };
@@ -52,6 +53,11 @@ function finishJob(
 	tier: "static" | "scripts",
 	dataHome?: string,
 ): JobResult {
+	// Signed members: artifact-extension files only. The verifier
+	// rejects any other member name, so only these can carry the
+	// render-job grant; sources (.mmd/.dot/.md/.txt) still ship in
+	// the dir and the result, just unsigned.
+	const members = files.filter((f) => isArtifactPath(f));
 	nodeFs.writeFileSync(
 		path.join(dir, "job.json"),
 		`${JSON.stringify(
@@ -59,7 +65,7 @@ function finishJob(
 				job,
 				time: new Date().toISOString(),
 				source,
-				files,
+				files: members,
 				workspace: root,
 				tier,
 			},
@@ -67,20 +73,32 @@ function finishJob(
 			2,
 		)}\n`,
 	);
-	// Provenance: HMAC over the tier plus a sha256 of every file the
-	// job wrote, so a forged job.json cannot claim the scripts tier
+	// Provenance: HMAC over the tier plus a sha256 of every signed
+	// member, so a forged job.json cannot claim the scripts tier
 	// and edited outputs fail verification (static, unlabeled). The
-	// key is created on first use (0600, beside registry.toml).
+	// key is created on first use (0600, beside registry.toml). When
+	// the key home is unusable the outputs still ship, unsigned,
+	// with a warning — never a partial or failed job dir.
 	const jobDirRel = path.relative(root, dir);
 	const hashes: Record<string, string> = {};
-	for (const name of files) {
+	for (const name of members) {
 		hashes[name] = sha256Hex(nodeFs.readFileSync(path.join(dir, name)));
 	}
-	const sig = signJobPayload(
-		ensureRenderKey(dataHome),
-		canonicalJobPayload(jobDirRel, tier, hashes),
-	);
-	nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
+	try {
+		const sig = signJobPayload(
+			ensureRenderKey(dataHome),
+			canonicalJobPayload(jobDirRel, tier, hashes),
+		);
+		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
+	} catch (err) {
+		return {
+			ok: true,
+			job,
+			dir: jobDirRel,
+			files: [...files, "job.json"],
+			warning: `provenance unavailable: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
 	return {
 		ok: true,
 		job,

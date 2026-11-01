@@ -5,7 +5,11 @@ import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
-import { listRecents, type TierMemo } from "../src/lib/workspace";
+import {
+	artifactTier,
+	listRecents,
+	type TierMemo,
+} from "../src/lib/workspace";
 import {
 	markdownHtml,
 	runRenderJob,
@@ -223,6 +227,60 @@ describe("render jobs", () => {
 		const root = makeRoot();
 		const res = await runRenderJob(root, "topology", { nodes: [] }, "web");
 		expect(res.ok).toBe(false);
+	});
+
+	test("job.json signs artifact members only", async () => {
+		const root = makeRoot();
+		try {
+			const dh = makeDataHome();
+			const topo = await runTopology(root, TOPO, "web", dh);
+			expect(topo.ok).toBe(true);
+			if (!topo.ok) throw new Error("topology job failed");
+			const tj = JSON.parse(
+				nodeFs.readFileSync(path.join(root, topo.dir, "job.json"), "utf8"),
+			) as Record<string, unknown>;
+			expect(tj["files"]).toEqual(["topology.html"]);
+			const rep = await runRenderJob(
+				root,
+				"report",
+				{ title: "R", markdown: "# hi" },
+				"web",
+				dh,
+			);
+			expect(rep.ok).toBe(true);
+			if (!rep.ok) throw new Error("report job failed");
+			const rj = JSON.parse(
+				nodeFs.readFileSync(path.join(root, rep.dir, "job.json"), "utf8"),
+			) as Record<string, unknown>;
+			expect(rj["files"]).toEqual(["report.html"]);
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("an unwritable data home still writes outputs, unsigned, with a warning", async () => {
+		const root = makeRoot();
+		try {
+			// A file where the key dir should be: mkdir fails however
+			// privileged the runner is.
+			const dhFile = path.join(root, "not-a-dir");
+			nodeFs.writeFileSync(dhFile, "x");
+			const res = await runTopology(root, TOPO, "web", dhFile);
+			expect(res.ok).toBe(true);
+			if (!res.ok) throw new Error(`job failed: ${res.why}`);
+			expect(res.warning).toMatch(/^provenance unavailable: /);
+			expect(
+				nodeFs.existsSync(path.join(root, res.dir, "topology.html")),
+			).toBe(true);
+			expect(nodeFs.existsSync(path.join(root, res.dir, "job.json.sig"))).toBe(
+				false,
+			);
+			expect(
+				artifactTier(root, `${res.dir}/topology.html`, { dataHome: dhFile }),
+			).toBe("static");
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("after running a job, recents lists its primary artifact", async () => {
