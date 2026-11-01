@@ -7,19 +7,19 @@ tested: self-test
 
 # `map-reports` skill (records → map → image → evidence → correction) [template v1 draft]
 
-Backlog #16. The owner never reads TOML or a RouterOS command —
+The owner never reads TOML or a RouterOS command —
 about half the physical-world work (siting, aim, power, install)
 ended as something to *show* the owner: a map, a marked photo, a
-sheet for the person on the pole (collected: showing-the-owner
-§Why). This skill holds the MAP halves of the owner-presentation
+sheet for the person on the pole (collected: the owner-presentation
+notes). This skill holds the MAP halves of the owner-presentation
 work: site-map generation plus the map halves of
 setup-sheet-png-render, install-photo-evidence, and
 human-correction-roundtrip. The FIELD halves (device jobs,
 expected-result/stop-condition sheets, hands-work artifacts)
-belong to pending #18 field-sheets — that boundary is marked in
-every step below, and #18 stays listed, never absorbed silently.
+belong to pending field-sheets — that boundary is marked in
+every step below, and field-sheets stays listed, never absorbed silently.
 Geo maps live here (where sites sit); logical topology lives in
-#45 truthful-topology-graphviz (links/paths/neighbors, DOT→SVG).
+truthful-topology-graphviz (links/paths/neighbors, DOT→SVG).
 No secrets below; fixtures are synthetic, never a real place.
 
 ## Part 1 — The checklist (generated from records, never hand-edited)
@@ -47,34 +47,34 @@ forgery of evidence, not a shortcut.
   positions: the map reads it, and Fix GPS writes corrections
   back in the same format. KML means the owner can also open
   it in Google Earth on a phone, with no new app (collected:
-  showing-the-owner §1).
+  the owner-presentation notes).
 - The template carries a `gis` block per site: layer URLs,
   fields to keep, and a source label per layer (inferred
-  shape, collected proposal: showing-the-owner §1
-  Generalizing). `references/fixtures/gis.json` shows the
+  shape, collected proposal: the owner-presentation notes).
+  `references/fixtures/gis.json` shows the
   shape; operators bring their own layer URLs.
 - There is no Meta maps API — no public tiles/geocoding SDK
   under a Meta brand. Geographic site maps render via
   OSM/MapLibre or the Muse app's own map widgets (geocoding
   tool, Places connector); Meta's footprint is open-data, not
-  API (collected: meta-tooling-explainer §Maps). If
+  API (collected: the platform tooling explainer). If
   street-level context ever matters, Mapillary is the one
   speculative Meta asset — not planned.
 - Fetched features cache by bounding box; a cached box that
   already contains the requested one is reused, so a small
   GPS correction does not refetch everything (collected:
-  showing-the-owner §1).
+  the owner-presentation notes).
 - Privacy is load-bearing: the map is the most
   location-revealing thing the workspace makes. Choose
   parcel fields so no owner names come through; never show
   it in public video without blurring; keep the GIS cache
-  out of any public repo (collected: showing-the-owner §1).
+  out of any public repo (collected: the owner-presentation notes).
 
-### 1. Generate (one Leaflet page per site — fold-in: site-map-generation)
+### 1. Generate (one Leaflet page per site)
 
 - One generated HTML page per site (Leaflet, no build step),
   regenerated from the records, never hand-edited. Layers
-  (collected: showing-the-owner §1):
+  (collected: the owner-presentation notes):
   - Backgrounds: satellite, topographic, and USGS 3DEP
     LiDAR hillshade — the hillshade shows ridges, gullies,
     and tree lines that satellite hides, and that is what
@@ -90,9 +90,9 @@ forgery of evidence, not a shortcut.
   uplink, antenna gain from what each radio reports. "A
   sketch, not a survey" is written into the model AND the
   page — that label is what made it safe to show a
-  non-expert (collected: showing-the-owner §1).
+  non-expert (collected: the owner-presentation notes).
 - Present-it rule for this artifact (collected:
-  showing-the-owner §5): owner asking "where / what covers
+  the owner-presentation rules): owner asking "where / what covers
   what" gets the site map (page or single image) with
   source labels per layer, "estimate" on coverage, and a
   capture date.
@@ -105,48 +105,48 @@ forgery of evidence, not a shortcut.
   layer and zero page-initiated network requests, so the
   test renders fully offline.
 - Pending: first render against real records + live tile/GIS
-  endpoints (needs Habitat-A egress probes: ArcGIS, USGS
+  endpoints (needs sandbox egress probes: ArcGIS, USGS
   hillshade, OSM tiles through the proxy — collected probe
-  list: showing-the-owner §6).
+  list: the owner-presentation notes).
 
 ### 2. Render (the 1080×1350 PNG path — MAP half of setup-sheet-png-render)
 
 - The owner looks at things on a phone, in a text thread —
   the useful output is often a PNG/JPEG, not a web page
-  (collected: showing-the-owner §2). The render primitive:
+  (collected: the owner-presentation rules). The render primitive:
   a `?p=N` query renders a single page, and a headless
   browser screenshots each page to its own PNG, ready for
   iMessage/RCS. The same records give an HTML version for
   printing. Page size is 1080×1350, phone portrait.
 - One-off annotated maps (satellite tile + proposed link
   drawn and labelled, sent as a single JPEG) were composed
-  by a small tile/line/label program on the Mac; on Linux
+  by a small tile/line/label program on macOS; on Linux
   the equivalent is a headless Chromium screenshot of the
   map page, or a small canvas render (collected:
-  showing-the-owner §2). Whiteboards screenshot the same
-  way (boards themselves are #44 decision-board-lifecycle).
+  the owner-presentation rules). Whiteboards screenshot the same
+  way (boards themselves are decision-board-lifecycle).
 - Observed (this skill's self-test): headless Chromium
   renders the fixture page to an exact 1080×1350 PNG
   (`references/test.sh` asserts dimensions + non-blank via
   `references/check-png.py`; 564 unique sampled colors on
   the proving run). The PNG-path mechanism is proven; only
   real-record content is pending.
-- Pending (collected day-0 probes: showing-the-owner §6):
+- Pending (collected day-0 probes: the owner-presentation notes):
   sandbox-generated PNG shown inline in the Muse phone app;
-  headless browser available in Habitat A (its browser
+  headless browser available in the sandbox (its browser
   cannot reach loopback, but a file render may still work).
-- Boundary with #18 (field-sheets, still pending): the
+- Boundary with field-sheets (still pending): the
   sheet CONTENT for hands work — IKEA-style per-location
   pages, what-plugs-into-what, compass-words aiming, "how
   to tell it worked", "if not, stop and send a photo" —
-  belongs to #18. This skill owns only the render
+  belongs to field-sheets. This skill owns only the render
   primitive (`?p=N` + headless screenshot + print HTML from
-  the same records). #18 stays listed.
+  the same records). field-sheets stays listed.
 
 ### 3. File (image→data evidence — MAP half of install-photo-evidence)
 
 - Pictures also flow into the records (collected:
-  showing-the-owner §3): phone panoramas fitted to a LiDAR
+  the owner-presentation notes): phone panoramas fitted to a LiDAR
   skyline (recovered position/heading when phone GPS was
   ~90 m stale and compass ~95° off; same fit gave
   winter-sun hours); antenna patterns read off vendor PDFs
@@ -155,7 +155,7 @@ forgery of evidence, not a shortcut.
   with sha256 and EXIF provenance in an index file. Camera
   GPS error (12–15 m) is recorded, and the photos are NOT
   used as precise equipment pins (collected:
-  showing-the-owner §3). Photos say what the records
+  the owner-presentation notes). Photos say what the records
   cannot: "the wAP is at the window, facing the street"
   settled a coverage question no router reading could.
 - Prescribed but pending: U2 install-photo check (photo of
@@ -165,14 +165,14 @@ forgery of evidence, not a shortcut.
   SAM segmentation DESIGN; keep GPS out of public frames);
   vendor-PDF digitizing done carefully — cite the page,
   keep variants separate, never digitize a curve into false
-  precision (collected: demo-catalog U2/U3, showing §3).
+  precision (collected: the demo catalog, the owner-presentation notes).
 - Demo rules for every published frame: no names, places,
   addresses, or serials; strip EXIF GPS from photos
-  (collected: demo-catalog Rules). #31 pre-publish-scrub
+  (collected: the demo catalog's rules). pre-publish-scrub
   gates any public step.
-- Boundary with #18: the install SHEET the photo is checked
+- Boundary with field-sheets: the install SHEET the photo is checked
   against, and any field checklist the photo completes,
-  belong to #18. This skill owns filing (unchanged bytes +
+  belong to field-sheets. This skill owns filing (unchanged bytes +
   hash + EXIF index + recorded GPS error) and the
   photos-are-not-pins rule.
 
@@ -185,16 +185,16 @@ forgery of evidence, not a shortcut.
   exports KML for Google Earth inspection. When
   regenerated data already contains a correction, the page
   clears the corresponding local edit within a small
-  tolerance (collected: concept-review §10, showing §1).
+  tolerance (collected: the concept review, the owner-presentation notes).
 - This is the human → artifact → agent → structured-record
   loop: the human supplies spatial judgment through a map;
   the agent handles file editing and propagation — no
   TOML, no paragraphs-of-chat location descriptions
-  (collected: concept-review §10). Demo beat O3: a
+  (collected: the concept review). Demo beat O3: a
   correction flows back (Fix-GPS loop JOURNALED; needs the
-  portable "copy for your agent" wording — it says Claude
+  portable "copy for your agent" wording — it names a specific agent
   today).
-- Limits, all load-bearing (collected: concept-review §10):
+- Limits, all load-bearing (collected: the concept review):
   browser-local edits are NOT synchronized inventory
   updates; copying a correction is NOT proof the agent
   applied it. Required additions: a revision identifier
@@ -208,13 +208,13 @@ forgery of evidence, not a shortcut.
   download, and sub-meter-drag tolerance clearing. The
   page pattern is proven; a live owner round-trip is
   pending.
-- Boundary with #18: generalizing the pattern to
+- Boundary with field-sheets: generalizing the pattern to
   port-label corrections, "this device is in the other
   room", proposed cable routes, and field-observation
-  checklists (collected proposal: concept-review §10) is
-  #18's content design. This skill owns the map-loop
+  checklists (collected proposal: the concept review) is
+  field-sheets' content design. This skill owns the map-loop
   mechanics: drag → structured proposal → agent applies →
-  regenerate → published. #18 stays listed.
+  regenerate → published. field-sheets stays listed.
 
 ## Part 2 — Skill doc
 
@@ -224,19 +224,19 @@ Load when: mapping device positions or RF coverage; rendering
 a setup sheet or annotated-map image; filing install or site
 photos as evidence; accepting a location/label correction
 from the owner; asking which artifact fits the person looking
-(present-it table: showing-the-owner §5). (Entry-skill +
-capability-probe pattern: K22.)
+(present-it table: the owner-presentation rules). (Entry-skill +
+capability-probe pattern.)
 
 ### Prereqs
 
 - Records with positions (KML truth or site records) + a
   `gis` block per site (layer URLs, fields, source labels).
 - A render machine with a headless browser for the PNG path
-  (`chromium` observed on orca; `test.sh` also accepts
+  (`chromium` observed on a Linux host; `test.sh` also accepts
   `google-chrome` / `chromium-browser`).
 - Bun + python3 for the reference generator and self-test.
-- Know which harness the artifact must suit (#54 inventory
-  → #55 presentation keying, both pending): phone-thread
+- Know which harness the artifact must suit (harness-capability-inventory
+  → presentation-layer keying, both pending): phone-thread
   PNG, printable HTML, live page, or chat-inline image.
 
 ### Access
@@ -302,9 +302,9 @@ credentialed door is part of the render path.
 - Tile/GIS endpoint unreachable → show last-good cached
   box with its capture date + source error; never swap in
   a different area silently (last-good-data rule:
-  concept-review §12).
+  the concept review).
 - Secret or real location leaked into a shared artifact →
-  delete the artifact, scrub per #31, record as an
+  delete the artifact, scrub per pre-publish-scrub, record as an
   anomaly (evidence-ledger precedent).
 - Browser missing on a new machine → install Chromium or
   equivalent; the `?p=N` + screenshot primitive does not
@@ -315,7 +315,7 @@ credentialed door is part of the render path.
 - No live-record render has been exercised in this lane
   yet: the self-test proves the pipeline on synthetic
   fixtures; first real-records map + live tile/GIS fetch
-  is pending (Habitat-A egress probes open).
+  is pending (sandbox egress probes open).
 - No live owner round-trip yet: Fix-GPS page mechanics are
   proven in the fixture; a real drag → paste → apply →
   regenerate → publish cycle is pending.
@@ -323,15 +323,15 @@ credentialed door is part of the render path.
   segmentation) are DESIGN, not proven; the journaled
   panorama fit used a hand-written mask.
 - This skill covers GEO maps (positions, coverage, GIS,
-  KML, PNGs). Logical topology is #45 (DOT→SVG,
+  KML, PNGs). Logical topology is truthful-topology-graphviz (DOT→SVG,
   observed/inferred marking) — neither geo nor RF
   coverage graduates through that pipeline. Topology views
-  of multi-AP sites are #52 site-plan-multi-ap (Leaflet is
+  of multi-AP sites are site-plan-multi-ap (Leaflet is
   NOT the useful view there). Outdoor link data (Starlink,
   LiDAR beyond hillshade, property lines, solar) extends
-  via pending #51 maps-outdoor. Whiteboard content is #44;
-  WebFig deep links are #17; harness keying is #54/#55.
-- Field-sheets content (#18, pending) is the standing
+  via pending maps-outdoor. Whiteboard content is decision-board-lifecycle;
+  WebFig deep links are webfig-handoff; harness keying is harness-capability-inventory/presentation-layer.
+- Field-sheets content (field-sheets, pending) is the standing
   companion: device jobs, aiming, expected-result and
   stop-condition sheets. This skill's render/file/loop
   halves plug into it; they do not replace it.
