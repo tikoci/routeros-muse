@@ -143,7 +143,7 @@ the window; step 5 closes it into the records.
 
 ### 4. Close (first pull marks the boundary)
 
-- First pull per `state-pull` + `unbox-provision` §4:
+- First pull per `state-pull` + `unbox-provision` §5 — First pull + boundary:
   redacted export + stripped JSON + manifest, checker
   clean. The pull is the flash's proof of life.
 - Commit message marks the boundary (collected:
