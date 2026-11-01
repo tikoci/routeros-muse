@@ -296,3 +296,27 @@ status = "decided"
 detail = "Developer 2026-11-01: T3 Code already does multi-agent coordination; Habitat A likely relegated to quickchr testing."
 decided = "2026-11-01"
 outcome = "No coord list/post obligation going forward; the new repo AGENTS.md omits it. Work/coord stays as archive. Cross-session status lives in records plus T3 threads."
+
+[[decision]]
+id = "D38"
+title = "Ask-first maps to promptUnmatched (onRequest gates nothing)"
+status = "open"
+detail = "Live meta capture 2026-11-01 (docs/design/t50-t55-wire-shapes.md, muse 1.4.14): under onRequest, bash ls/rm and write_file ran with approvalId null; real prompts (approval/request + approval/decide) only fire under promptUnmatched. Recommendation: map the UI 'Ask first' (and the server default) to promptUnmatched, landing together with T50's approval surface so requests never wait unanswered; until then avoid real-router sessions."
+
+[[decision]]
+id = "D39"
+title = "Server spawns muse with --trust-workspace"
+status = "open"
+detail = "Capture B1: without --trust-workspace nothing project-local loads (no root AGENTS.md, no skills); session/start has no instruction params. Recommendation: pass it; the workspace is the owner's own folder created by init. Feeds T49 orientation."
+
+[[decision]]
+id = "D40"
+title = "Template skills move to .agents/skills/"
+status = "open"
+detail = "Capture B1: even trusted, muse loads project skills only from .agents/skills/<name>/SKILL.md; templates/network/skills/ (55 skills) is invisible. Recommendation: move them (T96 has landed, no collision); keep tools/check-skills.ts and the delab guard pointed at the new path. Feeds T49."
+
+[[decision]]
+id = "D41"
+title = "UI actions reach the agent as a per-session MCP server"
+status = "open"
+detail = "Capture B2: MSP has no host/client tool registration; per-session MCP is negotiated (sessionMcp at initialize, config.mcpServers at session/start), ui_show_note round trip captured; MCP tools prompt even under onRequest. Recommendation: routeros-muse serves an MCP server with ui_* tools (render into tab, select device, raise alert) as T55's design."
