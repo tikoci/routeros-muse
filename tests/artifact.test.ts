@@ -12,8 +12,11 @@ import {
 	artifactSecurityHeaders,
 	artifactTier,
 	isArtifactPath,
+	JOB_META_MAX_BYTES,
 	resolveArtifact,
+	type TierMemo,
 } from "../src/lib/workspace";
+import { runRenderJob, runTopology } from "../src/render/jobs";
 import { startServer } from "../src/serve/server";
 
 const dirs: string[] = [];
@@ -223,9 +226,124 @@ describe("artifact tiers", () => {
 		return "reports/render/topology-stamp/topology.html";
 	}
 
-	test("render-dir job.json tier scripts promotes the artifact", () => {
+	const TOPO = {
+		title: "prov",
+		nodes: [{ id: "gw" }, { id: "ap" }],
+		links: [{ from: "gw", to: "ap" }],
+	};
+
+	test("a forged job.json claims nothing: static, no render-job grant", () => {
 		const ws = makeWs();
-		expect(artifactTier(ws, renderDir(ws, "scripts"))).toBe("scripts");
+		const dh = makeDir("t83-prov-dh-");
+		// Hand-written metadata, no signature from any render job.
+		expect(
+			artifactTier(ws, renderDir(ws, "scripts"), { dataHome: dh }),
+		).toBe("static");
+	});
+
+	test("a genuine render job verifies into the scripts tier", async () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-prov-dh-");
+		const res = await runTopology(ws, TOPO, "web", dh);
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("topology job failed");
+		expect(artifactTier(ws, `${res.dir}/topology.html`, { dataHome: dh })).toBe(
+			"scripts",
+		);
+	});
+
+	test("editing the HTML after the job revokes the grant", async () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-prov-dh-");
+		const res = await runTopology(ws, TOPO, "web", dh);
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("topology job failed");
+		const rel = `${res.dir}/topology.html`;
+		expect(artifactTier(ws, rel, { dataHome: dh })).toBe("scripts");
+		nodeFs.appendFileSync(path.join(ws, rel), "<!-- edited -->\n");
+		expect(artifactTier(ws, rel, { dataHome: dh })).toBe("static");
+	});
+
+	test("a file dropped into a genuine render dir rides no grant", async () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-prov-dh-");
+		const res = await runTopology(ws, TOPO, "web", dh);
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("topology job failed");
+		nodeFs.writeFileSync(
+			path.join(ws, res.dir, "evil.html"),
+			"<script>location.href='http://example.invalid/'</script>\n",
+		);
+		expect(artifactTier(ws, `${res.dir}/evil.html`, { dataHome: dh })).toBe(
+			"static",
+		);
+	});
+
+	test("an oversize job.json is ignored, never read", async () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-prov-dh-");
+		const res = await runTopology(ws, TOPO, "web", dh);
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("topology job failed");
+		const rel = `${res.dir}/topology.html`;
+		expect(artifactTier(ws, rel, { dataHome: dh })).toBe("scripts");
+		// Pad the metadata past the cap without touching the tier
+		// claim or the file list: if the lookup read it, the sig
+		// would still verify. Static proves the size gate skipped it.
+		const jobFile = path.join(ws, res.dir, "job.json");
+		const job = JSON.parse(nodeFs.readFileSync(jobFile, "utf8")) as Record<
+			string,
+			unknown
+		>;
+		job["pad"] = "x".repeat(JOB_META_MAX_BYTES + 1);
+		nodeFs.writeFileSync(jobFile, JSON.stringify(job));
+		expect(nodeFs.statSync(jobFile).size).toBeGreaterThan(JOB_META_MAX_BYTES);
+		expect(artifactTier(ws, rel, { dataHome: dh })).toBe("static");
+	});
+
+	test("one request memoizes one tier per render dir", async () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-prov-dh-");
+		const res = await runRenderJob(
+			ws,
+			"report",
+			{ title: "R", markdown: "# hi" },
+			"web",
+			dh,
+		);
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("report job failed");
+		const cache = new Map<string, TierMemo>();
+		const cx = { dataHome: dh, cache };
+		expect(artifactTier(ws, `${res.dir}/report.html`, cx)).toBe("static");
+		expect(artifactTier(ws, `${res.dir}/report.html`, cx)).toBe("static");
+		expect(artifactTier(ws, "reports/stray.html", cx)).toBe("static");
+		expect(cache.size).toBe(1);
+		expect(cache.get(res.dir)).toEqual({ tier: "static", names: [] });
+	});
+
+	test("flipping a genuine job.json tier to scripts grants nothing", async () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-prov-dh-");
+		const res = await runRenderJob(
+			ws,
+			"report",
+			{ title: "R", markdown: "# hi" },
+			"web",
+			dh,
+		);
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("report job failed");
+		const rel = `${res.dir}/report.html`;
+		expect(artifactTier(ws, rel, { dataHome: dh })).toBe("static");
+		const jobFile = path.join(ws, res.dir, "job.json");
+		const job = JSON.parse(nodeFs.readFileSync(jobFile, "utf8")) as Record<
+			string,
+			unknown
+		>;
+		job["tier"] = "scripts";
+		nodeFs.writeFileSync(jobFile, JSON.stringify(job));
+		expect(artifactTier(ws, rel, { dataHome: dh })).toBe("static");
 	});
 
 	test("everything else opens static", () => {

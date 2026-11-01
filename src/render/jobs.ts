@@ -9,6 +9,12 @@
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	canonicalJobPayload,
+	ensureRenderKey,
+	sha256Hex,
+	signJobPayload,
+} from "../lib/renderSig";
 import { have, run } from "../lib/run";
 
 export type RenderContext = "web" | "cli";
@@ -44,6 +50,7 @@ function finishJob(
 	files: string[],
 	source: string,
 	tier: "static" | "scripts",
+	dataHome?: string,
 ): JobResult {
 	nodeFs.writeFileSync(
 		path.join(dir, "job.json"),
@@ -60,10 +67,24 @@ function finishJob(
 			2,
 		)}\n`,
 	);
+	// Provenance: HMAC over the tier plus a sha256 of every file the
+	// job wrote, so a forged job.json cannot claim the scripts tier
+	// and edited outputs fail verification (static, unlabeled). The
+	// key is created on first use (0600, beside registry.toml).
+	const jobDirRel = path.relative(root, dir);
+	const hashes: Record<string, string> = {};
+	for (const name of files) {
+		hashes[name] = sha256Hex(nodeFs.readFileSync(path.join(dir, name)));
+	}
+	const sig = signJobPayload(
+		ensureRenderKey(dataHome),
+		canonicalJobPayload(jobDirRel, tier, hashes),
+	);
+	nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
 	return {
 		ok: true,
 		job,
-		dir: path.relative(root, dir),
+		dir: jobDirRel,
 		files: [...files, "job.json"],
 	};
 }
@@ -277,6 +298,7 @@ export async function runTopology(
 	root: string,
 	input: TopologyInput,
 	ctx: RenderContext,
+	dataHome?: string,
 ): Promise<JobResult> {
 	if (!validTopology(input))
 		return { ok: false, job: "topology", why: "need {nodes[], links[]}" };
@@ -304,7 +326,7 @@ export async function runTopology(
 			"topology.html",
 			topologyHtmlOrThrow(title, mmd, nodeFs.readFileSync(bundlePath, "utf8")),
 		);
-		return finishJob(root, "topology", dir, files, "topology.mmd", "scripts");
+		return finishJob(root, "topology", dir, files, "topology.mmd", "scripts", dataHome);
 	}
 	if (have("dot")) {
 		const r = await run(["dot", "-Tsvg", path.join(dir, "topology.dot")], {
@@ -312,17 +334,18 @@ export async function runTopology(
 		});
 		if (r.ok && r.stdout.includes("<svg")) {
 			write("topology.svg", r.stdout);
-			return finishJob(root, "topology", dir, files, "topology.dot", "scripts");
+			return finishJob(root, "topology", dir, files, "topology.dot", "scripts", dataHome);
 		}
 	}
 	write("topology.txt", topologyText(input));
-	return finishJob(root, "topology", dir, files, "topology.dot", "scripts");
+	return finishJob(root, "topology", dir, files, "topology.dot", "scripts", dataHome);
 }
 
 /** Report job: markdown → self-contained HTML (+ .md source). */
 export async function runReport(
 	root: string,
 	input: ReportInput,
+	dataHome?: string,
 ): Promise<JobResult> {
 	if (
 		!input ||
@@ -340,7 +363,7 @@ export async function runReport(
 		markdownHtml(input.title, input.markdown),
 	);
 	files.push("report.html");
-	return finishJob(root, "report", dir, files, "report.md", "static");
+	return finishJob(root, "report", dir, files, "report.md", "static", dataHome);
 }
 
 export type MapInput = {
@@ -383,9 +406,11 @@ export async function runRenderJob(
 	job: string,
 	input: unknown,
 	ctx: RenderContext,
+	dataHome?: string,
 ): Promise<JobResult> {
-	if (job === "topology") return runTopology(root, input as TopologyInput, ctx);
-	if (job === "report") return runReport(root, input as ReportInput);
+	if (job === "topology")
+		return runTopology(root, input as TopologyInput, ctx, dataHome);
+	if (job === "report") return runReport(root, input as ReportInput, dataHome);
 	if (job === "map") return runMap(root, input as MapInput);
 	if (job === "chart") return runChart(root, input as ChartInput);
 	return {

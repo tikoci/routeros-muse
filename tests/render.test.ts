@@ -1,6 +1,6 @@
 // Render service tests (T33, D21). Pure job tests need no muse;
 // the /api/render route test reuses the echo server harness.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -29,6 +29,19 @@ function makeRoot(): string {
 	return nodeFs.mkdtempSync(path.join(os.tmpdir(), "t33-render-"));
 }
 
+// Provenance-key homes for the job tests: each job signs with its
+// own key, never the real data home. Cleaned after the file.
+const dhDirs: string[] = [];
+afterAll(() => {
+	for (const d of dhDirs) nodeFs.rmSync(d, { recursive: true, force: true });
+});
+
+function makeDataHome(): string {
+	const d = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t33-render-dh-"));
+	dhDirs.push(d);
+	return d;
+}
+
 describe("topology sources", () => {
 	test("mermaid flowchart names every node and link", () => {
 		const mmd = topologyMermaid(TOPO);
@@ -52,7 +65,7 @@ describe("topology sources", () => {
 describe("render jobs", () => {
 	test("web context emits mmd + html + source-time record", async () => {
 		const root = makeRoot();
-		const res = await runTopology(root, TOPO, "web");
+		const res = await runTopology(root, TOPO, "web", makeDataHome());
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("topology job failed");
 		expect(res.files).toContain("topology.mmd");
@@ -72,7 +85,7 @@ describe("render jobs", () => {
 
 	test("topology html is offline: inlined mermaid, no external script", async () => {
 		const root = makeRoot();
-		const res = await runTopology(root, TOPO, "web");
+		const res = await runTopology(root, TOPO, "web", makeDataHome());
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("topology job failed");
 		const html = nodeFs.readFileSync(
@@ -88,7 +101,7 @@ describe("render jobs", () => {
 
 	test("job.json carries the sandbox tier: topology scripts, report static", async () => {
 		const root = makeRoot();
-		const topo = await runTopology(root, TOPO, "web");
+		const topo = await runTopology(root, TOPO, "web", makeDataHome());
 		expect(topo.ok).toBe(true);
 		if (!topo.ok) throw new Error("topology job failed");
 		const topoJob = JSON.parse(
@@ -100,6 +113,7 @@ describe("render jobs", () => {
 			"report",
 			{ title: "R", markdown: "# hi" },
 			"web",
+			makeDataHome(),
 		);
 		expect(rep.ok).toBe(true);
 		if (!rep.ok) throw new Error("report job failed");
@@ -107,6 +121,32 @@ describe("render jobs", () => {
 			nodeFs.readFileSync(path.join(root, rep.dir, "job.json"), "utf8"),
 		) as Record<string, unknown>;
 		expect(repJob["tier"]).toBe("static");
+	});
+
+	test("jobs sign job.json.sig with a 0600 key beside the registry home", async () => {
+		const root = makeRoot();
+		try {
+			const dh = makeDataHome();
+			const rep = await runRenderJob(
+				root,
+				"report",
+				{ title: "R", markdown: "# hi" },
+				"web",
+				dh,
+			);
+			expect(rep.ok).toBe(true);
+			if (!rep.ok) throw new Error("report job failed");
+			const sig = nodeFs
+				.readFileSync(path.join(root, rep.dir, "job.json.sig"), "utf8")
+				.trim();
+			expect(sig).toMatch(/^[0-9a-f]{64}$/);
+			const mode = nodeFs.statSync(
+				path.join(dh, "routeros-muse", "render.key"),
+			).mode;
+			expect(mode & 0o077).toBe(0);
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("a missing mermaid bundle fails the job honestly", () => {
@@ -120,7 +160,7 @@ describe("render jobs", () => {
 
 	test("cli context emits dot plus svg-or-text", async () => {
 		const root = makeRoot();
-		const res = await runTopology(root, TOPO, "cli");
+		const res = await runTopology(root, TOPO, "cli", makeDataHome());
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("topology job failed");
 		expect(res.files).toContain("topology.dot");
@@ -152,6 +192,7 @@ describe("render jobs", () => {
 			"report",
 			{ title: "R", markdown: "# hi" },
 			"web",
+			makeDataHome(),
 		);
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("report job failed");

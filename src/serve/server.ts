@@ -41,6 +41,7 @@ import {
 	artifactSecurityHeaders,
 	artifactTier,
 	CDB_ENCRYPT_STEERING,
+	type TierMemo,
 	isArtifactPath,
 	listAlerts,
 	listRecents,
@@ -1084,9 +1085,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					walkTree(root, 0, out);
 					// Artifact entries carry their sandbox tier so the
 					// viewer opens render-job scripts without a re-fetch.
+					// One memo per request: every artifact in a render
+					// dir shares its single verification.
+					const cx = {
+						dataHome: opts.dataHome,
+						cache: new Map<string, TierMemo>(),
+					};
 					const entries = out.map((e) =>
 						isArtifactPath(e.path)
-							? { ...e, tier: artifactTier(root, e.path) }
+							? { ...e, tier: artifactTier(root, e.path, cx) }
 							: e,
 					);
 					return json({ root, entries });
@@ -1741,7 +1748,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const body = (await req.json()) as { job?: string; input?: unknown };
 					if (typeof body.job !== "string")
 						return json({ ok: false, why: "need {job, input}" }, 400);
-					const res = await runRenderJob(root, body.job, body.input, "web");
+					const res = await runRenderJob(
+						root,
+						body.job,
+						body.input,
+						"web",
+						opts.dataHome,
+					);
 					return json(res, res.ok ? 200 : 400);
 				}
 				if (p === "/api/artifact") {

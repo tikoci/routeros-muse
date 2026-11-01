@@ -6,6 +6,12 @@ import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { loadDoctorSpec, runDoctor } from "../steps/doctor";
 import { readDevices } from "./fleet";
+import {
+	canonicalJobPayload,
+	readRenderKey,
+	sha256Hex,
+	verifyJobSignature,
+} from "./renderSig";
 import { have, run } from "./run";
 import {
 	copyTemplateFiles,
@@ -554,34 +560,127 @@ export function artifactSecurityHeaders(
 }
 
 /**
- * Sandbox tier for one artifact: scripts only when the file sits
- * directly in a render dir whose job.json says scripts; static
- * everywhere else (missing/malformed/foreign tiers fail closed).
+ * Verified per-directory result: the granted tier plus the exact
+ * file names the job wrote (membership is checked per call, so a
+ * dropped-in file rides no grant while the directory verifies once).
  */
-export function artifactTier(root: string, rel: string): ArtifactTier {
+export type TierMemo = { tier: ArtifactTier; names: string[] };
+
+/** Per-request context for tier lookups: key home plus a memo. */
+export type TierContext = {
+	/** XDG data-home override for the provenance key (tests isolate here). */
+	dataHome?: string;
+	/**
+	 * Memo of verified per-directory results for one tree/recents
+	 * request: job-dir rel → memo. The caller owns it (one Map per
+	 * request); absent means no memo.
+	 */
+	cache?: Map<string, TierMemo>;
+};
+
+/**
+ * Sandbox tier for one artifact: scripts (with the "render job"
+ * label) only when the file sits directly in a render dir whose
+ * job.json claims scripts AND job.json.sig verifies against the
+ * current file contents — and the file itself is one the job
+ * wrote (a dropped-in file rides no grant). Static and unlabeled
+ * everywhere else (missing/malformed/foreign tiers, missing key,
+ * edited outputs, and forged metadata all fail closed).
+ */
+export function artifactTier(
+	root: string,
+	rel: string,
+	cx?: TierContext,
+): ArtifactTier {
 	const parts = rel.split("/");
 	if (
 		parts.length !== 4 ||
 		parts[0] !== "reports" ||
 		parts[1] !== "render" ||
-		parts[3] === "job.json"
+		parts[3] === "job.json" ||
+		parts[3] === "job.json.sig"
 	) {
 		return "static";
 	}
-	const jobFile = safeJoin(
-		root,
-		`${parts[0]}/${parts[1]}/${parts[2]}/job.json`,
-	);
-	if (!jobFile) return "static";
-	try {
-		const job = JSON.parse(nodeFs.readFileSync(jobFile, "utf8")) as Record<
-			string,
-			unknown
-		>;
-		return job["tier"] === "scripts" ? "scripts" : "static";
-	} catch {
-		return "static";
+	const jobDirRel = `${parts[0]}/${parts[1]}/${parts[2]}`;
+	const fileName = parts[3] as string;
+	let memo = cx?.cache?.get(jobDirRel);
+	if (memo === undefined) {
+		memo = verifyRenderDir(root, jobDirRel, cx?.dataHome);
+		cx?.cache?.set(jobDirRel, memo);
 	}
+	if (memo.tier !== "scripts") return "static";
+	return memo.names.includes(fileName) ? "scripts" : "static";
+}
+
+/** Bounded read: regular files at or under the cap only, else null. */
+function readBounded(full: string, maxBytes: number): Buffer | null {
+	let st: nodeFs.Stats;
+	try {
+		st = nodeFs.statSync(full);
+	} catch {
+		return null;
+	}
+	if (!st.isFile() || st.size > maxBytes) return null;
+	try {
+		return nodeFs.readFileSync(full);
+	} catch {
+		return null;
+	}
+}
+
+/** Cap for render metadata reads (job.json, job.json.sig). */
+export const JOB_META_MAX_BYTES = 64 * 1024;
+
+/** Closed memo: static, no names granted. */
+const STATIC_MEMO: TierMemo = { tier: "static", names: [] };
+
+/**
+ * Verify one render dir: recompute the HMAC over the claimed tier
+ * plus sha256 of the CURRENT contents of every file job.json names,
+ * and compare against job.json.sig. Anything missing, oversized,
+ * unparseable, foreign, or mismatched fails closed to static.
+ */
+function verifyRenderDir(
+	root: string,
+	jobDirRel: string,
+	dataHome?: string,
+): TierMemo {
+	const jobFile = safeJoin(root, `${jobDirRel}/job.json`);
+	const sigFile = safeJoin(root, `${jobDirRel}/job.json.sig`);
+	if (!jobFile || !sigFile) return STATIC_MEMO;
+	const jobRaw = readBounded(jobFile, JOB_META_MAX_BYTES);
+	const sigRaw = readBounded(sigFile, JOB_META_MAX_BYTES);
+	if (!jobRaw || !sigRaw) return STATIC_MEMO;
+	let job: Record<string, unknown>;
+	try {
+		job = JSON.parse(jobRaw.toString("utf8")) as Record<string, unknown>;
+	} catch {
+		return STATIC_MEMO;
+	}
+	if (job["tier"] !== "scripts" || !Array.isArray(job["files"])) {
+		return STATIC_MEMO;
+	}
+	const names = job["files"] as unknown[];
+	if (names.some((n) => typeof n !== "string")) return STATIC_MEMO;
+	const key = readRenderKey(dataHome);
+	if (!key) return STATIC_MEMO;
+	const hashes: Record<string, string> = {};
+	for (const name of names as string[]) {
+		const member = safeJoin(root, `${jobDirRel}/${name}`);
+		if (!member) return STATIC_MEMO;
+		let bytes: Buffer;
+		try {
+			bytes = nodeFs.readFileSync(member);
+		} catch {
+			return STATIC_MEMO;
+		}
+		hashes[name] = sha256Hex(bytes);
+	}
+	const canonical = canonicalJobPayload(jobDirRel, "scripts", hashes);
+	return verifyJobSignature(key, canonical, sigRaw.toString("utf8"))
+		? { tier: "scripts", names: names as string[] }
+		: STATIC_MEMO;
 }
 
 /**
