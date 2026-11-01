@@ -13,6 +13,8 @@ middle tab from the file tree. Fetches and subresources
 are blocked, so everything must be inline; a file that
 navigates away is blanked with a notice (navigation can't
 be prevented by browser policy, only detected and stopped).
-Static is the default: inline scripts run only when the
-owner clicks Run scripts, or for the built-in render jobs
-(topology, report) — scripts are the owner's opt-in.
+Static is the default: scripts are the owner's opt-in
+(Run scripts, or the topology/report render jobs).
+Residual: a navigation before the artifact finishes loading
+can escape detection, and the first request still goes out.
+Self-contained, no navigation, is the contract.

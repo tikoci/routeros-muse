@@ -248,19 +248,13 @@ is part of any render path here.
 
 ## Showing things to the owner (Mode B)
 
-- Write self-contained HTML/SVG/PNG into the
-  workspace (`reports/` preferred); the owner opens
-  them framed in a middle tab from the file tree.
-- Everything must be inline: fonts, scripts, images,
-  and fetches outside the file are blocked by the
-  sandbox policy. A file that navigates away is
-  blanked with an inline notice — but navigation
-  can't be *prevented* by browser policy (Chromium
-  has no navigate-to), only detected and stopped, so
-  never rely on leaving the file.
-- Static is the default: inline styles and images
-  render; inline scripts stay blocked until the
-  owner clicks Run scripts — scripts are the owner's
-  opt-in. The built-in render jobs (topology, report)
-  are the paved path when they fit — topology runs
-  scripts by design.
+- Write self-contained HTML/SVG/PNG into the workspace
+  (`reports/` preferred); the owner opens them framed.
+- Everything inline: outside fonts, scripts, images and
+  fetches are blocked. Navigation can't be *prevented*
+  (no navigate-to), only detected and stopped.
+- Residual: a navigation before the file finishes loading
+  can escape detection, and the first request still goes
+  out — no navigation is the contract.
+- Static by default: scripts run only via Run scripts or
+  the render jobs (topology, report).

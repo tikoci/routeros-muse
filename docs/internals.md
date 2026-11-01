@@ -99,9 +99,11 @@ wrappers over those modules. `GET /api/artifact` serves any
 workspace path with a renderable extension (T83: html/htm/svg/
 png/jpg/jpeg/gif/webp, 8 MiB cap) behind the same auth as the
 other `/api` routes, with per-tier sandbox CSP + nosniff +
-no-store; the tree annotates each artifact with its tier. No
-symlink anywhere in the path (lstat walk, `O_NOFOLLOW` open,
-fstat + fd-read so one opened object is checked and served);
+no-store; the tree annotates each artifact with a tier hint
+(the serve tier is decided from the bytes, the viewer label
+from a fresh meta fetch). No symlink anywhere in the path:
+lstat walk, `O_NOFOLLOW` open, fstat + fd-read so one opened
+object is checked and served;
 a swapped dir component mid-request is an accepted residual,
 same class as the T97 preflight-vs-write window.
 
@@ -109,8 +111,9 @@ Render services (T33 done, T83 viewer): `src/render/jobs.ts` runs
 named jobs into `<workspace>/reports/render/<job>-<stamp>/` with
 source + time + sandbox tier (`job.json`: topology scripts, report
 static) plus an HMAC provenance signature (`job.json.sig` over
-tier + sha256 of every file the job wrote, keyed from
-`<dataHome>/routeros-muse/render.key`). Topology splits by context
+tier + sha256 of every artifact member the job signed, keyed
+from `<dataHome>/routeros-muse/render.key`). Topology splits
+by context
 per D21 (web: mermaid .mmd + HTML with the pinned mermaid bundle
 inlined, fully offline; CLI: DOT + `dot -Tsvg`, text fallback);
 report renders markdown to self-contained HTML. Map/chart have
