@@ -8,15 +8,14 @@ tested: none
 
 # `backup-restore-upgrade` skill (audit → snapshot → drill → upgrade) [template v1 draft]
 
-Promoted from two executed twin drills (t28-bur-proof.md: Drill A
-`/import` restore on twin1/7.26beta3, Drill B binary save/load
-rollback across a reboot on twin4/7.26beta3), the export-path
-decision note (export-path.md), and the export-omissions inventory
-(t7-export-gaps.md). The UPGRADE RUN itself is prescribed, not
+Promoted from two executed twin drills (Drill A
+`/import` restore on a 7.26beta3 CHR twin, Drill B binary save/load
+rollback across a reboot on a disposable 7.26beta3 CHR twin), an
+export-path decision note, and an export-omissions inventory.
+The UPGRADE RUN itself is prescribed, not
 executed — no package upgrade ran on any box in this grounding; the
-rollback reads around it are the proven parts. Build-tracker
-references (T/K IDs, notes paths) are pointers pending staging
-scrub. No secrets below.
+rollback reads around it are the proven parts.
+No secrets below.
 
 ## Part 1 — The checklist (recoverable before risky)
 
@@ -39,16 +38,16 @@ rewrite) touches a non-twin box before steps 1–3 are recorded.
 5. Verify + ledger: post-change reads match the pre-change
    snapshot modulo intent; artifacts retained per the box's
    retention; rollback path named (import file, backup file, or
-   netinstall per #12).
+   netinstall per netinstall-flash).
 
 ### 0. What /export omits (the coverage audit)
 
-Grounded: t7-export-gaps.md:39-57 — observed on real 7.26beta3
-captures (bigdude 285-line export + twin1 minimal export):
+Grounded: observed on real 7.26beta3
+captures (a 285-line production export + a minimal twin export):
 
 - user-manager state: OMITTED (zero lines; on UM-wedged boxes the
-  export instead emits 10 `#error exporting "/user-manager*"` lines
-  — t7:82-86). UM coverage comes from `/user-manager/*` reads, not export.
+  export instead emits 10 `#error exporting "/user-manager*"` lines).
+  UM coverage comes from `/user-manager/*` reads, not export.
 - dude database: only a `set data-directory` pointer line; no
   devices/history/maps. Export is not a dude backup.
 - certificates: settings + refs only; no bodies, no keys.
@@ -61,8 +60,8 @@ captures (bigdude 285-line export + twin1 minimal export):
 
 Coverage rule: for each omitted class the box actually uses, add
 its dedicated read to the snapshot (UM menus, `/file/print`,
-certificate inventory). The pull/ prototype's 4-JSON-menus shape
-is the standing pattern (t7:21-26).
+certificate inventory). The state-pull 4-JSON-menus shape
+is the standing pattern.
 
 ### 1. Text export (read — the portable snapshot)
 
@@ -71,15 +70,14 @@ centrs execute --quickchr <twin> '/export'
 # -> {"ret": "<full text>"} — read-shaped, no --yes needed
 ```
 
-- Grounded: export-path.md:9-23 — direct `/export` over native API
+- Grounded: direct `/export` over native API
   is read-shaped (no `file=`), no `--yes` gate, output returned not
-  backgrounded. Full export re-observed this session
-  (t28-bur-proof.md Drill A).
+  backgrounded. Full export re-observed in Drill A.
 - Menu-scoped quirk (new): bare `/ip/firewall/address-list/export`
   returns `{}` (EMPTY); the same menu with `export verbose`
   returns full text. Do not trust a bare menu export that comes
   back empty — retry verbose or take the full `/export`
-  (t28-bur-proof.md Drill A).
+  (Drill A).
 - `show-sensitive=yes` is one word from the safe default and dumps
   secrets into the output (centrs#359). Never use it for snapshots;
   targeted reads over broad dumps, always.
@@ -95,9 +93,9 @@ centrs execute --quickchr <twin> '/file/print'   # confirm <snap-name>.backup pr
 centrs transfer --quickchr <twin> download <snap-name>.backup ./<snap-name>.backup
 ```
 
-- Grounded: save ran twice this session (twin1 `t28-pre-drill`,
-  twin4 `t28-load-drill`); both `.backup` files confirmed via
-  `/file/print` (t28-bur-proof.md Drills A/B).
+- Grounded: save ran twice in the grounding runs (a `pre-drill`
+  and a `load-drill` snapshot); both `.backup` files confirmed via
+  `/file/print` (Drills A/B).
 - Binary backups are arch- and version-sensitive: a CHR/x86
   `.backup` is not a restore path for ARM hardware. The text
   export is the portable half; the binary is the
@@ -118,7 +116,7 @@ centrs execute --quickchr <twin> '/import file=restore.rsc' --yes
 centrs execute --quickchr <twin> '/ip/firewall/address-list/print'  # read back: entries + comments intact
 ```
 
-- Grounded end to end (t28-bur-proof.md Drill A): two entries
+- Grounded end to end (Drill A): two entries
   created, exported, destroyed (print back to `{}`), restored
   from the uploaded .rsc with comments intact, then removed with
   the .rsc for a pristine finish.
@@ -142,9 +140,9 @@ centrs execute --quickchr <twin> '/system/identity/print'   # poll until it answ
 # -> {"name": "<pre-change marker>"} — rolled back across the reboot
 ```
 
-- Grounded end to end (t28-bur-proof.md Drill B): identity
-  `CHR` → `twin4-drill` → backup → `twin4-changed` → load →
-  reboot (uptime 11s) → identity back to `twin4-drill` on the
+- Grounded end to end (Drill B): identity
+  `CHR` → `load-drill` → backup → `load-changed` → load →
+  reboot (uptime 11s) → identity back to `load-drill` on the
   first poll. Marker restored, baseline (`CHR`) then re-set.
 - `password=` is REQUIRED even when the backup has no password:
   bare `load` fails with `[routeros/api-trap] missing =password=`.
@@ -154,8 +152,8 @@ centrs execute --quickchr <twin> '/system/identity/print'   # poll until it answ
   deadline; confirm the rollback by the marker read, not by the
   accept. Uptime reset corroborates.
 - Run this ONLY on a disposable twin: load reboots the box and
-  restores users/credentials to snapshot time. twin1/twin2 are
-  never deleted — a dirty-work twin (twin4 here) takes the
+  restores users/credentials to snapshot time. Never delete a
+  twin others rely on — a dirty-work twin takes the
   reboot, then gets its baseline restored.
 
 ### 5. Upgrade run (PRESCRIBED — no package upgrade executed)
@@ -167,17 +165,18 @@ centrs execute --quickchr <twin> '/system/package/update/check-for-updates' --ye
 
 - Grounded half: `check-for-updates` without `--yes` is refused
   (`usage/confirmation-required`); with `--yes` it returns status
-  rows including `installed-version` (t28-bur-proof.md). The
+  rows including `installed-version`. The
   actual upgrade (`/system/package/update/install`, reboot,
   post-read-back) has NOT run anywhere — procedure below is
   prescribed from the drill mechanics, honestly marked.
 - Prescribed order: check → record installed-vs-latest →
   snapshot (steps 1–2) → twin-first: run the SAME upgrade on a
-  twin at the same version first (swarm: twin-first-routeros-
-  upgrade) → production upgrade → post-upgrade read-back
+  twin at the same version first → production upgrade →
+  post-upgrade read-back
   (identity, `/system/package/print`, touched menus) against the
   snapshot → mismatch means rollback (binary load per step 4, or
-  netinstall per #12/T17 on hardware).
+  netinstall per netinstall-flash during a scheduled window
+  on hardware).
 - Rollback reads are the proven parts (steps 3–4); the install
   step itself is the unexecuted half. Say so in the ledger.
 
@@ -203,10 +202,10 @@ export enough?" — it is not, see step 0).
 
 - Twins: anything goes; Drill B takes a disposable twin, never
   shared infra at a bad time.
-- bigdude (production): reads free; ANY write asks the developer
+- Production: reads free; ANY write asks the developer
   first — including `/system/backup/save` (a filesystem write)
   and especially `load` (reboot + credential rollback).
-- Operator Unknown → ask before any write (concepts K14).
+- Operator Unknown → ask before any write.
 
 ### Envs
 
@@ -262,5 +261,5 @@ export enough?" — it is not, see step 0).
   minus secrets (redacted by design).
 - Export omissions (step 0) are observed on 7.26beta3 (+7.25
   UM row); other versions need their own audit capture.
-- Netinstall fallback is #12's procedure (T17 window,
-  external); this skill names it, does not contain it.
+- Netinstall fallback is netinstall-flash's procedure (a
+  scheduled window, external); this skill names it, does not contain it.

@@ -7,11 +7,11 @@ tested: none
 
 # `acoustic-beep-calibration` skill (question → record → gate → verdict → file)
 
-Backlog #47. enbeep is a `:beep` acoustic modem — a
+enbeep is a `:beep` acoustic modem — a
 router says its MAC/IP/state through its piezo and a
 mic'd receiver decodes it. It is a cold-open beat and a
-parlor trick, explicitly NEVER load-bearing (CR12:
-handshake-only, analyzer-gated, never for provisioning,
+parlor trick, explicitly NEVER load-bearing
+(handshake-only, analyzer-gated, never for provisioning,
 monitoring, discovery, or anything operational). This
 skill is the discipline that keeps it honest: no timing
 choice without a fresh recording on the real hardware
@@ -22,16 +22,16 @@ the encoder only, never the air path), no box writes
 beyond approved beep runs.
 
 Why fresh-everything: the corpus contradicts itself on
-enbeep timing (conflict-map #17: HANDOFF flags say
+enbeep timing (HANDOFF flags say
 50/100 ms ~100% at ~0 Hz offset; the README's hardware
 findings say 200 ms floor at +100 Hz). Both died on
 re-measurement — the +100 Hz claim failed on TWO boxes
-(bigdude median offset −0.8 Hz over 16/16 tones). Build
+(median offset −0.8 Hz over 16/16 tones on the RB1100AHx4). Build
 on neither old claim: RE-MEASURE. That rule is this
 skill's reason to exist.
 
-Worked precedent (collected): notes/enbeep-bigdude.md —
-full bigdude campaign 2026-10-26 (mic path, room floor,
+Worked precedent (collected): a full production-router
+campaign 2026-10-26 (mic path, room floor,
 sweep, phase-1/2 frames, v2 Fletcher upgrade, gap
 experiment). Analyzer suites re-run observed 2026-10-31:
 legacy Python 18/18 OK, Bun decoder 94 pass / 1 skip /
@@ -67,10 +67,10 @@ any move restarts at step 1 with a NEW record.
   frame. Payload shape comes from the enbeep SPEC;
   this skill calibrates the AIR, not the format.
 - Beep runs are box WRITES (sound the beeper via an
-  approved run — bigdude writes need explicit
+  approved run — production writes need explicit
   developer approval per item). Reads (MAC/IP
   ground truth) are read-only centrs retrieves.
-- Campaign precedent: bigdude (RB1100AHx4) + USB
+- Campaign precedent: an RB1100AHx4 + USB
   mic, position A then owner-moved B; ground truth
   MAC/IP exact per run, CPU sampled pre-run (small
   drift expected and recorded as such).
@@ -146,7 +146,7 @@ any move restarts at step 1 with a NEW record.
 - Limits, written down (precedent gaps that stay
   open until measured): sealed-case loudness,
   iPhone over-air (in-page self-test passed only),
-  phone-mic + room variety (MiC is best-case),
+  phone-mic + room variety (the measurement mic is best-case),
   other router models (two captured: RB1100AHx4 +
   RB953). The record covers its path and nothing
   else — say what it does NOT cover.
@@ -189,8 +189,8 @@ or asking "is this beep path demo-ready".
 
 ### Prereqs
 
-- Backlog #47 + notes/enbeep-bigdude.md read (the
-  worked precedent).
+- This doc's worked precedent read (precedent values
+  are starting points, never parameters).
 - enbeep checkout with both suites runnable (legacy
   Python venv + Bun); a mic path verified with
   `arecord` (or platform equivalent) before any
@@ -217,7 +217,7 @@ or asking "is this beep path demo-ready".
   (precedent: 30 s for a ~12 s frame) — the 10 s
   default kills frames mid-payload silently.
 - No secrets: MAC/IP travel audibly by design and
-  are lab-range in campaigns; records cite verdicts
+  are private-range in campaigns; records cite verdicts
   (exact/wrong-field), not values.
 
 ### Outputs

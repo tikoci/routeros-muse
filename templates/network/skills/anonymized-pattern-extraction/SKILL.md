@@ -7,12 +7,12 @@ tested: none
 
 # `anonymized-pattern-extraction` skill (scope → extract → label → gate) [template v1 draft]
 
-Promoted from the coding-agent brief's extraction assignment
-(pattern only, shape-not-detail), its executed precedent (the
-brief → feedback-doc pipeline that actually ran), the concept
-review's carry-across rule, and the standing privacy lines.
-Backlog #46. Pairs with #31 (pre-publish-scrub): extraction
-produces the doc, #31 gates its publication. Core rule: carry
+Promoted from an extraction assignment
+(pattern only, shape-not-detail), its executed precedent (a
+brief → feedback-doc pipeline that actually ran), the
+carry-across rule, and the standing privacy lines.
+Pairs with pre-publish-scrub: extraction
+produces the doc, pre-publish-scrub gates its publication. Core rule: carry
 across MEANING — never private inventories, addresses,
 credentials, topology, code, or deployment-specific
 assumptions. No secrets below; this skill shows shapes of
@@ -31,12 +31,12 @@ owner would flinch to see quoted.
 3. Label every claim (§2): VERIFIED / JOURNALED / OPINION +
    house style, contradictions named.
 4. Gate and hand off (§3): synthetic examples, self-review,
-   #31 scrub, delivery.
+   pre-publish scrub, delivery.
 
 ### 0. Scope (the assignment, quoted)
 
-The brief's assignment, verbatim in spirit (collected: brief
-for coding agent § assignment): mine the private repo for
+The brief's assignment, verbatim in spirit (collected: an
+extraction brief): mine the private repo for
 GENERIC ideas — how tools were wired together, the auth scheme
 it used, what broke, what worked, what you would reuse — and
 write the PATTERNS AND LESSONS into the shared folder.
@@ -48,9 +48,9 @@ detail, describe its SHAPE, not the detail.
   architecture shape, auth scheme, failure modes, reuse-or-
   avoid judgments; feedback on the live design from the
   private vantage point; story-vs-results flags; test results
-  with exact commands + full outputs, habitat labeled.
-- Forbidden cargo (collected: concept review §carry-across +
-  muse-feedback privacy line): names, places, addresses,
+  with exact commands + full outputs, environment labeled.
+- Forbidden cargo (collected: the carry-across rule +
+  the agent-feedback privacy line): names, places, addresses,
   serials, credentials, topology, private code, deployment-
   specific assumptions. Public repo URLs and skill names only.
 - The executed precedent (collected: the brief ran): the
@@ -71,8 +71,8 @@ detail, describe its SHAPE, not the detail.
   becomes "two sites, one authenticating against the other";
   a password becomes ABSENT (not a shape — the sticker red
   line: identifiers extracted, the secret masked local-only,
-  never logged, never in a ledger — collected: brief § auth
-  red line + explainer §SAM).
+  never logged, never in a ledger — collected: the auth
+  red line).
 - Patterns worth extracting (collected: brief + concept
   review): wiring shapes (how tools composed), auth scheme
   shape (what proved what, where secrets lived), failure
@@ -80,14 +80,14 @@ detail, describe its SHAPE, not the detail.
   reuse judgments (what to copy, what to avoid, and why),
   measurement shapes (timeouts, counts, sizes — numbers
   travel, identities do not).
-- Commit-history mining (collected: concept review §10
+- Commit-history mining (collected: the concept review's
   inputs): decisions files + backlog + whiteboard history
   carry ownership, identity, capture provenance, and recorded
   evolution — mine the EVOLUTION (what changed and why), not
   the contents. Rough-count precedent: "~80 field-work, ~50
   config, ~20 dashboard, ~20 tools over 150 commits" teaches
-  effort shape with zero private content (collected:
-  claude-code-feedback commit census).
+  effort shape with zero private content (collected: an
+  earlier commit census).
 - Live by the carry-across sentence (collected: concept
   review): carry across their MEANING, not private
   inventories, addresses, credentials, topology, code, or
@@ -98,8 +98,8 @@ detail, describe its SHAPE, not the detail.
 
 ### 2. Label (every claim carries status + evidence)
 
-Claim labels from the brief (collected: brief "What to
-produce" + habitat sections):
+Claim labels from the brief (collected: the brief's "What to
+produce" + environment sections):
 
 - [VERIFIED] = you ran/checked it in session, source named.
 - [JOURNALED] = repo history or another agent's record says
@@ -108,7 +108,7 @@ produce" + habitat sections):
   asserted).
 - [APPLICANT]/[DEVELOPER] = the human stated it (source
   linked, date noted). [PENDING] = still to confirm.
-  [ASK MUSE] = only the named habitat can check it.
+  [ASK MUSE] = only the named environment can check it.
 
 House style, because someone will ask "did you test it"
 (collected: brief closing): every claim carries its evidence
@@ -119,23 +119,23 @@ same discipline at scale: every application claim traces to
 a line with a status tag (collected: grounds and references,
 [VERIFIED]/[APPLICANT]/[PENDING] tags).
 
-- Evidence-ledger compatibility (#30): observed/collected/
+- Evidence-ledger compatibility (evidence-ledger): observed/collected/
   inferred/pending labels map onto these 1:1 — use whichever
   vocabulary the consuming doc uses, but never an unlabeled
   claim.
 - Contradictions are findings, not embarrassments: when
-  habitats disagree (sandbox DNS vs Mac dig, TCG vs HVF
-  timing), record WHICH habitat each result came from —
+  environments disagree (sandbox DNS vs host dig, TCG vs HVF
+  timing), record WHICH environment each result came from —
   reach differences are data, not contradictions (collected:
-  brief § habitats).
+  the brief's environment notes).
 
 ### 3. Gate (synthetic examples, scrub, handoff)
 
 - Examples are SYNTHETIC: "examples are synthetic; no private
   locations or topology are reproduced" and the closing
   attestation "no private network identities, addresses,
-  credentials, or topology are included" (collected: concept
-  review §10 framing + closing). Write the example from the
+  credentials, or topology are included" (collected: the
+  concept review's framing + closing). Write the example from the
   shape, then re-read it asking "could the operator's
   neighbor identify the network from this" — if yes, blur
   further.
@@ -143,10 +143,11 @@ a line with a status tag (collected: grounds and references,
   cargo (§0); read it as the operator (flinch test); confirm
   every private-dependent lesson survived as shape-only or
   was cut to a pointer.
-- #31 gates publication: runtime-state sweep, D1 tiers,
-  zero-findings gate, clean-home staging, pair review. The
-  extraction draft enters #31 like any other publish
-  candidate — extraction care does not waive the scrub.
+- pre-publish-scrub gates publication: runtime-state sweep,
+  sensitivity tiers, zero-findings gate, clean-home staging,
+  pair review. The extraction draft enters pre-publish-scrub
+  like any other publish candidate — extraction care does not
+  waive the scrub.
 - Handoff shape (collected: brief delivery): one doc, sections
   for patterns / design feedback / story-vs-results flags /
   test results, changes listed at top if revising. Point at
@@ -161,7 +162,7 @@ Load when: learning from a private workspace; writing up
 lessons from a network you cannot show; reviewing whether a
 write-up leaks; "what may travel from private to shared"
 questions; scoping someone else's extraction assignment.
-(Entry-skill + capability-probe pattern: K22.)
+(Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
@@ -170,7 +171,7 @@ questions; scoping someone else's extraction assignment.
   patterns from it).
 - The consuming doc's claim vocabulary chosen (brief labels
   vs evidence-ledger labels).
-- #31 available for the publication gate.
+- pre-publish-scrub available for the publication gate.
 
 ### Access
 
@@ -201,7 +202,7 @@ content toward the shared folder.
 - Pattern write-up: wiring/auth/failure/reuse shapes.
 - Labeled claims (every claim with status + evidence).
 - Synthetic examples + flinch-test pass note.
-- #31 scrub record + handoff doc.
+- pre-publish-scrub record + handoff doc.
 
 ### Verification
 
@@ -211,7 +212,7 @@ content toward the shared folder.
   contradiction naming doc/line.
 - Every example synthetic (attestation line present).
 - Operator read confirmed (not assumed from access).
-- #31 gate green before any publish step.
+- pre-publish-scrub gate green before any publish step.
 - Claim audit: each extraction claim carries source + status
   or an honest pending label.
 
@@ -238,7 +239,7 @@ content toward the shared folder.
   who needs the instance needs operator access, not a better
   example.
 - The brief → feedback precedent ran ONCE, in one direction
-  (Mac → shared folder) — other habitat pairs re-prove the
+  (workstation → shared folder) — other environment pairs re-prove the
   pipeline, they do not inherit it.
 - Operator consent is per-extraction: access last month is
   not consent this month.

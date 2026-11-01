@@ -26,7 +26,7 @@ No secrets below.
   LIVE state.
 
 Any ONE symptom fires this skill. The FUSE pain behind it is
-load-bearing evidence, not taste (T21 §5).
+load-bearing evidence, not taste.
 
 ### 2. Stop
 
@@ -38,9 +38,9 @@ live state through Drive.
 
 | Need | Correct home |
 |---|---|
-| Share across sessions/habitats | coord-room post with pointers (single-copy §3) |
-| Share across machines/humans | promote to `home-private-git` (scrub first, D1) |
-| Back up a local home | single-copy §2 backup discipline (owner mechanism) |
+| Share across sessions/environments | coord-room post with pointers (home-single-copy §3) |
+| Share across machines/humans | promote to `home-private-git` (scrub first — see pre-publish-scrub) |
+| Back up a local home | home-single-copy §2 backup discipline (owner mechanism) |
 | Second machine, same network | git promotion — never a second live tree without the canonical guard |
 | Hand someone a static snapshot | dated archive copy (see §4), explicitly stale |
 
@@ -48,8 +48,9 @@ live state through Drive.
 
 Drive stays a read-only reference and archive bucket. Any Drive copy
 cited anywhere carries age + source exactly like any other
-non-canonical copy (K12: other copies carry manifests stating their
-age). A Drive file without a date on it is a rumor, not a record.
+non-canonical copy (one-canonical-location rule: other copies carry
+manifests stating their age). A Drive file without a date on it is
+a rumor, not a record.
 
 ## Part 2 — Skill doc
 
@@ -88,7 +89,7 @@ tracks decisions — so the next session does not re-litigate it.
 ### Recovery
 
 - Live state found under Drive: move it to a real home
-  (single-copy or private-git), verify with the checker, leave the
+  (home-single-copy or home-private-git), verify with the checker, leave the
   Drive copy as a dated snapshot or remove it — never both-live.
 - Sync damage (conflict copies, clobbered files): canonical home
   wins; re-pull router-owned dirs; reconcile agent-owned from history,
@@ -102,6 +103,6 @@ This skill only refuses. Affirmative hosting answers live in
 
 ## Part 3 — Assumptions
 
-1. The Drive corpus stays the read-only archive (triage map unchanged).
+1. The Drive archive stays read-only (placement map unchanged).
 2. No future "Drive sync got reliable" claim reopens this without new
    load-bearing evidence and a D-record decision.
