@@ -1,11 +1,6 @@
 // Anchor tests for check-skills.ts on tmp-dir fixtures. Run: bun test (in tools/).
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-	chmodSync,
-	mkdirSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
 import {
