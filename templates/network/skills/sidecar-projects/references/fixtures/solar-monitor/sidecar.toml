@@ -1,4 +1,4 @@
-# Synthetic fixture shaped like the heltec-victron parable.
+# Synthetic fixture shaped like the parable (a custom ESP32 solar monitor).
 # No real project data: invented values only, not drawn from any real tree.
 name = "solar-monitor"
 problem = "Owner needs panel/battery state; the shelf product is overkill and mismatched."

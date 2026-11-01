@@ -9,7 +9,7 @@ tested: self-test
 
 Sometimes the right answer is not a bigger
 product but a smaller build: the parable is
-heltec-victron — an agent-built ESP32 solar monitor for
+a custom ESP32 solar monitor for
 a test deployment INSTEAD of an overkill/mismatched Victron
 product. It lives in its own directory, is known to the
 managed network's records, and keeps a LoRa-gateway
@@ -17,8 +17,8 @@ future optional. That flexibility — a directory over
 one-size-fits-all SaaS — is the point of this skill.
 
 Honest sourcing: the parable paragraph in the skills backlog is
-the ONLY source. The unpublished victron-heltec project
-tree was excluded from the mirrored sources (venv-bloated)
+the ONLY source. An unpublished project tree
+was excluded from the mirrored sources (venv-bloated)
 and is not drawn on here; the reference fixture is
 synthetic, shaped like the parable. The manifest schema
 (v1) is PROPOSED — the first real sidecar ratifies or

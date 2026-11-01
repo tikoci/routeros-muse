@@ -31,7 +31,7 @@ ships only the `routeros` package) and cannot etherboot
 as a target. The bench proves a flash, never a twin.
 No executed flash exists yet — the production
 window is developer-scheduled (external), and
-the ginny-pig package-flow shape cited in the backlog
+the package-flow shape of a prior test deployment cited in the backlog
 has no in-repo artifact. Until the first window runs,
 every plan below is validated-on-paper, stated as such.
 
@@ -232,7 +232,7 @@ from this skill's artifacts.
 - No executed flash yet: validator + shapes are
   proven on fixtures and read-only probes; the
   first window is the skill's real proof.
-- The ginny-pig package-flow precedent is cited
+- The package-flow precedent of a prior test deployment is cited
   from the backlog without an in-repo artifact —
   collected, not observed. First window ratifies.
 - This skill plans and windows; it never redefines
