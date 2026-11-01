@@ -7,7 +7,7 @@ tested: none
 
 # `harness-capability-inventory` skill (per-harness surface matrix + re-check cadence) [template v1 draft]
 
-Prerequisite for #55 (presentation-layer): agents surface
+Prerequisite for presentation-layer: agents surface
 findings as visuals suited to the PARTICULAR harness, and
 this skill is the procedure that says what each harness can
 actually surface. Claim discipline is load-bearing: a cell
@@ -15,13 +15,13 @@ marked **observed** was verified with a command on a named
 machine (command + output in the proof note); **collected**
 carries a source citation and was not re-verified here;
 **pending** is an honest gap — never fill it with a guess.
-Matrix v1 below is dated 2026-10-30 (orca/Habitat C observed
-row; Habitat A collected; Meta rows pending). No twin, no
+Matrix v1 below is dated 2026-10-30 (local-workstation observed
+row; sandbox-agent row collected; Meta rows pending). No twin, no
 box contact anywhere in this procedure. No secrets below.
 
 ## Part 1 — The checklist (matrix first, presentation second)
 
-Run top to bottom. #55 keys off the matrix this produces —
+Run top to bottom. presentation-layer keys off the matrix this produces —
 a presentation choice without a matrix row behind it is a guess.
 
 1. Fix the harness list + columns: one row per harness, one
@@ -34,10 +34,10 @@ a presentation choice without a matrix row behind it is a guess.
 
 ### 0. Fix the harness list + columns (the matrix frame)
 
-Harness rows (v1, from backlog #54 developer ruling):
+Harness rows (v1, from an earlier scoping ruling):
 
-- orca / Habitat C (Muse Code CLI on this box) — observed row.
-- muse-app / Habitat A — collected row (live catalog, dated).
+- Local workstation (Muse Code CLI on this box) — observed row.
+- Sandboxed agent app — collected row (live catalog, dated).
 - T3 Code desktop — collected ruling, details pending.
 - Meta desktop options — pending (to-evaluate, unfamiliar).
 - Plain chat — pending (no baseline probed yet).
@@ -63,8 +63,8 @@ Surface columns (every row answers all six):
 
 ### 1. Fill the observed row (commands on THIS machine)
 
-Grounded (notes/t28-harness-proof.md, orca, 2026-10-30).
-Only these probes may mark orca cells observed:
+Grounded (proof note, local workstation, 2026-10-30).
+Only these probes may mark workstation cells observed:
 
 ```sh
 # render probe: can this box GENERATE images/diagrams?
@@ -82,21 +82,20 @@ curl -s -o /dev/null -w 'http=%{http_code} type=%{content_type}\n' http://127.0.
   (presence only — never invoked here, no box contact).
 - Observed platform: /dev/kvm present, 8 CPUs, loopback
   serve works, cleanup confirmed (`cleaned-up`).
-- Observed orca cells: Files yes (read/write on disk);
+- Observed workstation cells: Files yes (read/write on disk);
   Live-pages-on-loopback yes; image GENERATION yes
   (SVG header + 3310-byte PNG). Inline HTML rendering
   and inline image DISPLAY in the owner's UI are NOT
   shell-provable — they stay pending (UI-level probe owed).
-- The `srv/server.ts` review server (Bun.serve, default
+- A small Bun.serve review server (default
   loopback port, file-backed, no deps) is the standing
-  orca live-surface pattern — file presence observed,
+  workstation live-surface pattern — file presence observed,
   serving behavior covered by the probe above.
 
 ### 2. Fill collected rows (cited, not re-verified)
 
-Habitat A row — collected from
-`triage/corpus-local/habitat-a-tool-inventory.md`
-(live catalog captured 2026-10-24, Habitat A itself):
+Sandbox-agent row — collected from a tool inventory
+(live catalog captured 2026-10-24, by the sandbox agent itself):
 
 - Evidence channel: GitHub Issues (approval per write)
   + Drive .md files (cheap, schedulable, no human in
@@ -105,7 +104,7 @@ Habitat A row — collected from
   IN PLACE by file ID; `files delete` is permanent.
 - Toolset wall (GitHub): 46 tools on the pinned default
   endpoint; no Projects/Gists/Notifications/Actions/
-  low-level-Git reads or writes — route to a Mac habitat
+  low-level-Git reads or writes — route to a macOS environment
   or redesign. `get_issue` already drifted against its
   own connector doc once.
 - Reachability limits: no inbound reachability; egress
@@ -117,8 +116,7 @@ Habitat A row — collected from
   minutes), 7.7 GiB RAM no swap, 100 GB home durable,
   /tmp 512 MB tmpfs ephemeral, apt packages ephemeral.
 
-Muse-app surfacing — collected from
-`triage/corpus-local/source - meta tooling explainer.md`
+Agent-app surfacing — collected from the platform tooling explainer
 (2026-10-23/24, re-check pricing/tiers at dev.meta.ai):
 
 - Approval cards gate consequential actions; credentials
@@ -135,10 +133,10 @@ Muse-app surfacing — collected from
   code flow only) vs directory (muse.ai/platform review,
   no published SDK as of Sept 2026).
 
-T3 Code desktop — collected from backlog #54 (developer
+T3 Code desktop — collected from an earlier scoping ruling (developer
 ruling 2026-10-29): desktop leans T3 Code (visuals,
-nightly Muse, remote ability); muse-app→T3 from sandbox
-is the prize; OAuth friction today; expect Habitat A to
+nightly Muse, remote ability); agent-app→T3 from sandbox
+is the prize; OAuth friction today; expect the sandbox to
 sort it. Every surface cell still pending.
 
 ### 3. Mark the rest pending (matrix v1)
@@ -148,18 +146,18 @@ citations in steps 1–2. Pending = unprobed, not absent.
 
 | Harness | HTML | Images | Links | Files | Live pages | Evidence channel |
 |---|---|---|---|---|---|---|
-| orca / Habitat C | served yes (observed); inline pending | generate yes (observed); inline display pending | file paths yes (observed); deep-link follow pending | yes (observed) | loopback yes (observed); LAN/inbound pending | local files + coord posts (observed pattern) |
-| muse-app / Habitat A | pending | generate yes (collected, explainer); display pending | pending | Drive .md in place (collected); repo files via connector (collected) | no loopback/inbound from sandbox (collected); served-via-Drive partial (collected) | Issues + Drive .md (collected) |
+| Local workstation | served yes (observed); inline pending | generate yes (observed); inline display pending | file paths yes (observed); deep-link follow pending | yes (observed) | loopback yes (observed); LAN/inbound pending | local files + coord posts (observed pattern) |
+| Sandboxed agent app | pending | generate yes (collected, explainer); display pending | pending | Drive .md in place (collected); repo files via connector (collected) | no loopback/inbound from sandbox (collected); served-via-Drive partial (collected) | Issues + Drive .md (collected) |
 | T3 Code desktop | pending | pending (visuals lean, collected ruling) | pending | pending | pending | pending |
 | Meta desktop | pending | pending | pending | pending | pending | pending |
 | Plain chat | pending | pending | pending | pending | pending | pending |
 
-- The orca "pending" cells need a UI-level probe (show
+- The workstation "pending" cells need a UI-level probe (show
   HTML/an image/a link to the owner, record what
   rendered) — shell commands cannot close them.
-- Habitat A "pending" cells need a Habitat A session
+- Sandbox "pending" cells need a sandbox session
   (list-tools + surface probes); do not fill them from
-  orca — different sandbox, different browser, different wall.
+  the workstation — different sandbox, different browser, different wall.
 - Meta rows stay pending until the to-evaluate work
   happens (developer ruling: unfamiliar). Plain-chat
   baseline (text only?) is inferred-minimal at best —
@@ -170,12 +168,12 @@ citations in steps 1–2. Pending = unprobed, not absent.
 - Re-check cadence (catalogs drift — the inventory doc
   says so itself, and `get_issue` already drifted once):
   re-run the observed row monthly or whenever a
-  presentation fails to render; re-pull the Habitat A
+  presentation fails to render; re-pull the sandbox
   catalog (`list-tools`) before building on ANY absence;
   re-check explainer pricing/tiers at dev.meta.ai before
   quoting externally; stamp every touched cell with the
   new date. A matrix older than ~30 days is a rumor —
-  #55 must say so when it keys off one.
+  presentation-layer must say so when it keys off one.
 - Extend for a new harness with the same five probes,
   each recorded as command + output in a proof note:
   (1) render HTML to a file and show it; (2) generate
@@ -187,7 +185,7 @@ citations in steps 1–2. Pending = unprobed, not absent.
   cells get the machine + date; unshowable cells stay
   pending with the probe that was attempted.
 - File the proof note next to the others
-  (`notes/t28-<harness>-proof.md`), update the matrix
+  (`notes/<harness>-proof.md`), update the matrix
   row + date, and post to coord so the next session
   knows which harness gained ground.
 
@@ -196,7 +194,7 @@ citations in steps 1–2. Pending = unprobed, not absent.
 ### Trigger
 
 Load when: picking a presentation format for findings
-(#55 renders per this matrix); adding a new harness to
+(presentation-layer renders per this matrix); adding a new harness to
 the matrix; re-checking a catalog that may have drifted;
 asking why a visual surfaced (or failed to) in a given
 harness; any "can the owner SEE this here?" question.
@@ -204,10 +202,10 @@ harness; any "can the owner SEE this here?" question.
 ### Prereqs
 
 - The matrix above (v1, 2026-10-30) + its proof note
-  (`notes/t28-harness-proof.md`) for the observed row.
-- Source docs for collected rows: the Habitat A tool
-  inventory + the meta tooling explainer under
-  `triage/corpus-local/`; backlog #54 for the T3/Meta rulings.
+  for the observed row.
+- Source docs for collected rows: the sandbox tool
+  inventory + the platform tooling explainer;
+  an earlier scoping ruling for the T3/Meta rows.
 - Shell on the machine being inventoried (observed row);
   `dot` for the render probe, `bun` + `curl` for the
   serve probe. No twin, no router contact, no credentials.
@@ -219,9 +217,9 @@ harness; any "can the owner SEE this here?" question.
 - The serve probe binds LOOPBACK on an ephemeral port
   and is killed + verified down immediately after —
   never bind it to a LAN interface, never leave it running.
-- D1 throughout: no creds, tokens, serials, or IPs in
-  the skill or the proof (loopback excepted — it names
-  no host). Captures under `pull/out/` stay local-only;
+- Sensitivity tiers throughout (pre-publish-scrub): no creds,
+  tokens, serials, or IPs in the skill or the proof
+  (loopback excepted — it names no host). Captures under `pull/out/` stay local-only;
   cite redacted facts only. Listener scans that print
   site-local addresses stay out of the proof.
 
@@ -239,7 +237,7 @@ harness; any "can the owner SEE this here?" question.
 - A proof note per observed row (command + output,
   machine + date, redacted).
 - A re-check stamp: matrix date + which cells are
-  older than ~30 days (rumors, flagged to #55).
+  older than ~30 days (rumors, flagged to presentation-layer).
 
 ### Verification
 
@@ -271,9 +269,9 @@ harness; any "can the owner SEE this here?" question.
   in-owner-UI rendering: inline HTML/image/link cells
   need a UI-level probe this procedure cannot run alone.
 - One machine's observed row says nothing about another
-  sandbox (orca KVM+loopback vs Habitat A TCG+no-loopback).
+  sandbox (workstation KVM+loopback vs sandbox TCG+no-loopback).
 - The matrix is a dated snapshot; catalogs drift (tool
   versions moved twice in October alone). Trust the
   stamp, not the table.
 - This skill inventories surfaces; it never chooses the
-  presentation — that is #55's decision, keyed off this matrix.
+  presentation — that is presentation-layer's decision, keyed off this matrix.
