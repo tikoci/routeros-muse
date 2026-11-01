@@ -7,11 +7,11 @@ tested: none
 
 # `remote-agent-profile-hardening` skill (freeze → bind → immobilize → isolate → record) [template v1 draft]
 
-Promoted from two source-grounded architecture reviews — Astra #21
-(Codex, centrs `414934e`) and the review-of-reviews #22 (Claude,
-CHR 7.25 + Bun 1.4.4 + centrs `414934e`) — plus the centrs-as-app
-design note, re-verified against centrs `a13729c` (#541 landed)
-this session. Backlog #42. App-side complement to #26
+Promoted from two source-grounded architecture reviews (on
+centrs `414934e`; one verified CHR 7.25 + Bun 1.4.4)
+— plus the app
+design note, re-verified against centrs `a13729c` (centrs#541 landed).
+App-side complement to agent-access-bootstrap
 (agent-access-bootstrap covers the device accounts; this covers
 the agent-facing authority). Core rule, earned in review: the
 remote profile is a NEW authorization authority, not the stdio
@@ -44,7 +44,7 @@ Observed tool set at `a13729c` (`src/mcp/server.ts`, read this
 session): `explain`, `validate`, `retrieve`, `execute`,
 `devices`, `discover`. No plan/commit, token issuance, watch
 registry, or call-audit API — the remote profile must not imply
-them (collected: Astra §2, still true).
+them (collected: the architecture review, still true).
 
 - The remote profile drops: `devices` add/set/remove (op
   list/show/groups read-only stay), `discover` save, and
@@ -52,16 +52,16 @@ them (collected: Astra §2, still true).
   policy (journaled field run 2026-10-13: a run-script needed
   only read+api) — a read-only principal with `--cmr` could write
   the whole fleet. CMR stays enrollment-only (collected:
-  review-of-reviews §6).
+  the follow-up review).
 - `confirm:true` is caller-supplied, not proof of a human decision
-  (collected: Astra §2). The local double-gate (CDB `mcp=rw` +
+  (collected: the architecture review). The local double-gate (CDB `mcp=rw` +
   `confirm:true`, observed `src/mcp/safety.ts` +
   `src/mcp/tools.ts`) stays as the floor; remote approval needs a
   SEPARATE authenticated human action (§2).
 - Freeze the tool list and input schemas by day 2: Muse approves
   tools one at a time after schema review, so every mid-build
-  change means re-approval in Habitat A. Keep the list short
-  (collected: review-of-reviews §3).
+  change means re-approval in the sandbox. Keep the list short
+  (collected: the follow-up review).
 - Hiding a tool in the UI is not a security boundary. Enforce
   authorization in handlers AND filter resources by principal:
   `centrs://devices` currently snapshots the WHOLE allowlist with
@@ -73,7 +73,7 @@ them (collected: Astra §2, still true).
   `webProxyPlan` value). Let the proxy/daemon own the listener
   and authenticate requests, then mount an MCP adapter over
   shared operations — no second independently secured HTTP
-  server (collected: Astra §2/§5).
+  server (collected: the architecture review§5).
 
 ### 1. Bind (explicit grants, four concepts apart)
 
@@ -81,37 +81,37 @@ them (collected: Astra §2, still true).
   (record identity is `(target, user)`), NOT a RouterOS
   `/user/group`, an Access group, or an OAuth scope. Map policy
   bits, not group names — and matching email text to a username
-  is not pairing (collected: Astra §3–§4).
+  is not pairing (collected: the architecture review§4).
 - Choose whose authority executes: same-principal (human login
   bound to that router + account, RouterOS enforces) or delegated
   service execution (human login authorizes an explicit grant to
   an agent; the APP is now an authorization authority — log both
   identities, never claim the router evaluated the human's
   permissions). Smallest slice: one router, one explicit account
-  binding, read/validate first (collected: Astra §3).
+  binding, read/validate first (collected: the architecture review).
 - Effective permission is an intersection: `authenticated
   principal ∩ explicit app grant ∩ allowed CDB record ∩ mcp
   policy ∩ executing RouterOS account rights ∩ required human
   approval`. Syntax validation is another required execution
-  gate, not an authorization term (collected: Astra §3).
+  gate, not an authorization term (collected: the architecture review).
 - Principal-to-record grants live in app authorization state (a
   small SQLite store for grants/plans/audit is reasonable — not a
   second device inventory, not bearers in comment-kv text). This
   extends the existing MCP boundary (CDB membership); document the
-  extension deliberately (collected: Astra §4).
+  extension deliberately (collected: the architecture review).
 - RouterOS-login option (collected: app-design addendum): the app
   login validates presented credentials with a real local login;
   that RouterOS user IS the principal; scopes derive from groups;
   revocation is disable/delete with short-lived bearers or a
   re-validation cadence. Carried vetting caveats (collected:
-  Astra §3): management-login TOTP is UNPROVEN (`otp-secret` is
+  the architecture review): management-login TOTP is UNPROVEN (`otp-secret` is
   hotspot/UM TOTP, not a `/user` REST/native second factor —
   exclude unless an end-to-end test proves the route); the
   `sensitive`-store state idea is deferred (no established
   round-trip/secrecy/deletion/backup contract — use an explicit
   private volume + memory-only expiring sessions; an encrypted
   CDB still needs an unlock secret, document that custody).
-- Device half is #26: never the default `read` group (carries
+- Device half is agent-access-bootstrap: never the default `read` group (carries
   reboot/sensitive/password/sniff); REST needs `api` + `rest-api`
   before 7.26beta3.
 
@@ -123,7 +123,7 @@ them (collected: Astra §2, still true).
   core resolves again — remote approval widens that race. Refuse
   stale plans or execute their explicitly bound snapshot under a
   still-valid grant. Never a mutable array index as a durable
-  plan identity (collected: Astra §4).
+  plan identity (collected: the architecture review).
 - Plan/commit done right: the plan binds requester +
   resolved account/targets + exact command bytes + expected
   relevant state + policy revision + expiry. A SEPARATE
@@ -131,7 +131,7 @@ them (collected: Astra §2, still true).
   takes its identifier, not replacement commands. Changed state
   or policy needs renewed review; revalidate through centrs at
   execution time. Two calls where the same agent approves its own
-  plan are not human approval (collected: Astra §6).
+  plan are not human approval (collected: the architecture review).
 - Cheaper default write slice: `propose` validates through
   centrs, stages the commands as `/system/script`
   `muse-plan-<id>` (comment holds requester + call id +
@@ -149,12 +149,11 @@ them (collected: Astra §2, still true).
   policy/sensitive/reboot, `propose` the only writer, under
   test); no automatic rollback (human turns on Safe Mode before
   running); approval happens in RouterOS UI, not Muse
-  (collected: review-of-reviews §5 + homework §2).
+  (collected: the follow-up review).
 - Cards vs assurance: Muse per-action approval cards (phone tap)
   are the EXPERIENCE; staged-script / plan-commit is the
   ASSURANCE — the server cannot verify a human clicked a card.
-  Card for the experience, staged script for the assurance
-  (collected: homework §2).
+  Card for the experience, staged script for the assurance.
 - Retry/idempotency: durable operation id before dispatch; a
   repeated commit must not execute twice; a lost response after
   dispatch is OUTCOME UNKNOWN until reconciled, not "failed,
@@ -163,7 +162,7 @@ them (collected: Astra §2, still true).
   avoid post-restart double-write. Never promise distributed
   exactly-once; "disconnect cannot strand a half-applied config"
   is too strong (scheduler undo is compensation, Safe Mode has
-  constraints — separate tests each) (collected: Astra §6).
+  constraints — separate tests each) (collected: the architecture review).
 
 ### 3. Isolate (audit precedence, cap transports, attribute errors)
 
@@ -173,7 +172,7 @@ them (collected: Astra §2, still true).
   process-global environment and connection pools:
   `CentrsMcpConfig.env` is not a multi-user isolation contract
   (observed `src/mcp/config.ts`; retrieve's handler does not pass
-  it the way execute does — collected: Astra §4). Test handler
+  it the way execute does — collected: the architecture review). Test handler
   reuse for multiple principals BEFORE sharing them.
 - Per-request auth: authenticate every request, bind any
   transport session to its principal, restrict Host/Origin,
@@ -181,9 +180,8 @@ them (collected: Astra §2, still true).
   The public listener must not reach enrollment or approval
   routes. The LAN UI still needs authentication, TLS for password
   entry, and CSRF protection — "LAN only" is reachability, not
-  trust (collected: Astra §5).
-- Transport traps, each verified (collected: review-of-reviews
-  §3, all pending re-proof on the build host): Bun.serve drops
+  trust (collected: the architecture review).
+- Transport traps, each verified (collected: the follow-up review, all pending re-proof on the build host): Bun.serve drops
   requests still pending at 10 s — set `idleTimeout` (max 255 s)
   or per-request `server.timeout(req, 0)`; Cloudflare cuts
   proxied responses with 524 ~100 s — cap server-side waits ~60 s
@@ -211,14 +209,14 @@ them (collected: Astra §2, still true).
   Cloudflare was on the path, not that it denied — an origin 401
   passes through it; an edge rejection cannot contain an
   app-generated envelope if the app never ran (collected:
-  review-of-reviews §2/§6 + Astra §5).
+  the reviews).
 
 ### 4. Record (audit shape, door credential, day-0 gates)
 
 - Audit records decision, validation, and execution SEPARATELY,
   with secret-safe command handling: command text and returned
   configuration can themselves contain credentials (collected:
-  Astra §6).
+  the architecture review).
 - Single-secret Cloudflare door credential (if the Cloudflare
   door is used): on a self-hosted Access app set
   `read_service_tokens_from_header: "Authorization"` — one header
@@ -234,8 +232,8 @@ them (collected: Astra §2, still true).
   into an internal principal/grant context with distinct
   validators per issuer/token type; one admission path for the
   build, app-OAuth-server deferred (collected:
-  review-of-reviews §4 + Astra §5).
-- Day-0 gates (collected: review-of-reviews §7 + Astra §7): host
+  the reviews).
+- Day-0 gates (collected: the reviews): host
   is arm64/x86 (Bun ships no 32-bit ARM — the arm64 L009
   container precedent does not settle any other box; verify the
   selected device); vault test of the single-header token; one
@@ -248,7 +246,7 @@ them (collected: Astra §2, still true).
   overflow/gap signaling, TTLs, cancellation, restart — deferred
   unless a demo requires them; reuse core wait/until first);
   raw streams; federation (one call, many apps — deferred, CDB
-  fan-out covers the lab case).
+  fan-out covers the small case).
 
 ## Part 2 — Skill doc
 
@@ -258,15 +256,15 @@ Load when: exposing centrs MCP beyond stdio; reviewing a remote
 profile for authorization gaps; adding a principal, grant, or
 door; auditing why a remote call was allowed or denied; "is this
 token shape safe" questions. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
 - centrs checkout at a known commit (reviews cite `414934e`;
-  re-verified here at `a13729c`) + the two reviews + app-design
-  note readable.
+  re-verified here at `a13729c`) + the design notes
+  readable.
 - The arm64/x86 host decision made (Bun platform gate).
-- Device accounts already bootstrapped per #26 (custom minimal
+- Device accounts already bootstrapped per agent-access-bootstrap (custom minimal
   groups exist before grants reference them).
 - A twin or disposable CHR for the isolation tests (never the
   first proof on a load-bearing box).
@@ -276,7 +274,7 @@ capability-probe pattern: K22.)
 - Reads-first: source + help-shape reads before any profile
   change; twin proofs before production grants.
 - Production grants: reads free; ANY grant widening asks the
-  developer first (bigdude rule carries over).
+  developer first (the production rule carries over).
 - Never test revocation timing or credential precedence on a
   box the site depends on — twins take the reboot/retymology
   cycles.
