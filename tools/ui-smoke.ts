@@ -21,6 +21,7 @@ import * as path from "node:path";
 import { chromium, type Page } from "playwright";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
 import { startServer } from "../src/serve/server";
+import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
 import { pollT71Log, stubT71Bin, withT71Env } from "../tests/t71-fake";
 
 type SmokeHook = {
@@ -41,7 +42,7 @@ const ROOT = path.resolve(HERE, "..");
 const OUT = path.join(ROOT, "out", "ui-smoke");
 
 function makeWorkspace(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "ui-smoke-ws-"));
+	const dir = mktmp("ui-smoke-ws-");
 	nodeFs.writeFileSync(
 		path.join(dir, "workspace.toml"),
 		'[home]\ntype = "private-git"\nrepo = "https://example.invalid/you/net.git"\ncanonical = true\n',
@@ -66,7 +67,7 @@ function makeWorkspace(): string {
 }
 
 function makeHome(): string {
-	const home = nodeFs.mkdtempSync(path.join(os.tmpdir(), "ui-smoke-home-"));
+	const home = mktmp("ui-smoke-home-");
 	const dir = path.join(home, "muse", "model-catalog");
 	nodeFs.mkdirSync(dir, { recursive: true });
 	const fixture = path.join(ROOT, "tests", "fixtures", "model-catalog");
@@ -81,9 +82,7 @@ function makeHome(): string {
 // note), both on fixture-controlled fake workers. Screenshots 18-21.
 // T40 hermeticity: smoke boots share one temp data home (the picker
 // leg below uses its own), never the developer's real registry.
-const SMOKE_DATA_HOME = nodeFs.mkdtempSync(
-	path.join(os.tmpdir(), "ui-smoke-dh-"),
-);
+const SMOKE_DATA_HOME = mktmp("ui-smoke-dh-");
 
 const failures: string[] = [];
 function check(name: string, cond: boolean, extra = ""): void {
@@ -684,10 +683,7 @@ try {
 	// The inventory there is the operator's real CDB, so serve a fresh
 	// empty store for this leg (never the operator's registry).
 	let hermeticCdb: string | undefined;
-	const emptyCdb = path.join(
-		nodeFs.mkdtempSync(path.join(os.tmpdir(), "ui-smoke-cdb-")),
-		"empty.cdb",
-	);
+	const emptyCdb = path.join(mktmp("ui-smoke-cdb-"), "empty.cdb");
 	const cdbInit = childProcess.spawnSync("centrs", ["devices", "init"], {
 		env: { ...process.env, CENTRS_CDB_FILE: emptyCdb },
 	});
@@ -769,7 +765,7 @@ try {
 	// T40: the no-workspace picker lists registry entries (live + dead),
 	// opens in place via a restart command, prunes the dead, and creates
 	// at the default location. Temp data home + creation root (hermetic).
-	const pickDh = nodeFs.mkdtempSync(path.join(os.tmpdir(), "ui-smoke-pickdh-"));
+	const pickDh = mktmp("ui-smoke-pickdh-");
 	const pickLive = makeWorkspace();
 	registerWorkspace(registryFile(pickDh), "smoke-live", pickLive);
 	registerWorkspace(
@@ -1753,6 +1749,9 @@ try {
 } finally {
 	await browser.close();
 	await srv.stop();
+	// T94: every smoke tmpdir (works, homes, picker, CDB seed, T71 bins)
+	// funnels through the shared registry; one drain covers all legs.
+	cleanupTmpdirs();
 }
 
 console.log(
