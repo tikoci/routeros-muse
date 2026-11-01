@@ -7,19 +7,19 @@ tested: self-test
 
 # `field-sheets` skill (records → sheet → hands → evidence → records)
 
-Backlog #18. The plan lives in records; the person on the
+The plan lives in records; the person on the
 pole cannot read TOML. This skill translates one location
 at a time into a sheet that says what goes where, what
 comes out, and how to tell it worked — and it holds the
 line the other way: a checked box is not proof a cable
 moved. Sources: concept review §10 (field sheets), the
 showing-the-owner note §2 (setup sheets), feedback §3
-(install sheet), demo catalog U2 (install photo check),
-K25 (human-artifact-agent loops). No twin, no box writes:
+(install sheet), the demo catalog (install photo check),
+and the human-artifact-agent loop pattern. No twin, no box writes:
 records reads + local rendering only. Fixtures synthetic.
 
 Boundaries (stated both ways so nothing is absorbed
-silently): #16 map-reports owns the render primitive
+silently): map-reports owns the render primitive
 (`?p=N` single-page render + headless screenshot + print
 HTML from the same records) and photo FILING (unchanged
 bytes + sha256 + EXIF index + recorded GPS error +
@@ -27,7 +27,7 @@ photos-are-not-pins). THIS skill owns sheet CONTENT (the
 IKEA-style per-location page, what-plugs-into-what,
 compass-words aiming, "how to tell it worked", "if not,
 stop and send a photo") and the sheet the photo is
-checked against. Topology questions belong to #45.
+checked against. Topology questions belong to truthful-topology-graphviz.
 
 ## Part 1 — The checklist (every step proves itself or stops)
 
@@ -48,7 +48,7 @@ reference renderer rejects it mechanically.
 
 ### 0. Derive (device in, sheet out — never hand-authored)
 
-- Source is the device record: device labels (K9: label
+- Source is the device record: device labels (label
   is what is on the unit), port maps, aiming data,
   install state. The sheet carries the device id plus a
   revision id so a photo of an old sheet cannot pass
@@ -120,7 +120,7 @@ reference renderer rejects it mechanically.
   for the bench. Observed: fixture page renders
   1080×1350, non-blank, zero external refs (offline
   capable — the pole has no Wi-Fi yet).
-- The render primitive is #16's (`?p=N` + headless
+- The render primitive is map-reports's (`?p=N` + headless
   screenshot); this skill's renderer follows the
   same flags so sheets and maps come out identical
   in size and handling. Same records, right screen.
@@ -132,15 +132,15 @@ reference renderer rejects it mechanically.
 ### 4. Close the loop (evidence in, corrections out)
 
 - Confirmations land as evidence: photo + step +
-  revision id, filed per #16 (unchanged bytes,
+  revision id, filed per map-reports (unchanged bytes,
   hash, EXIF index, recorded GPS error). The photo
   completes the step it was taken for — and only
   that step.
 - Corrections regenerate: "the switch is in the
   other room" updates the RECORD, re-renders the
   sheet, new revision, old sheet retired. The loop
-  is human → artifact → agent → structured record
-  (K25); the page emits feedback without permission
+  is human → artifact → agent → structured record;
+  the page emits feedback without permission
   to change the network.
 - "Done" means every step's expected result held
   with evidence attached. Anything else is an open
@@ -157,7 +157,7 @@ sheet; or answering "what do I do when I get there".
 
 ### Prereqs
 
-- Backlog #18 + the device record(s) for the location.
+- The device record(s) for the location.
 - Concept-review §10 + showing-the-owner §2 read
   (the procedure's sources).
 - python3 + headless chromium for the reference
@@ -199,7 +199,7 @@ no state in the skill.
   revision, and zero external refs (self-test
   asserts all of these mechanically).
 - PNG is 1080×1350 and non-blank (same primitive
-  as #16/#52/#55).
+  as map-reports/site-plan-multi-ap/presentation-layer).
 - Every "done" step has evidence filed against its
   revision; open loops name their holder.
 
@@ -228,8 +228,9 @@ no state in the skill.
   photo of the wrong thing ≠ proof. The agent's
   verification standard is evidence per step.
 - This skill owns sheet content + contract; render
-  primitive and photo filing stay with #16, maps
-  with #16/#51, topology with #45. Handoffs named.
+  primitive and photo filing stay with map-reports, maps
+  with map-reports/maps-outdoor, topology with truthful-topology-graphviz.
+  Handoffs named.
 - Sheets describe physical acts only. Anything the
   owner must approve on the network goes through
   `change-apply`, never through a sheet step.
