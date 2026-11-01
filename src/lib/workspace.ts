@@ -558,6 +558,51 @@ export type ScaffoldResult =
 	| { ok: true; dir: string }
 	| { ok: false; why: string; conflicts?: string[] };
 
+/** Ledger entry for a path this run just created (lstat identity). */
+function statCreated(full: string, label: string): CreatedPath {
+	const st = nodeFs.lstatSync(full);
+	return { full, label, dev: st.dev, ino: st.ino };
+}
+
+/** errno code, or a short message, for leftover notes. */
+function shortErr(err: unknown): string {
+	const code = (err as NodeJS.ErrnoException)?.code;
+	if (typeof code === "string" && code) return code;
+	const msg = err instanceof Error ? err.message : String(err);
+	return msg.slice(0, 60);
+}
+
+/**
+ * Remove one ledgered path only if it is still ours (T97
+ * follow-up): lstat it first and compare (dev, ino). A missing
+ * path is already gone (null); a mismatch is a foreign
+ * replacement and stays, with a leftover note. Removal errors
+ * also come back as notes, so rollback continues past them. An
+ * ino of 0 (platforms without stable inodes) skips the identity
+ * check and removes by path.
+ */
+function removeOwned(
+	entry: CreatedPath,
+	remove: (p: string) => void,
+): string | null {
+	let st: nodeFs.Stats;
+	try {
+		st = nodeFs.lstatSync(entry.full);
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+		return `${entry.label} (${shortErr(err)})`;
+	}
+	if (entry.ino !== 0 && (st.dev !== entry.dev || st.ino !== entry.ino)) {
+		return `${entry.label} (ownership changed)`;
+	}
+	try {
+		remove(entry.full);
+	} catch (err) {
+		return `${entry.label} (${shortErr(err)})`;
+	}
+	return null;
+}
+
 function resolveTemplate(
 	template: string,
 	opts?: ScaffoldOpts,
@@ -665,33 +710,26 @@ export async function scaffoldWorkspace(
 	opts?.afterPreflight?.();
 	const createdFiles: CreatedPath[] = [];
 	const createdDirs: CreatedPath[] = [];
-	let targetCreated = false;
-	const rollback = (): void => {
+	let targetEntry: CreatedPath | null = null;
+	const rollback = (): string[] => {
+		const left: string[] = [];
+		const keep = (note: string | null): void => {
+			if (note) left.push(note);
+		};
 		for (const f of createdFiles) {
-			try {
-				nodeFs.rmSync(f.full, { force: true });
-			} catch {
-				// replaced or already gone: leave it
-			}
+			keep(removeOwned(f, (p) => nodeFs.rmSync(p, { force: true })));
 		}
 		// Deepest first: a parent is a strict prefix of its child,
 		// so it is always shorter and sorts later.
 		for (const d of [...createdDirs].sort(
 			(a, b) => b.label.length - a.label.length,
 		)) {
-			try {
-				nodeFs.rmdirSync(d.full);
-			} catch {
-				// not empty (or already gone): leave it
-			}
+			keep(removeOwned(d, (p) => nodeFs.rmdirSync(p)));
 		}
-		if (targetCreated) {
-			try {
-				nodeFs.rmdirSync(target);
-			} catch {
-				// competing writer filled it: leave it
-			}
+		if (targetEntry) {
+			keep(removeOwned(targetEntry, (p) => nodeFs.rmdirSync(p)));
 		}
+		return left;
 	};
 	try {
 		ensureParentChain(target);
@@ -703,7 +741,7 @@ export async function scaffoldWorkspace(
 			}
 			throw err;
 		}
-		targetCreated = true;
+		targetEntry = statCreated(target, target);
 		copyTemplateFiles(tpl.dir, target, name, {
 			provenance: { name: tpl.name, description: "", version: tpl.version },
 			createdFiles,
@@ -725,15 +763,26 @@ export async function scaffoldWorkspace(
 			why: `scaffold writes failed: ${err instanceof Error ? err.message : String(err)}`,
 		};
 	}
-	const cdbExisted = lstatExists(path.join(target, "device.cdb"));
+	const cdbFull = path.join(target, "device.cdb");
+	const cdbExisted = lstatExists(cdbFull);
 	const failed = await runDevicesInit(target, env);
+	// A cdb that was absent before centrs ran and present after is
+	// assumed to be centrs' own — except a foreign file could land
+	// in that same window, and the two are indistinguishable
+	// (accepted: with no pre-centrs identity there is nothing to
+	// compare against). Record what is there now, success or
+	// failure, so rollback removes only an unchanged file.
+	let cdbEntry: CreatedPath | null = null;
+	if (!cdbExisted) {
+		try {
+			cdbEntry = statCreated(cdbFull, "device.cdb");
+		} catch {
+			// never appeared: nothing to remove
+		}
+	}
 	if (failed) {
-		if (!cdbExisted) {
-			try {
-				nodeFs.rmSync(path.join(target, "device.cdb"), { force: true });
-			} catch {
-				// already gone: leave it
-			}
+		if (cdbEntry) {
+			removeOwned(cdbEntry, (p) => nodeFs.rmSync(p, { force: true }));
 		}
 		rollback();
 		return { ok: false, why: failed };
@@ -793,33 +842,26 @@ export async function scaffoldIntoDir(
 	opts?.afterPreflight?.();
 	const createdFiles: CreatedPath[] = [];
 	const createdDirs: CreatedPath[] = [];
-	let destCreated = false;
-	const rollback = (): void => {
+	let destEntry: CreatedPath | null = null;
+	const rollback = (): string[] => {
+		const left: string[] = [];
+		const keep = (note: string | null): void => {
+			if (note) left.push(note);
+		};
 		for (const f of createdFiles) {
-			try {
-				nodeFs.rmSync(f.full, { force: true });
-			} catch {
-				// replaced or already gone: leave it
-			}
+			keep(removeOwned(f, (p) => nodeFs.rmSync(p, { force: true })));
 		}
 		// Deepest first: a parent is a strict prefix of its child,
 		// so it is always shorter and sorts later.
 		for (const d of [...createdDirs].sort(
 			(a, b) => b.label.length - a.label.length,
 		)) {
-			try {
-				nodeFs.rmdirSync(d.full);
-			} catch {
-				// not empty (or already gone): leave it
-			}
+			keep(removeOwned(d, (p) => nodeFs.rmdirSync(p)));
 		}
-		if (destCreated) {
-			try {
-				nodeFs.rmdirSync(dir);
-			} catch {
-				// competing writer filled it: leave it
-			}
+		if (destEntry) {
+			keep(removeOwned(destEntry, (p) => nodeFs.rmdirSync(p)));
 		}
+		return left;
 	};
 	try {
 		if (lstatExists(dir)) {
@@ -830,7 +872,7 @@ export async function scaffoldIntoDir(
 			ensureParentChain(dir);
 			try {
 				nodeFs.mkdirSync(dir);
-				destCreated = true;
+				destEntry = statCreated(dir, dir);
 			} catch (err) {
 				if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
 				if (!isRealDir(dir)) throw new Error(`not a directory: ${dir}`);
@@ -859,16 +901,23 @@ export async function scaffoldIntoDir(
 		};
 	}
 	// device.cdb never existed at preflight; only remove what centrs
-	// itself may have left behind, never a competitor's file.
-	const cdbExisted = lstatExists(path.join(dir, "device.cdb"));
+	// itself may have left behind, never a competitor's file. As in
+	// scaffoldWorkspace, a foreign cdb landed in the centrs window is
+	// indistinguishable from centrs' own (accepted).
+	const cdbFull = path.join(dir, "device.cdb");
+	const cdbExisted = lstatExists(cdbFull);
 	const failed = await runDevicesInit(dir, env);
+	let cdbEntry: CreatedPath | null = null;
+	if (!cdbExisted) {
+		try {
+			cdbEntry = statCreated(cdbFull, "device.cdb");
+		} catch {
+			// never appeared: nothing to remove
+		}
+	}
 	if (failed) {
-		if (!cdbExisted) {
-			try {
-				nodeFs.rmSync(path.join(dir, "device.cdb"), { force: true });
-			} catch {
-				// already gone: leave it
-			}
+		if (cdbEntry) {
+			removeOwned(cdbEntry, (p) => nodeFs.rmSync(p, { force: true }));
 		}
 		rollback();
 		return { ok: false, why: failed };
