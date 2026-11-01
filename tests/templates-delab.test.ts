@@ -96,7 +96,9 @@ describe("shipped templates carry no pilot-lab residue", () => {
 			// presentation-layer is owned by another branch; it skips
 			// the markdown-only patterns until that branch lands.
 			const ownMD = f.endsWith(".md") && !f.includes("presentation-layer");
-			const deny = ownMD ? [...DENY, ...DENY_MORE, ...DENY_MD] : [...DENY, ...DENY_MORE];
+			const deny = ownMD
+				? [...DENY, ...DENY_MORE, ...DENY_MD]
+				: [...DENY, ...DENY_MORE];
 			const lines = nodeFs.readFileSync(f, "utf8").split("\n");
 			lines.forEach((line, i) => {
 				for (const re of deny) {
