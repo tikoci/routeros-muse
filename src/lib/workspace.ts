@@ -94,7 +94,7 @@ export type RecentRow = {
 	path: string;
 	title: string;
 	file: string;
-	kind: "toml" | "md" | "dir";
+	kind: "toml" | "md" | "dir" | "artifact";
 	meta: string;
 };
 
@@ -147,7 +147,9 @@ export function listRecents(root: string): RecentRow[] {
 			? "dir"
 			: base.endsWith(".toml")
 				? "toml"
-				: "md";
+				: isArtifactPath(rel)
+					? "artifact"
+					: "md";
 		if (!isDir && kind === "md") {
 			try {
 				title =

@@ -119,8 +119,21 @@ nodeFs.mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const consoleErrors: string[] = [];
+// T83: sandboxed artifact frames report their own script blocks; the
+// frame URL separates those expected notices from real errors below.
+const artifactBlocks: string[] = [];
+function isKnownArtifactBlock(text: string): boolean {
+	return (
+		text.includes("because the document's frame is sandboxed") ||
+		text.includes("violates the following Content Security Policy")
+	);
+}
 page.on("console", (msg) => {
-	if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 300));
+	if (msg.type() === "error") {
+		const text = msg.text().slice(0, 300);
+		consoleErrors.push(text);
+		if (msg.location().url.includes("/api/artifact")) artifactBlocks.push(text);
+	}
 });
 // T89: every 4xx/5xx response is recorded route-specifically; the final
 // checks require the list to equal exactly the deliberate failures (see
@@ -1529,6 +1542,188 @@ try {
 		await t84Srv.stop();
 	}
 
+	// T83: the artifact viewer. A topology render job opens framed in
+	// the scripts tier with a real mermaid SVG and zero outside
+	// requests; a static probe page blocks its inline script until the
+	// owner toggles Run scripts; SVG and PNG display; the report job
+	// opens static. Screenshots 24-26.
+	const t83Ws = makeWorkspace();
+	nodeFs.mkdirSync(path.join(t83Ws, "reports"), { recursive: true });
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "probe.html"),
+		'<!doctype html><html><body><div id="t">no</div><script>document.getElementById("t").textContent="yes";</script></body></html>\n',
+	);
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "pic.svg"),
+		'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle id="smoke-svg-ok" cx="20" cy="20" r="10" fill="red"/></svg>\n',
+	);
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "dot.png"),
+		Buffer.from(
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			"base64",
+		),
+	);
+	const t83Srv = await startServer({
+		dataHome: SMOKE_DATA_HOME,
+		allowOpenCdb: true,
+		workspace: t83Ws,
+		provider: "echo",
+		museHome: makeHome(),
+	});
+	try {
+		await page.goto(t83Srv.url, { waitUntil: "load" });
+		const t83Batch = watchAppBatch(page);
+		await page.waitForFunction(
+			() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+			undefined,
+			{ timeout: 15_000 },
+		);
+		await t83Batch;
+		type JobOut = { ok: boolean; dir: string; files: string[]; why?: string };
+		const renderJob = (job: string, input: unknown): Promise<JobOut> =>
+			page.evaluate(
+				async ({ job, input }) => {
+					const r = await fetch("/api/render", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ job, input }),
+					});
+					return (await r.json()) as JobOut;
+				},
+				{ job, input },
+			);
+		const topo = await renderJob("topology", {
+			title: "smoke topo",
+			nodes: [{ id: "gw" }, { id: "ap" }],
+			links: [{ from: "gw", to: "ap" }],
+		});
+		check("t83 topology job builds", topo.ok === true, topo.why ?? "");
+		const rep = await renderJob("report", {
+			title: "Smoke report",
+			markdown: "# Smoke report\n\n- one\n- two\n",
+		});
+		check("t83 report job builds", rep.ok === true, rep.why ?? "");
+		// The picker tree loads once at boot; reload so the render
+		// outputs and probe files list.
+		const t83Reload = watchAppBatch(page);
+		await page.reload({ waitUntil: "load" });
+		await t83Reload;
+		await page.waitForFunction(
+			() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+			undefined,
+			{ timeout: 15_000 },
+		);
+		const openFromTree = async (suffix: string): Promise<void> => {
+			await page.locator("#wsadd").click();
+			const row = page.locator(
+				`#mview-topology .titem[data-path$="${suffix}"]`,
+			);
+			await row.waitFor({ timeout: 10_000 });
+			await row.click();
+			await page.locator("#pickeropen").click();
+			await page.waitForSelector("#pane-artifact.active", { timeout: 10_000 });
+		};
+		const artFrame = page.frameLocator("#artframe");
+		// Offline proof: abort and record every request leaving the box.
+		const externalHosts: string[] = [];
+		await page.route("**/*", async (route) => {
+			const host = new URL(route.request().url()).hostname;
+			if (host === "127.0.0.1" || host === "localhost") {
+				await route.continue();
+			} else {
+				externalHosts.push(host);
+				await route.abort();
+			}
+		});
+		try {
+			await openFromTree("topology.html");
+			check(
+				"t83 topology opens in the scripts tier",
+				((await page.locator("#art-tier").textContent()) ?? "") === "scripts" &&
+					((await page.locator("#art-why").textContent()) ?? "").includes(
+						"render job",
+					),
+			);
+			await artFrame.locator("svg .node").first().waitFor({ timeout: 30_000 });
+			const topoNodes = await artFrame.locator("svg .node").count();
+			check("t83 mermaid svg renders nodes", topoNodes >= 2, `n=${topoNodes}`);
+			check(
+				"t83 topology loads fully offline",
+				externalHosts.length === 0,
+				externalHosts.join(","),
+			);
+			await page.screenshot({ path: path.join(OUT, "24-t83-topology.png") });
+		} finally {
+			await page.unroute("**/*");
+		}
+		await openFromTree("probe.html");
+		check(
+			"t83 probe opens static",
+			((await page.locator("#art-tier").textContent()) ?? "") === "static",
+		);
+		await artFrame.locator("#t").waitFor({ timeout: 10_000 });
+		const before = (await artFrame.locator("#t").textContent()) ?? "";
+		check("t83 static tier blocks the inline script", before === "no", before);
+		await page.locator("#art-toggle").click();
+		await page.waitForFunction(
+			() =>
+				document.getElementById("art-toggle")?.textContent === "Back to static",
+			undefined,
+			{ timeout: 10_000 },
+		);
+		check(
+			"t83 toggle opts into the scripts tier",
+			((await page.locator("#art-why").textContent()) ?? "").includes(
+				"owner opt-in",
+			),
+		);
+		await artFrame.locator("#t").waitFor({ timeout: 10_000 });
+		await page.waitForFunction(
+			() =>
+				document.querySelector("#artframe")?.getAttribute("sandbox") ===
+				"allow-scripts",
+			undefined,
+			{ timeout: 10_000 },
+		);
+		const after = await artFrame.locator("#t").textContent({ timeout: 10_000 });
+		check(
+			"t83 run scripts lets the script mutate",
+			after === "yes",
+			after ?? "",
+		);
+		await page.screenshot({ path: path.join(OUT, "26-t83-probe-scripts.png") });
+		await openFromTree("pic.svg");
+		await artFrame.locator("svg").first().waitFor({ timeout: 10_000 });
+		check(
+			"t83 svg displays",
+			(await artFrame.locator("#smoke-svg-ok").count()) === 1,
+		);
+		await openFromTree("dot.png");
+		await artFrame.locator("img").first().waitFor({ timeout: 10_000 });
+		const pngW = await artFrame
+			.locator("img")
+			.first()
+			.evaluate((img) => (img as HTMLImageElement).naturalWidth);
+		check("t83 png displays", pngW === 1, `w=${pngW}`);
+		await openFromTree("report.html");
+		check(
+			"t83 report opens static",
+			((await page.locator("#art-tier").textContent()) ?? "") === "static",
+		);
+		await artFrame.locator("h1").first().waitFor({ timeout: 10_000 });
+		const repH1 = (await artFrame.locator("h1").first().textContent()) ?? "";
+		check("t83 report renders its heading", repH1 === "Smoke report", repH1);
+		await page.screenshot({ path: path.join(OUT, "25-t83-report.png") });
+		check(
+			"t83 artifact frame errors are only sandbox/csp blocks",
+			artifactBlocks.every(isKnownArtifactBlock),
+			artifactBlocks.join(" | "),
+		);
+	} finally {
+		await t83Srv.stop();
+	}
+
 	// T71: the interruptible stop leg. The fake holds its turn live
 	// (never auto-completes), so Stop lands on a live run
 	// deterministically — an echo turn (~60ms) cannot be stopped on
@@ -1729,7 +1924,9 @@ try {
 	};
 	const expectedStatuses = EXPECTED_FAILED.map((f) => f.status);
 	const unexpectedConsole = consoleErrors.filter(
-		(e) => !expectedStatuses.includes(resourceStatus(e) ?? -1),
+		(e) =>
+			!expectedStatuses.includes(resourceStatus(e) ?? -1) &&
+			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)),
 	);
 	check(
 		"console errors are only the expected resource loads",

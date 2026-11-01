@@ -71,6 +71,7 @@
   .kchip.toml { color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); }
   .kchip.md { color: var(--accent); background: var(--accent-dim); border: 1px solid rgba(77,141,255,.35); }
   .kchip.dir { color: var(--muted); background: var(--inset); border: 1px solid var(--border-soft); }
+  .kchip.artifact { color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); }
   .left .foot { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border-soft); font-size: 11.5px; color: var(--faint); }
 
   .center { flex: 1; display: flex; flex-direction: column; min-width: 440px; }
@@ -319,6 +320,13 @@
   .tomlro { font-size: 12px; color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); border-radius: 8px; padding: 7px 12px; margin-bottom: 12px; }
   .trow.ro input, .trow.ro textarea { opacity: .65; }
   .rolock { font: 600 10px var(--sans); color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); border-radius: 8px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+  .artwrap { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 22px 28px; }
+  .artwrap .fn { font: 12px var(--mono); color: var(--faint); margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .artwrap h1 { font-size: 16px; font-weight: 650; margin: 0 0 10px; }
+  .artbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .artbar .note { font-size: 11.5px; color: var(--faint); }
+  .artbar .sp { flex: 1; }
+  #artframe { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--border-soft); border-radius: 10px; background: #fff; }
 
   .right { width: 330px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
   .rpane { flex: 1; overflow-y: auto; padding: 14px 16px; }
@@ -527,6 +535,15 @@
         <h1 id="out-title">…</h1>
         <p class="lede" id="out-lede">…</p>
         <div class="msg agent" style="align-self:stretch;max-width:none"><div class="body" id="out-body" style="font-size:12.5px"></div></div>
+      </div>
+    </div>
+
+    <div class="cpane" id="pane-artifact">
+      <div class="artwrap">
+        <div class="fn"><span class="kchip artifact">ART</span> <span id="art-path">…</span></div>
+        <h1 id="art-title">…</h1>
+        <div class="artbar"><span class="lockchip" id="art-tier">static</span><span class="note" id="art-why">scripts blocked</span><span class="sp"></span><button class="btn" id="art-toggle">Run scripts</button><button class="btn" id="art-source">View source</button></div>
+        <iframe id="artframe" title="artifact" sandbox=""></iframe>
       </div>
     </div>
 
@@ -838,6 +855,46 @@
       document.getElementById("doc-body").textContent = j.text;
     } catch (e) { document.getElementById("doc-body").textContent = "unavailable: " + e.message; }
   }
+  // Artifact viewer (T83, D17/D19): renderable files open framed,
+  // never as source text. Static is the default; scripts run only
+  // for render-job tiers or the owner's explicit toggle.
+  const ARTIFACT_EXTS = ["html", "htm", "svg", "png", "jpg", "jpeg", "gif", "webp"];
+  function isArtifact(p) {
+    const m = /\.([^.\/]+)$/.exec(p || "");
+    return m ? ARTIFACT_EXTS.indexOf(m[1].toLowerCase()) !== -1 : false;
+  }
+  function isTextArtifact(p) { return /\.(html?|svg)$/i.test(p || ""); }
+  function artWhy(tier, fromJob) {
+    if (tier !== "scripts") return "scripts blocked";
+    return fromJob ? "scripts tier · render job" : "scripts tier · owner opt-in";
+  }
+  let artState = null;
+  function renderArtifact(path, tier, fromJob) {
+    const t = tier === "scripts" ? "scripts" : "static";
+    artState = { path, tier: t, fromJob: t === "scripts" && fromJob === true };
+    document.getElementById("art-title").textContent = path.split("/").pop();
+    document.getElementById("art-path").textContent = path;
+    document.getElementById("art-tier").textContent = t;
+    document.getElementById("art-why").textContent = artWhy(t, artState.fromJob);
+    document.getElementById("art-toggle").textContent = t === "static" ? "Run scripts" : "Back to static";
+    document.getElementById("art-source").style.display = isTextArtifact(path) ? "" : "none";
+    const f = document.createElement("iframe");
+    f.id = "artframe";
+    f.title = "artifact";
+    f.setAttribute("sandbox", t === "scripts" ? "allow-scripts" : "");
+    f.src = "/api/artifact?path=" + encodeURIComponent(path) + (t === "scripts" ? "&tier=scripts" : "");
+    document.getElementById("artframe").replaceWith(f);
+  }
+  async function renderArtifactSource(path) {
+    document.getElementById("doc-title").textContent = path.split("/").pop();
+    document.getElementById("doc-lede").textContent = path + " · source";
+    document.getElementById("doc-body").textContent = "loading…";
+    try {
+      const r = await fetch("/api/artifact?path=" + encodeURIComponent(path));
+      if (!r.ok) { document.getElementById("doc-body").textContent = "unavailable: " + r.status; return; }
+      document.getElementById("doc-body").textContent = await r.text();
+    } catch (e) { document.getElementById("doc-body").textContent = "unavailable: " + e.message; }
+  }
   async function renderPastChat(id) {
     document.getElementById("ppc-title").textContent = "loading…";
     try {
@@ -1071,6 +1128,13 @@
     const name = b.dataset.title || (b.querySelector(".dn") ? b.querySelector(".dn").textContent : id);
     if (key.indexOf("past-") === 0) renderPastChat(key.slice(5));
     else if (key.indexOf("dev-") === 0) renderDevice(key.slice(4));
+    else if (b.dataset.path && isArtifact(b.dataset.path)) {
+      const t = b.dataset.tier === "scripts" ? "scripts" : "static";
+      renderArtifact(b.dataset.path, t, t === "scripts");
+      openSlot("pane-artifact", key, name);
+      if (b.closest(".overlay")) closePicker();
+      return;
+    }
     else if (id === "pane-toml" && b.dataset.path) renderToml(b.dataset.path);
     else if (b.dataset.path) renderDoc(b.dataset.path);
     openSlot(id, key, name);
@@ -1089,6 +1153,7 @@
     if (a) {
       const p = a.dataset.apath;
       if (p.endsWith(".toml")) { renderToml(p); openSlot("pane-toml", p, p.split("/").pop()); }
+      else if (isArtifact(p)) { renderArtifact(p, "static", false); openSlot("pane-artifact", p, p.split("/").pop()); }
       else { renderDoc(p); openSlot("pane-doc", p, p.split("/").pop()); }
       topWorkspace(p);
       closePicker();
@@ -1337,9 +1402,24 @@
     if (!t || !t.dataset.path) { closePicker(); return; }
     const p = t.dataset.path;
     if (p.endsWith(".toml")) { renderToml(p); openSlot("pane-toml", p, p.split("/").pop()); }
+    else if (isArtifact(p)) {
+      const tier = t.dataset.tier === "scripts" ? "scripts" : "static";
+      renderArtifact(p, tier, tier === "scripts");
+      openSlot("pane-artifact", p, p.split("/").pop());
+    }
     else { renderDoc(p); openSlot("pane-doc", p, p.split("/").pop()); }
     topWorkspace(p);
     closePicker();
+  });
+  document.getElementById("art-toggle").addEventListener("click", () => {
+    if (!artState) return;
+    const next = artState.tier === "static" ? "scripts" : "static";
+    renderArtifact(artState.path, next, false);
+  });
+  document.getElementById("art-source").addEventListener("click", () => {
+    if (!artState) return;
+    renderArtifactSource(artState.path);
+    openSlot("pane-doc", artState.path, artState.path.split("/").pop());
   });
   function setWsExpanded(on) {
     document.querySelector(".left").classList.toggle("expanded", on);
@@ -1962,10 +2042,12 @@
           row.dataset.goto = "pane-doc";
         } else if (r.path.endsWith(".toml")) {
           row.dataset.goto = "pane-toml";
+        } else if (r.kind === "artifact") {
+          row.dataset.goto = "pane-artifact";
         } else {
           row.dataset.goto = "pane-doc";
         }
-        const chip = r.kind === "toml" ? "TOML" : r.kind === "md" ? "MD" : "DIR";
+        const chip = r.kind === "toml" ? "TOML" : r.kind === "md" ? "MD" : r.kind === "artifact" ? "ART" : "DIR";
         row.innerHTML = '<span class="kchip ' + r.kind + '">' + chip + '</span><div class="grow"><div class="dn"></div><div class="file"></div></div><span class="dm"></span>';
         row.querySelector(".dn").textContent = r.title;
         row.querySelector(".file").textContent = r.file;
@@ -1998,6 +2080,15 @@
           t.dataset.path = e.path;
           const chip = e.kind === "toml" ? "TOML" : "MD";
           t.innerHTML = '<span class="kchip ' + e.kind + '">' + chip + '</span><span class="fname"></span><span class="fmeta"></span>';
+          t.querySelector(".fname").textContent = e.name;
+          t.querySelector(".fmeta").textContent = e.meta;
+          box.appendChild(t);
+        } else if (e.kind === "file" && isArtifact(e.path)) {
+          const t = document.createElement("div");
+          t.className = "titem" + (e.depth > 0 ? " d1" : "");
+          t.dataset.path = e.path;
+          t.dataset.tier = e.tier === "scripts" ? "scripts" : "static";
+          t.innerHTML = '<span class="kchip artifact">ART</span><span class="fname"></span><span class="fmeta"></span>';
           t.querySelector(".fname").textContent = e.name;
           t.querySelector(".fmeta").textContent = e.meta;
           box.appendChild(t);
