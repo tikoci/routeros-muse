@@ -18,7 +18,7 @@ import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { chromium, type Page } from "playwright";
+import { chromium, type Page, type Request } from "playwright";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
 import { startServer } from "../src/serve/server";
 import { pollT71Log, stubT71Bin, withT71Env } from "../tests/t71-fake";
@@ -127,6 +127,11 @@ const consoleErrors: string[] = [];
 // and the escape attempt on the route, not a console text.)
 const artifactBlocks: string[] = [];
 const artifactBlockUrls: string[] = [];
+// T83 followup 2: the frame's csp attribute makes Chromium refuse to
+// DISPLAY a navigation destination that lacks a matching CSP. The
+// refusal lands on the error page (chrome-error loc), not the
+// artifact URL, so it gets its own list, asserted by the navnow leg.
+const cspRefusals: string[] = [];
 function isKnownArtifactBlock(text: string): boolean {
 	return (
 		text.includes("because the document's frame is sandboxed") ||
@@ -141,6 +146,9 @@ page.on("console", (msg) => {
 		if (url.includes("/api/artifact")) {
 			artifactBlocks.push(text);
 			artifactBlockUrls.push(url);
+		}
+		if (text.includes("The embedder requires it to enforce")) {
+			cspRefusals.push(text);
 		}
 	}
 });
@@ -1556,9 +1564,11 @@ try {
 	// real mermaid SVG, zero outside requests, zero CSP violations
 	// (live listener plus a static markup scan); a static probe page
 	// blocks its inline script until the owner toggles Run scripts; a
-	// navigating artifact is blanked with an inline notice; each
-	// artifact tab keeps its own artifact; SVG and PNG display; the
-	// report job opens static. Screenshots 24-28.
+	// navigating artifact is blanked with an inline notice; an
+	// immediate navigation (before the artifact's own load) is
+	// refused display by the frame's csp attribute while its request
+	// still fires; each artifact tab keeps its own artifact; SVG and
+	// PNG display; the report job opens static. Screenshots 24-29.
 	const t83Ws = makeWorkspace();
 	nodeFs.mkdirSync(path.join(t83Ws, "reports"), { recursive: true });
 	nodeFs.writeFileSync(
@@ -1584,6 +1594,16 @@ try {
 	nodeFs.writeFileSync(
 		path.join(t83Ws, "reports", "navaway.html"),
 		'<!doctype html><html><body><div id="n">stay</div><script>setTimeout(() => { location.href = "http://example.invalid/"; }, 500);</script></body></html>\n',
+	);
+	// T83 followup 2: an IMMEDIATE escape — no setTimeout, so the
+	// navigation fires during the artifact's own parse, before its
+	// load completes and the load counter stays silent. The getaway
+	// aims at this server's own root (200, no CSP headers): the
+	// frame's csp attribute refuses to display it, but the request
+	// still fires — display refusal, not exfiltration prevention.
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "navnow.html"),
+		'<!doctype html><html><body><div id="n">stay</div><script>location.href = "/";</script></body></html>\n',
 	);
 	nodeFs.writeFileSync(
 		path.join(t83Ws, "reports", "first.html"),
@@ -1903,6 +1923,61 @@ try {
 		const repH1 = (await artFrame.locator("h1").first().textContent()) ?? "";
 		check("t83 report renders its heading", repH1 === "Smoke report", repH1);
 		await page.screenshot({ path: path.join(OUT, "25-t83-report.png") });
+		// Immediate escape: the navigation fires before the
+		// artifact's own load completes, so the load counter stays
+		// silent (the documented residual) — but the frame's csp
+		// attribute refuses to display the destination. The request
+		// still goes out: display refusal, not exfiltration
+		// prevention. Screenshot 29.
+		const refusalsBefore = cspRefusals.length;
+		const rootNavs: string[] = [];
+		const rootNavListener = (req: Request): void => {
+			try {
+				const u = new URL(req.url());
+				if (
+					req.isNavigationRequest() &&
+					u.pathname === "/" &&
+					(u.hostname === "127.0.0.1" || u.hostname === "localhost")
+				) {
+					rootNavs.push(req.url());
+				}
+			} catch {
+				// Not a URL; ignore.
+			}
+		};
+		await openFromTree("navnow.html");
+		check(
+			"t83 immediate-nav fixture opens static",
+			((await page.locator("#art-tier").textContent()) ?? "") === "static",
+		);
+		page.on("request", rootNavListener);
+		try {
+			await page.locator("#art-toggle").click();
+			const t0 = Date.now();
+			while (
+				cspRefusals.length === refusalsBefore &&
+				Date.now() - t0 < 10_000
+			) {
+				await new Promise((r) => setTimeout(r, 100));
+			}
+			check(
+				"t83 immediate navigation is refused display",
+				cspRefusals.length === refusalsBefore + 1,
+				cspRefusals.slice(refusalsBefore).join(" | "),
+			);
+			check(
+				"t83 the immediate escape request still fires",
+				rootNavs.length >= 1,
+				rootNavs.join(","),
+			);
+			check(
+				"t83 immediate-nav destination is not displayed",
+				(await artFrame.locator("#chatinput").count()) === 0,
+			);
+			await page.screenshot({ path: path.join(OUT, "29-t83-navnow.png") });
+		} finally {
+			page.off("request", rootNavListener);
+		}
 		check(
 			"t83 artifact frame errors are only sandbox/csp blocks",
 			artifactBlocks.every(isKnownArtifactBlock),
@@ -1911,7 +1986,8 @@ try {
 		// Expected frame errors come only from the deliberate probe
 		// fixtures, named explicitly: probe.html and navaway.html
 		// (static-phase script blocks; the aborted escape itself is
-		// console-silent).
+		// console-silent). The navnow refusal lands on the error
+		// page, tracked separately in cspRefusals.
 		check(
 			"t83 frame errors come only from the probe fixtures",
 			artifactBlockUrls.every(
@@ -2125,7 +2201,8 @@ try {
 	const unexpectedConsole = consoleErrors.filter(
 		(e) =>
 			!expectedStatuses.includes(resourceStatus(e) ?? -1) &&
-			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)),
+			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)) &&
+			!cspRefusals.includes(e),
 	);
 	check(
 		"console errors are only the expected resource loads",
