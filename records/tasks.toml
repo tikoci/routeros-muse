@@ -980,3 +980,13 @@ evidence = "T83 codex gpt-6.1-sol review 2026-11-01: alias.html -> device.cdb re
 blocked_by = ["T83"]
 agent = ""
 updated = "2026-11-01"
+
+[[task]]
+id = "T99"
+title = "Per-tab state for doc and TOML tabs (same single-pane staleness as T83 artifacts)"
+status = "needed"
+detail = "Pinned doc/TOML middle tabs share one pane and its state, so reselecting an earlier tab can show the later file (the bug T83 follow-up fixed for artifact tabs with per-tab {path, tier, scriptsOptIn}). Apply the same per-tab binding to doc and TOML tabs, including the TOML editor's dirty/validate state (coordinate with T92 stale-state clearing). Smoke leg: open+pin A, open B, reselect A -> header/body show A."
+evidence = "T83 follow-up writer note 2026-11-01 (open question: same bug class one pane over); sol T83 review finding 5 repro PIN_SWITCH second.html second.html for artifacts"
+blocked_by = ["T83"]
+agent = ""
+updated = "2026-11-01"
