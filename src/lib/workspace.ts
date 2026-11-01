@@ -541,6 +541,11 @@ export const CDB_ENCRYPT_STEERING =
 export type ScaffoldOpts = {
 	/** Templates-root override (tests isolate here). */
 	templatesRoot?: string | null;
+	/**
+	 * Test seam (T97): runs after the conflict scan, before any
+	 * write, so a test can land a competing file deterministically.
+	 */
+	afterPreflight?: () => void;
 };
 
 export type ScaffoldResult =
@@ -610,6 +615,7 @@ export async function scaffoldWorkspace(
 	if (nodeFs.existsSync(target)) {
 		return { ok: false, why: `already exists: ${target}` };
 	}
+	opts?.afterPreflight?.();
 	const rollback = (): void => {
 		nodeFs.rmSync(target, { recursive: true, force: true });
 	};
@@ -663,6 +669,7 @@ export async function scaffoldIntoDir(
 			conflicts,
 		};
 	}
+	opts?.afterPreflight?.();
 	const existed = nodeFs.existsSync(dir);
 	let written: string[] = [];
 	const rollback = (): void => {
