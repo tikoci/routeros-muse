@@ -7,12 +7,11 @@ tested: none
 
 # `usermanager-ops` skill (bounds → setup → operate → verify) [template v1 draft]
 
-Promoted from the executed UM bisection campaign (twin2 depth/disk
-matrix on 7.26beta3 + twin3 C2 repeat on 7.25: failure axis named,
-wedge fully characterized, setup recipe proven). The OPS playbook is
-new; every bound below ran on twins. K21 carries the one-line form.
-Build-tracker references (T/K IDs, notes paths) are pointers pending
-staging scrub. No secrets below; never paste user passwords into notes.
+Promoted from the executed UM bisection campaign (a twin
+depth/disk matrix on 7.26beta3 + a C2 repeat on 7.25: failure axis
+named, wedge fully characterized, setup recipe proven). The OPS
+playbook is new; every bound below ran on twins. No secrets below;
+never paste user passwords into notes.
 
 ## Part 1 — The checklist (stay inside the bounds)
 
@@ -40,19 +39,19 @@ it wedges UM beyond in-place recovery on every tested version.
 | Boot disk, 2–3 comps | `/bb1sub/bb2`, `/bc1/bc2/bc3` | PASS (B2, B3) |
 | Depth 0 (either disk) | `/pcie1`, `/` | REJECTED at set (never usable) |
 
-- Grounded: full matrix twin2-bisection.md:203-214; verdict "second
-  disk AND ≥2 directory levels below the mount point"
-  (twin2-bisection.md:220-227). Not pure depth (B3 survives), not
+- Grounded: the twin bisection matrix; verdict "second
+  disk AND ≥2 directory levels below the mount point".
+  Not pure depth (B3 survives), not
   names (fresh c1/c2 reproduces), not a race (persists 25+ min).
-- Versions: fails on 7.24.5, 7.25, and 7.26beta3 (K21); twin3 proved
-  the C2 FAIL byte-identical on 7.25 (t1-twin3.md:114-152).
+- Versions: fails on 7.24.5, 7.25, and 7.26beta3; a second twin
+  proved the C2 FAIL byte-identical on 7.25.
 - Depth-0 rejection: "Directory needs to be empty OR have a valid
   userman-5 database" — mount roots always hold `lost+found`, so
-  depth-0 can never satisfy it (twin2-bisection.md:189-201).
+  depth-0 can never satisfy it.
 - Wedge signature (all five together): db-size 0, free-disk-space 0,
   user list empty, log shows "Database disk not yet usable. Please
-  wait.", disk MOUNTED with sqlite files INTACT (twin2-bisection.
-  md:158-175). Mounted-disk + intact-files + unusable-DB = wedge.
+  wait.", disk MOUNTED with sqlite files INTACT.
+  Mounted-disk + intact-files + unusable-DB = wedge.
 
 ### 1. Setup (the proven recipe)
 
@@ -68,16 +67,14 @@ quickchr exec <twin> "/user-manager/user/add name=<u> password=<p>"
 quickchr exec <twin> "/user-manager/user/print"                     # user visible
 ```
 
-- Grounded end to end: twin2-um.md:13-84 (build → format → dirs →
+- Grounded end to end on a twin (build → format → dirs →
   db-path → enable → add → verify, pre-reboot HEALTHY 148.6KiB).
 - `/disk/format numbers=` is the form — `/disk/format-drive` does
-  NOT exist on 7.26beta3 (twin2-um.md:64-66); `numbers=` also works
-  on 7.25 (t1-twin3.md:73-80).
+  NOT exist on 7.26beta3; `numbers=` also works on 7.25.
 - User params are `name=/password=` — there is NO
-  `/user-manager/customer` menu on this build and NO `login=` param
-  (twin2-um.md:77-78).
+  `/user-manager/customer` menu on this build and NO `login=` param.
 - Healthy baseline signature: db-size 148.6KiB, um5.sqlite 48.0KiB +
-  um5.sqlite-wal 100.6KiB (t1-twin3.md:103-104). Record yours; it is
+  um5.sqlite-wal 100.6KiB. Record yours; it is
   the comparison point for every later check.
 - On production this whole recipe rides `change-apply` (propose →
   stage → run → read back). The twin run above IS the proof step.
@@ -87,10 +84,10 @@ quickchr exec <twin> "/user-manager/user/print"                     # user visib
 - Reads are free and safe: `/user-manager/database/print`,
   `/user-manager/user/print`, `/log/print where message~"Database"`.
 - Adds follow the recipe (`name=/password=`); new users show
-  `group=default` — the default-group shape is the REVIEWER beat
-  (K21): know which group your RADIUS/Wi-Fi-AAA path actually
+  `group=default` — the default-group shape is the REVIEWER beat:
+  know which group your RADIUS/Wi-Fi-AAA path actually
   authorizes before trusting a default-group user in production.
-- `/export` OMITS UM (and smb) state (K21): export-diffs never
+- `/export` OMITS UM (and smb) state: export-diffs never
   describe UM — read `/user-manager/*` menus directly, and capture
   UM state via JSON-menu reads in your pull set.
 - NEVER: db-path at depth ≥2 on a second disk; db-path at a mount
@@ -114,9 +111,9 @@ quickchr exec <twin> "/log/print where message~\"Database\""  # no errors?
   `incident-response`); a stale boot voids the check.
 - Persistence re-check minutes later: the wedge never self-healed
   in any probe (25+ min, second reboot, +3 min re-checks all still
-  failing: twin2-bisection.md:177-187; t1-twin3.md:139-148).
+  failing on twins).
 - Healthy S1 pattern to match: db-size 148.6KiB, user row intact,
-  zero log matches (twin2-bisection.md:70-83).
+  zero log matches.
 
 ### 4. Wedge escape (fresh dir — the only recovery)
 
@@ -127,10 +124,10 @@ quickchr exec <twin> "/user-manager/database/print"   # db-size back immediately
 ```
 
 - Grounded: Probe C unwedged UM immediately (db-size 148.6KiB,
-  free-space back; twin2-bisection.md:50-51). Everything else failed:
+  free-space back). Everything else failed:
   re-set same path (no recovery), disable/re-enable (the set command
   itself errors — UM fully unmanageable), second reboot (still
-  failing). Results table twin2-bisection.md:215-218.
+  failing).
 - The escape abandons the old DB files (they stay on disk, intact
   but unreferenced): users must be re-added. State data loss plainly
   in the incident record — never imply the old users survive.
@@ -144,7 +141,7 @@ quickchr exec <twin> "/user-manager/database/print"   # db-size back immediately
 Load when: setting up User Manager; adding/listing UM users;
 choosing or moving db-path; UM wedge symptoms (empty users,
 "Database disk not yet usable"); post-reboot UM checks; UM + disk
-planning. (Entry-skill + capability-probe pattern: K22.)
+planning. (Entry-skill + capability-probe pattern.)
 
 ### Prereqs
 
@@ -161,7 +158,7 @@ planning. (Entry-skill + capability-probe pattern: K22.)
   owner approval per `change-apply`; on twins, anything goes.
 - Wedge escape on production is a write with data-loss shape
   (old users abandoned): explicit approval + incident record first.
-- Never paste user passwords into notes, captures, or coord drafts.
+- Never paste user passwords into notes, captures, or shared drafts.
 
 ### Envs
 
@@ -181,7 +178,7 @@ planning. (Entry-skill + capability-probe pattern: K22.)
 ### Verification
 
 - Post-setup: db-size ≈148.6KiB scale, sqlite+wal files present,
-  user row visible (twin2-um.md:72-84).
+  user row visible.
 - Post-reboot: triple healthy AND reboot confirmed two-signal.
 - Post-escape: db-size back, users re-added AND visible, one more
   reboot-verify passed.
@@ -209,6 +206,6 @@ planning. (Entry-skill + capability-probe pattern: K22.)
   check before trusting boot-disk db-path.
 - No 7.25 control cells (S1/B2/B3) exist — the depth×disk
   interaction is fully mapped only on 7.26beta3; 7.25 has the C2
-  FAIL alone (t1-twin3.md:169-180).
+  FAIL alone.
 - UM DB backup/restore across paths is unproven: treat db-path
   moves as fresh-DB events until a migration recipe is grounded.
