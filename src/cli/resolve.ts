@@ -1,6 +1,7 @@
 // Start workspace resolution (T93): a valid workspace serves; a
 // non-workspace on a TTY offers init-here / registry pick / browser
-// picker, and off a TTY falls to no-workspace mode. Init and pick
+// picker; off a TTY the cwd default falls to no-workspace mode while
+// an explicitly named dir aborts. Init and pick
 // resolve BEFORE the server binds — there is no live root switch.
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
@@ -19,6 +20,8 @@ export type ResolveDeps = {
 	registryFile: string;
 	env: Record<string, string>;
 	templatesRoot?: string | null;
+	/** The dir was named on the command line (not the cwd default). */
+	explicit?: boolean;
 };
 
 export type StartResolution =
@@ -39,6 +42,13 @@ export async function resolveStart(
 		deps.print(`not a workspace (no workspace.toml): ${dir}`);
 	}
 	if (!deps.isTty) {
+		if (deps.explicit) {
+			// A named dir is a request for THAT workspace: never swap
+			// to no-workspace mode (operator CDB, cwd root) behind it.
+			const why = `not serving ${dir}: create it with \`routeros-muse init ${dir}\`, or run start with no dir for the picker.`;
+			deps.print(why);
+			return { kind: "abort", why };
+		}
 		deps.print("no terminal to ask on: serving with no workspace attached.");
 		return { kind: "no-workspace" };
 	}

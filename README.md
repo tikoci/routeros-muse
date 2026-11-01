@@ -79,7 +79,8 @@ Defaults: host `127.0.0.1` (`--host` overrides the bind; only do that on
 a trusted network), ephemeral port, provider `meta`. When
 the directory (default: here) is not a workspace, a terminal offers
 init-here / registered-workspace pick / browser picker; off a
-terminal it serves with no workspace attached. `--yolo` starts the
+terminal the default (here) serves with no workspace attached, while
+a named directory that is not a workspace stops with the `init` line. `--yolo` starts the
 agent session at its most permissive approval mode (`Allow all`).
 `--tui` aliases `code`. Developer flags: `--no-workspace`,
 `--provider NAME`, `--allow-open-cdb` (an open CDB implies no auth).
@@ -96,8 +97,9 @@ into a capability mode (`full` / `twin-only` / `real-box-only` /
 with the package tool bundle on PATH. `--yes` is the one-yes for
 echoed user-level installs; `--print-only` prints the launch line
 instead of running it; every other arg passes through to `muse`
-verbatim (`-c`, `--yolo`, resume flags), with `--` forcing the rest
-through. Nothing installs without asking.
+verbatim and in order (`-c`, `--yolo`, resume flags), with `--`
+forcing the rest through. The workspace directory, if you name it,
+goes first, before any `muse` arg. Nothing installs without asking.
 
 `doctor`: the same checks print-only. Never installs, never execs
 muse. Exit 1 when a required item is missing.

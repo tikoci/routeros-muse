@@ -164,9 +164,12 @@ export class VersionRequest extends Error {
 }
 
 /**
- * Code parsing: ours are --yes/-y, --router, --print-only; the first
- * positional is the workspace dir; EVERYTHING else passes through to
- * muse verbatim, and `--` forces the rest through (even --help).
+ * Code parsing: ours are --yes/-y, --router, --print-only (anywhere);
+ * the workspace dir, when given, is a positional ahead of every muse
+ * arg; EVERYTHING else passes through to muse verbatim and in order,
+ * and `--` forces the rest through (even --help). Once a muse arg
+ * appears the dir slot closes, so `--model alpha` never makes `alpha`
+ * the workspace.
  */
 export function parseCodeArgs(argv: string[]): CodeOpts {
 	const opts: CodeOpts = {
@@ -174,7 +177,7 @@ export function parseCodeArgs(argv: string[]): CodeOpts {
 		printOnly: false,
 		passthrough: [],
 	};
-	const positional: string[] = [];
+	let dirOpen = true;
 	let rest = false;
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -195,16 +198,13 @@ export function parseCodeArgs(argv: string[]): CodeOpts {
 			const v = argv[++i];
 			if (!v) throw new Stop(["--router needs a host.", ...usage()]);
 			opts.router = v;
-		} else if (a.startsWith("-")) {
-			opts.passthrough.push(a);
+		} else if (dirOpen && !a.startsWith("-")) {
+			opts.dir = a;
+			dirOpen = false;
 		} else {
-			positional.push(a);
+			opts.passthrough.push(a);
+			dirOpen = false;
 		}
-	}
-	if (positional.length > 0) {
-		opts.dir = positional[0];
-		// Later positionals belong to muse, not to us.
-		opts.passthrough.push(...positional.slice(1));
 	}
 	return opts;
 }

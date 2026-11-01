@@ -220,6 +220,26 @@ describe("parseCli", () => {
 		expect(q.passthrough).toEqual(["--yes"]);
 	});
 
+	test("code keeps muse args in order; dir only leads", () => {
+		// sol review of T93: positionals were appended after flags,
+		// and a flag's value could be taken as the workspace dir.
+		const a = parseCodeArgs(["./ws", "--model", "alpha", "--effort", "high"]);
+		expect(a.dir).toBe("./ws");
+		expect(a.passthrough).toEqual(["--model", "alpha", "--effort", "high"]);
+		const b = parseCodeArgs(["--model", "alpha"]);
+		expect(b.dir).toBeUndefined();
+		expect(b.passthrough).toEqual(["--model", "alpha"]);
+		const c = parseCodeArgs(["./ws", "resume", "--", "abc"]);
+		expect(c.dir).toBe("./ws");
+		expect(c.passthrough).toEqual(["resume", "abc"]);
+		// Our flags may sit anywhere and still are ours.
+		const d = parseCodeArgs(["--yes", "./ws", "-c", "--print-only", "x"]);
+		expect(d.dir).toBe("./ws");
+		expect(d.yes).toBe(true);
+		expect(d.printOnly).toBe(true);
+		expect(d.passthrough).toEqual(["-c", "x"]);
+	});
+
 	test("code --router needs a value", () => {
 		expect(() => parseCodeArgs(["--router"])).toThrow(Stop);
 	});
@@ -385,6 +405,16 @@ describe("resolveStart", () => {
 		const { deps, printed } = resolveDeps({ isTty: false });
 		expect(await resolveStart(dir, deps)).toEqual({ kind: "no-workspace" });
 		expect(printed.join("\n")).toMatch(/not a workspace/);
+	});
+
+	tposix("an explicit non-workspace dir off a TTY aborts", async () => {
+		// sol review of T93: a named dir that is not a workspace must
+		// not silently swap to no-workspace mode (operator CDB, cwd root).
+		const dir = mktmp("t93-resolve-explicit-");
+		const { deps, printed } = resolveDeps({ isTty: false });
+		const res = await resolveStart(dir, { ...deps, explicit: true });
+		expect(res.kind).toBe("abort");
+		expect(printed.join("\n")).toMatch(/routeros-muse init/);
 	});
 
 	tposix("choice 1 inits here and registers", async () => {

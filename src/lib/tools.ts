@@ -6,6 +6,7 @@
 // explicit env built here.
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { have, run } from "./run";
 
 export const TRILOGY = ["quickchr", "centrs", "rosetta"] as const;
@@ -61,7 +62,7 @@ export async function detectInstalled(
  * callers fall back to ambient PATH honestly instead of guessing.
  */
 export function packageRoot(
-	fromDir: string = path.dirname(new URL(import.meta.url).pathname),
+	fromDir: string = path.dirname(fileURLToPath(import.meta.url)),
 ): string | null {
 	let dir = fromDir;
 	for (let i = 0; i < 6; i++) {

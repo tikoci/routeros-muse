@@ -71,6 +71,7 @@ async function main(): Promise<void> {
 				print: (line) => console.log(line),
 				registryFile: registryFile(),
 				env: tools,
+				explicit: s.dir !== undefined,
 			},
 		);
 		if (resolved.kind === "abort") process.exit(2);

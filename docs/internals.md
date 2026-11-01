@@ -7,13 +7,15 @@ design history in `docs/design/`.
 
 Bare `routeros-muse` is `start`: serve the directory (default: cwd)
 when it is a workspace and open the browser, else offer init-here /
-registry pick / browser picker on a TTY (no-workspace mode off
-one). `serve` aliases `start`; `start --tui` aliases `code`. `init
+registry pick / browser picker on a TTY (off one: no-workspace mode
+for the cwd default, abort with the init line for a named dir). `serve` aliases `start`; `start --tui` aliases `code`. `init
 [dir] [--template minimal|network]` scaffolds in place, never
 overwriting, and registers the workspace. `code` runs the Mode A
 steps below, then execs `muse` with the package bundle on PATH;
 every arg but `--yes`/`--router`/`--print-only` passes through to
-`muse` verbatim (`--` forces the rest). `doctor` runs the same steps
+`muse` verbatim and in order (`--` forces the rest); the dir slot
+closes at the first muse arg, so a flag's value never becomes the
+workspace. `doctor` runs the same steps
 print-only and exits 1 when a required item is missing. Fleet reads
 left this CLI with the `devices` subcommand (T93): `centrs`
 owns them now.

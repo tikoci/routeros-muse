@@ -710,9 +710,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				return ensureMain(key);
 			}
+			const approvalMode = opts.defaultApprovalMode ?? "onRequest";
 			const { session } = await client.sessionStart({
 				workspaceRoot: root,
-				approvalMode: opts.defaultApprovalMode ?? "onRequest",
+				approvalMode,
 			});
 			if (!isMine() || mainOwner !== key || mspOwner !== key) {
 				const cur = mainPromise;
@@ -724,6 +725,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				return ensureMain(key);
 			}
 			mainSession = session.sessionId;
+			// The session runs at this mode now; stopWorker cleared
+			// lastAccess on the way up, so restore the truth here.
+			lastAccess = approvalMode;
 			sessionStartedAt = Date.now();
 			mainSettled = true;
 			return mainSession;

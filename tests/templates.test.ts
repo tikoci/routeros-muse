@@ -116,6 +116,29 @@ describe("template discovery", () => {
 	});
 });
 
+describe("package root under a spaced path", () => {
+	tposix("an install path with spaces still finds the package", async () => {
+		// sol review of T93: URL.pathname kept %20, so a package under
+		// "package space/" resolved no root and listed no templates.
+		const pkg = path.join(mktmp("t93-tpl-space-"), "package space");
+		nodeFs.mkdirSync(path.join(pkg, "src", "lib"), { recursive: true });
+		nodeFs.copyFileSync(
+			path.join(import.meta.dir, "..", "package.json"),
+			path.join(pkg, "package.json"),
+		);
+		for (const f of ["tools.ts", "run.ts"]) {
+			nodeFs.copyFileSync(
+				path.join(import.meta.dir, "..", "src", "lib", f),
+				path.join(pkg, "src", "lib", f),
+			);
+		}
+		const mod = (await import(path.join(pkg, "src", "lib", "tools.ts"))) as {
+			packageRoot: () => string | null;
+		};
+		expect(mod.packageRoot()).toBe(pkg);
+	});
+});
+
 describe("copy + provenance", () => {
 	test("{{name}} substitutes in toml/md only; manifest stays out", () => {
 		const src = mktmp("t93-tpl-src-");
@@ -288,7 +311,7 @@ describe("picker template routes", () => {
 	tposix("default approval mode surfaces in chat stats", async () => {
 		async function statsAccess(
 			defaultApprovalMode?: "allowAll",
-		): Promise<unknown> {
+		): Promise<unknown[]> {
 			const dh = mktmp("t93-tpl-yolodh-");
 			const srv = await startServer({
 				noWorkspace: true,
@@ -302,16 +325,29 @@ describe("picker template routes", () => {
 				...(defaultApprovalMode ? { defaultApprovalMode } : {}),
 			});
 			try {
-				const body = (await (
+				const before = (await (
 					await fetch(`${srv.url}api/chat/stats`)
 				).json()) as { access: unknown };
-				return body.access;
+				// Starting the main session tears down the bootstrap
+				// worker; the configured mode must survive that (sol
+				// review of T93: it fell back to null = "Ask first").
+				const sent = await fetch(`${srv.url}api/chat/send`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ text: "t93-yolo" }),
+				});
+				expect(sent.status).toBe(200);
+				const after = (await (
+					await fetch(`${srv.url}api/chat/stats`)
+				).json()) as { access: unknown };
+				return [before.access, after.access];
 			} finally {
 				await srv.stop();
 			}
 		}
-		expect(await statsAccess("allowAll")).toBe("allowAll");
-		expect(await statsAccess()).toBeNull();
+		expect(await statsAccess("allowAll")).toEqual(["allowAll", "allowAll"]);
+		const plain = await statsAccess();
+		expect(plain).toEqual([null, "onRequest"]);
 	});
 
 	tposix("GET lists templates; create honors them", async () => {

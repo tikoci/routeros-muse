@@ -926,7 +926,7 @@ id = "T93"
 title = "CLI reshape per D35 (start|serve, init, code, doctor)"
 status = "done"
 detail = "Implement D35 on the moved repo: shared workspace resolution (cwd, TTY prompt for code, browser picker for start), browser open, init into cwd from templates/, code passthrough to muse, doctor print-only, drop devices subcommand and its tests, README leads with start."
-evidence = "D35 2026-11-01; includes templates/minimal as the single init source (T14 scaffold reconcile); staffed to muse in a worktree DONE 2026-11-01: ae4c769..64cf753 rebased onto e124f5d (README conflict resolved keeping loopback-default wording); orchestrator gate biome 56 clean + tsc clean, suite 263/0, smoke green; hands-on: init scaffolds minimal with [template] provenance, re-init refuses with exit 1, doctor print-only exit 0, start serves loopback. Calls accepted: code --help is ours (code -- --help reaches muse), existing device.cdb is an init conflict."
+evidence = "D35 2026-11-01; includes templates/minimal as the single init source (T14 scaffold reconcile); staffed to muse in a worktree DONE 2026-11-01: ae4c769..64cf753 rebased onto e124f5d (README conflict resolved keeping loopback-default wording); orchestrator gate biome 56 clean + tsc clean, suite 263/0, smoke green; hands-on: init scaffolds minimal with [template] provenance, re-init refuses with exit 1, doctor print-only exit 0, start serves loopback. Calls accepted: code --help is ours (code -- --help reaches muse), existing device.cdb is an init conflict. Codex gpt-6.1-sol review 2026-11-01 (7 findings + 1 objection): fixed by orchestrator fail-first: --yolo access lost after main-session start (lastAccess restored in ensureMain), code args reordered and flag values taken as dir (dir slot closes at first muse arg), packageRoot under a spaced path (fileURLToPath), explicit non-workspace dir off a TTY now aborts with the init line instead of no-workspace mode; gate biome clean, suite 266/0, smoke green. Init write-safety findings (TOCTOU overwrite, dangling symlink, partial-copy rollback, rmdir of pre-existing empty dest) -> T97; non-hermetic code-runner tests -> T94."
 blocked_by = ["T14"]
 agent = "claude-orch"
 updated = "2026-11-01"
@@ -935,7 +935,7 @@ updated = "2026-11-01"
 id = "T94"
 title = "Test suites leak tmpdirs: clean up after every run"
 status = "needed"
-detail = "8247 stale suite/smoke/probe dirs (6.2G) filled the /dev/shm user quota and broke the TMPDIR=/dev/shm gate convention; cleared 2026-11-01 by the orchestrator. Every mkdtemp in tests/ and tools/ui-smoke.ts gets an afterAll/finally rm; add a gate check that a run leaves no new prefixed dirs."
+detail = "8247 stale suite/smoke/probe dirs (6.2G) filled the /dev/shm user quota and broke the TMPDIR=/dev/shm gate convention; cleared 2026-11-01 by the orchestrator. Every mkdtemp in tests/ and tools/ui-smoke.ts gets an afterAll/finally rm; add a gate check that a run leaves no new prefixed dirs. Also (T93 sol review finding 7): tests/cli.test.ts code-runner launch tests read the real muse auth store and detect real trilogy binaries (quickchr version hits the network), so they skip or degrade to a stop-path assertion on other machines; isolate auth and tool detection with fixtures so the exec-passthrough assertion always runs."
 evidence = "repair-wave T72 environment flag 2026-11-01; prefixes t31-serve-*, t40-*, ui-smoke-*, t48-*, t84-* dominated"
 blocked_by = []
 agent = ""
@@ -958,5 +958,15 @@ status = "needed"
 detail = "35 skill files cite the pilot lab router by name plus orca-setup/notes line refs as grounding provenance. D1 allows lab device names, but site-specific service/access/VPN facts and dangling ~/Work note pointers do not belong in a shipped template. Rewrite as generic lessons (tested-on: a RouterOS 7.26 arm router) and drop archive line refs; keep the grounding claims. Gates the D34 GitHub step."
 evidence = "T14 codex review 2026-11-01 (three flagged spots fixed; grep -c bigdude over templates/ shows the rest)"
 blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T97"
+title = "Init write safety: exclusive create, no symlink follow, honest rollback"
+status = "needed"
+detail = "scaffoldIntoDir/copyTemplateFiles (src/lib/workspace.ts, src/lib/templates.ts) preflight conflicts then write with truncating ops, so: (1) a file created after the scan is overwritten and init reports ok; (2) a dangling workspace.toml symlink passes the scan and init writes+stamps its target outside the workspace; (3) a throw mid-copy leaves partial files (written list is only assigned after copy returns) that block every retry; (4) rollback rmdirs a pre-existing empty destination dir (can delete the caller's cwd). Fix: exclusive non-following creates (wx / O_EXCL|O_NOFOLLOW, lstat in preflight), record each write as it lands, rollback removes only what this run created and never a dir that existed. Fail-first tests for each of the four."
+evidence = "T93 codex gpt-6.1-sol review 2026-11-01: probes COMPETING_WRITER_RAN=True OWNER_DATA_PRESERVED=False; checks-file EEXIST left .gitignore/AGENTS.md/README.md/START-HERE.md; failing centrs shim -> dirStillExists:false"
+blocked_by = ["T93"]
 agent = ""
 updated = "2026-11-01"
