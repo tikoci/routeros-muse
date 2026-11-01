@@ -7,11 +7,11 @@ tested: none
 
 # `cmr-fleet-guard` skill (enroll → consume → pin → guard) [template v1 draft]
 
-Promoted from the journaled 7.26beta CMR trial (feedback §11), the
-run-script guard (homework §13, centrs#456), the twin phone-home
-journal (homework §13), the routeros-cmr domain skill (7.26beta1
-CHR lab), and read-only menu probes on 7.26beta3 (t28-cf-proof.md).
-Backlog #34. No secrets below; controller addresses stay shapes.
+Promoted from a journaled 7.26beta CMR trial,
+the run-script guard (centrs#456), a twin phone-home
+journal, the routeros-cmr domain skill (7.26beta1
+CHR), and read-only menu probes on 7.26beta3.
+No secrets below; controller addresses stay shapes.
 
 ## Part 1 — The checklist (CMR manages; the agent watches)
 
@@ -29,9 +29,9 @@ hands: the agent consumes supervision, it doesn't wield it.
 
 ### 0. Enroll (client joins, both sides approve)
 
-Domain mechanics live in routeros-cmr (7.26beta1 CHR lab — pairing
-matrix, discovery, TCP/54321, labels); this is OUR discipline on
-top. Twin-confirmed on 7.26beta3 (t28-cf-proof.md): built-in
+Domain mechanics live in routeros-cmr (7.26beta1 CHR — pairing
+matrix, discovery, TCP/54321, labels); this skill is the discipline
+on top. Twin-confirmed on 7.26beta3: built-in
 `/cmr/client` present (`enabled: no` default), controller `/cmr`
 absent without the package.
 
@@ -58,8 +58,8 @@ absent without the package.
 ### 1. Consume (alerts in, no home-built poller)
 
 [OPINION, journaled trial]: have the agent CONSUME CMR alerts
-rather than build its own fleet poller. Trial evidence (feedback
-§11): pairing + run-script fan-out with per-device output +
+rather than build its own fleet poller. Trial evidence:
+pairing + run-script fan-out with per-device output +
 a "disconnected >30s" alert firing ~35s after a test CHR stopped
 + an upgrade through CMR.
 
@@ -69,7 +69,7 @@ a "disconnected >30s" alert firing ~35s after a test CHR stopped
   immediacy. Check `action-failures` as well as delivery.
 - Email rung (poll underneath): routers send natively
   (`/tool/e-mail`, also from netwatch/scheduler); a frequent
-  mailbox check notices in minutes. Habitat A verdict: no event
+  mailbox check notices in minutes. Sandbox verdict: no event
   source pushes on new email — email→agent is poll, webhook→
   Cloudflare is the true-push rung. Promise scheduled
   detection with honest latency, not push.
@@ -93,8 +93,8 @@ a "disconnected >30s" alert firing ~35s after a test CHR stopped
   controller it offers a DOWNGRADE (trial: 7.24.5 offered on a
   beta controller) that would drop the CMR package. Add your
   own rule FIRST — before enrolling the second device, before
-  any upgrade conversation (feedback §11 + homework §13 agree).
-- Lab rule shape (domain skill, never-triggered in the lab):
+  any upgrade conversation (trial + guard notes agree).
+- Rule shape (domain skill, never-triggered in testing):
   `/cmr/upgrade/add name=<pinned> labels=<fleet> channel=<ver>
   strategy=sequential fail-policy=stop` — assert every device
   selects it; never call `upgrade`/`trigger` without the
@@ -115,7 +115,7 @@ a "disconnected >30s" alert firing ~35s after a test CHR stopped
 ### 3. Guard (controller login = fleet-write)
 
 - CMR `run-script` ran fleet writes for a controller login with
-  NO `write` policy (homework §13 table; centrs#456 closed in
+  NO `write` policy (centrs#456, closed in
   centrs as RouterOS behaviour). Rules: keep `--cmr` OUT of
   any remote or agent profile; treat ANY login on a CMR
   controller as fleet-write capability regardless of its group
@@ -126,7 +126,7 @@ a "disconnected >30s" alert firing ~35s after a test CHR stopped
   alert consumption (§1). Fleet writes (run-script, upgrade
   trigger, pairing changes) ride the normal change path with
   approval — never casual, never from an agent profile.
-- Twin phone-home journal (homework §13, now cited — resolves
+- Twin phone-home journal (resolves
   the twin-ops sanitization carryover for the CMR case): a twin
   booted from an owner's export containing a CMR controller
   address joins the REAL fleet. Sanitize controller addresses
@@ -141,7 +141,7 @@ a "disconnected >30s" alert firing ~35s after a test CHR stopped
 Load when: enrolling routers in CMR; setting or triaging fleet
 alerts; planning upgrades through CMR; auditing who can reach
 the controller; "the fleet did X, why" questions. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
@@ -155,8 +155,8 @@ capability-probe pattern: K22.)
 
 ### Access
 
-- Enrollment + controller config: writes — approval per item,
-  bigdude needs the developer. Controller login credentials
+- Enrollment + controller config: writes — approval per item;
+  the developer approves. Controller login credentials
   are owner-custody (fleet-write equivalence, §3).
 - Alert consumption: reads + the sink's receive path. No
   approval needed to WATCH; approval needed to ACT on what
@@ -215,8 +215,8 @@ capability-probe pattern: K22.)
   probes here are 7.26beta3 menu-presence only. Version skew
   across the three is real — re-prove pairing/alert/upgrade
   rows when the fleet's version moves.
-- CMR procedures collected, not re-run in OUR lab (no
-  controller+clients built here): enrollment-first-run grounds
+- CMR procedures collected, not re-run against a live
+  controller (none built here): enrollment-first-run grounds
   them; until then the domain skill + journals are the
   authority, cited as collected.
 - WiFi/VLAN provisioning, DHCP discovery, apptraffic,
