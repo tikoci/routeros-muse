@@ -1,13 +1,15 @@
 // MSP client anchor tests (T31 slice 1, D22). Hermetic: echo provider
 // plus an isolated XDG_DATA_HOME, so no API cost and no litter in the
 // real muse home. Skipped when `muse` is not on PATH.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
 import { toolEnv } from "../src/lib/tools";
 import { MspClient, MspError } from "../src/msp/client";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const HAVE_MUSE = have("muse");
 const t = HAVE_MUSE ? test : test.skip;
@@ -30,8 +32,8 @@ function seedCatalog(home: string): void {
 }
 
 function makeHome(seeded = true): { home: string; ws: string } {
-	const home = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t31-msp-home-"));
-	const ws = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t31-msp-ws-"));
+	const home = mktmp("t31-msp-home-");
+	const ws = mktmp("t31-msp-ws-");
 	nodeFs.writeFileSync(path.join(ws, "workspace.toml"), "canonical = true\n");
 	if (seeded) seedCatalog(home);
 	return { home, ws };
@@ -256,7 +258,7 @@ describe("spawn environment", () => {
 	tstub(
 		"spawn resolves muse and PATH from the passed env",
 		async () => {
-			const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-musen-"));
+			const dir = mktmp("t51-musen-");
 			const outFile = path.join(dir, "seen-path.txt");
 			nodeFs.writeFileSync(
 				path.join(dir, "muse"),

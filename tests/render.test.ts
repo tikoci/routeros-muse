@@ -1,8 +1,7 @@
 // Render service tests (T33, D21). Pure job tests need no muse;
 // the /api/render route test reuses the echo server harness.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
 import {
@@ -14,6 +13,9 @@ import {
 	topologyText,
 } from "../src/render/jobs";
 import { startServer } from "../src/serve/server";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const TOPO = {
 	title: "lab",
@@ -25,7 +27,7 @@ const TOPO = {
 };
 
 function makeRoot(): string {
-	return nodeFs.mkdtempSync(path.join(os.tmpdir(), "t33-render-"));
+	return mktmp("t33-render-");
 }
 
 describe("topology sources", () => {
@@ -140,20 +142,18 @@ describe("render routes", () => {
 	t(
 		"POST /api/render then GET /api/artifact",
 		async () => {
-			const ws = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t33-serve-ws-"));
+			const ws = mktmp("t33-serve-ws-");
 			nodeFs.writeFileSync(
 				path.join(ws, "workspace.toml"),
 				"canonical = true\n",
 			);
-			const home = nodeFs.mkdtempSync(
-				path.join(os.tmpdir(), "t33-serve-home-"),
-			);
+			const home = mktmp("t33-serve-home-");
 			const srv = await startServer({
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
 				museHome: home,
-				dataHome: nodeFs.mkdtempSync(path.join(os.tmpdir(), "t33-serve-dh-")),
+				dataHome: mktmp("t33-serve-dh-"),
 			});
 			try {
 				const r = (await (

@@ -1,12 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
 	type DoctorEntry,
 	loadDoctorSpec,
 	mergeEntries,
 } from "../src/steps/doctor";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const FX = path.join(import.meta.dir, "fixtures");
 
@@ -49,7 +51,7 @@ describe("doctor merge", () => {
 
 describe("packaged spec + workspace overlay", () => {
 	test("packaged doctor.toml parses with the required entries", async () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t30-doc-"));
+		const dir = mktmp("t30-doc-");
 		const entries = await loadDoctorSpec(dir);
 		const ids = new Set(entries.map((e) => `${e.id}/${e.os}`));
 		for (const want of [
@@ -67,7 +69,7 @@ describe("packaged spec + workspace overlay", () => {
 	});
 
 	test("workspace doctor.local.toml merges on top", async () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t30-doc-"));
+		const dir = mktmp("t30-doc-");
 		nodeFs.copyFileSync(
 			path.join(FX, "doctor.local.toml"),
 			path.join(dir, "doctor.local.toml"),
