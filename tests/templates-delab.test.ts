@@ -22,6 +22,61 @@ const DENY: RegExp[] = [
 	/192\.168\.74/,
 ];
 
+// T96 follow-up: residue the first regex missed. The forum topic id,
+// private project/deployment names, and parenthetical tracker IDs
+// apply to every file: a .toml fixture names the private project
+// and the .gitignores carry tracker parentheticals.
+const DENY_MORE: RegExp[] = [
+	/181789/,
+	/heltec-victron|victron-heltec/i,
+	/ginny-pig/i,
+	/\(T\d+/,
+];
+
+// Citation forms, the retired coord room/CLI, and the standing-pair
+// wording are markdown-only: test.sh fixtures use `coord` as a
+// coordinate variable, which must keep passing.
+const DENY_MD: RegExp[] = [
+	/(homework|feedback|codex)\s*§/i,
+	/\((homework|feedback|codex)\b/i,
+	/demo catalog/i,
+	/Coding Agent Feedback/,
+	/demo-hardware-notes/i,
+	/showing-the-owner/i,
+	/concept[- ]review\s*§/i,
+	/owner-presentation/i,
+	/\bcoord\b/i,
+	/standing pair/i,
+	/\(T\d+/,
+];
+
+// Strings that must NEVER match: private IPs, key shapes, bare
+// tracker ids, the T3 Code product name, in-skill vocabularies,
+// and ordinary words containing "coord". If a DENY pattern starts
+// matching one of these, the pattern (not the allow-case) is wrong.
+const ALLOW: string[] = [
+	"192.168.1.20",
+	"10.0.0.0/8",
+	"private-key material stays redacted",
+	"bare T40 and T9 references without parens",
+	"T3 Code desktop",
+	"T3 Connect MCP",
+	"cells S1/S2/C2/B2/B3",
+	"validator rules S1-S6",
+	"R0-R8 and P0-P9 probes",
+	"UM matrix cell",
+	"coordination, not a lock",
+	"the fleet coordinator",
+	"coordinates match the records",
+	"null-island coords",
+	"coordinate-relative",
+	"Full Victron stack rejected on cost",
+	"feedback on the live design",
+	"collected: an earlier review",
+	"from pilot feedback",
+	"from an earlier field run",
+];
+
 function allFiles(dir: string): string[] {
 	const out: string[] = [];
 	for (const e of nodeFs.readdirSync(dir, { withFileTypes: true })) {
@@ -38,9 +93,13 @@ describe("shipped templates carry no pilot-lab residue", () => {
 		if (!root) throw new Error("templates root missing under test");
 		const hits: string[] = [];
 		for (const f of allFiles(root)) {
+			// presentation-layer is owned by another branch; it skips
+			// the markdown-only patterns until that branch lands.
+			const ownMD = f.endsWith(".md") && !f.includes("presentation-layer");
+			const deny = ownMD ? [...DENY, ...DENY_MORE, ...DENY_MD] : [...DENY, ...DENY_MORE];
 			const lines = nodeFs.readFileSync(f, "utf8").split("\n");
 			lines.forEach((line, i) => {
-				for (const re of DENY) {
+				for (const re of deny) {
 					if (re.test(line)) {
 						hits.push(
 							`${path.relative(root, f)}:${i + 1}: ${line.trim().slice(0, 100)}`,
@@ -51,5 +110,14 @@ describe("shipped templates carry no pilot-lab residue", () => {
 			});
 		}
 		expect(hits).toEqual([]);
+	});
+	test("denylist stays tight: allow-cases never match", () => {
+		const bad: string[] = [];
+		for (const sample of ALLOW) {
+			for (const re of [...DENY, ...DENY_MORE, ...DENY_MD]) {
+				if (re.test(sample)) bad.push(`${re}: ${sample}`);
+			}
+		}
+		expect(bad).toEqual([]);
 	});
 });
