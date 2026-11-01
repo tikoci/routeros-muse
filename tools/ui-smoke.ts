@@ -1578,9 +1578,12 @@ try {
 	);
 	// T83 followup: a scripts-tier escape attempt (runs only after the
 	// owner's Run scripts opt-in) plus two files for the per-tab leg.
+	// The escape waits past the artifact's own load: the UI detects
+	// navigation by counting the frame's loads, so the artifact's
+	// first load must complete before the getaway load fires.
 	nodeFs.writeFileSync(
 		path.join(t83Ws, "reports", "navaway.html"),
-		'<!doctype html><html><body><div id="n">stay</div><script>location.href="http://example.invalid/";</script></body></html>\n',
+		'<!doctype html><html><body><div id="n">stay</div><script>setTimeout(() => { location.href = "http://example.invalid/"; }, 500);</script></body></html>\n',
 	);
 	nodeFs.writeFileSync(
 		path.join(t83Ws, "reports", "first.html"),
