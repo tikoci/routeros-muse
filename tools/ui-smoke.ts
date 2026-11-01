@@ -121,12 +121,12 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const consoleErrors: string[] = [];
 // T83: sandboxed artifact frames report their own script blocks; the
 // frame URL separates those expected notices from real errors below.
-// The deliberate nav-abort fixture (navaway.html) also reports its
-// aborted escape as a net error; that rides its own named array so
-// the final filter stays explicit about what it excuses.
+// (Probed: a failed subframe navigation commits an error page —
+// which is what the UI's load counter catches — with no console
+// error of its own, so the nav leg asserts the notice + blank frame
+// and the escape attempt on the route, not a console text.)
 const artifactBlocks: string[] = [];
 const artifactBlockUrls: string[] = [];
-const navAbortErrors: string[] = [];
 function isKnownArtifactBlock(text: string): boolean {
 	return (
 		text.includes("because the document's frame is sandboxed") ||
@@ -139,12 +139,8 @@ page.on("console", (msg) => {
 		consoleErrors.push(text);
 		const url = msg.location().url;
 		if (url.includes("/api/artifact")) {
-			if (url.includes("navaway.html") && text.includes("net::ERR_")) {
-				navAbortErrors.push(text);
-			} else {
-				artifactBlocks.push(text);
-				artifactBlockUrls.push(url);
-			}
+			artifactBlocks.push(text);
+			artifactBlockUrls.push(url);
 		}
 	}
 });
@@ -1844,11 +1840,6 @@ try {
 				navHosts.includes("example.invalid"),
 				navHosts.join(","),
 			);
-			check(
-				"t83 the nav abort surfaces its net error",
-				navAbortErrors.length >= 1,
-				navAbortErrors.join(" | "),
-			);
 			await page.screenshot({ path: path.join(OUT, "27-t83-navaway.png") });
 		} finally {
 			await page.unroute("**/*");
@@ -1915,9 +1906,9 @@ try {
 			artifactBlocks.join(" | "),
 		);
 		// Expected frame errors come only from the deliberate probe
-		// fixtures, named explicitly: probe.html (static-phase script
-		// block) and navaway.html (static-phase block; its aborted
-		// escape rides navAbortErrors instead).
+		// fixtures, named explicitly: probe.html and navaway.html
+		// (static-phase script blocks; the aborted escape itself is
+		// console-silent).
 		check(
 			"t83 frame errors come only from the probe fixtures",
 			artifactBlockUrls.every(
@@ -2131,8 +2122,7 @@ try {
 	const unexpectedConsole = consoleErrors.filter(
 		(e) =>
 			!expectedStatuses.includes(resourceStatus(e) ?? -1) &&
-			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)) &&
-			!navAbortErrors.includes(e),
+			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)),
 	);
 	check(
 		"console errors are only the expected resource loads",

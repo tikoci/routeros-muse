@@ -326,6 +326,7 @@
   .artbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
   .artbar .note { font-size: 11.5px; color: var(--faint); }
   .artbar .sp { flex: 1; }
+  .artnav { font-size: 12px; color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); border-radius: 8px; padding: 7px 12px; margin-bottom: 12px; }
   #artframe { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--border-soft); border-radius: 10px; background: #fff; }
 
   .right { width: 330px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
@@ -543,6 +544,7 @@
         <div class="fn"><span class="kchip artifact">ART</span> <span id="art-path">…</span></div>
         <h1 id="art-title">…</h1>
         <div class="artbar"><span class="lockchip" id="art-tier">static</span><span class="note" id="art-why">scripts blocked</span><span class="sp"></span><button class="btn" id="art-toggle">Run scripts</button><button class="btn" id="art-source">View source</button></div>
+        <div class="artnav" id="art-nav" hidden></div>
         <iframe id="artframe" title="artifact" sandbox=""></iframe>
       </div>
     </div>
@@ -836,8 +838,33 @@
       markUnread(false);
     }
   }
+  // Each artifact tab keeps its own {path, tier, fromJob}: selecting
+  // a tab re-binds the shared frame and header to that tab's
+  // artifact, so the scripts opt-in is per tab and per path.
+  function markActiveTab(tab) {
+    document.querySelectorAll(".ctab[data-pane]").forEach((x) => x.classList.remove("active"));
+    tab.classList.add("active");
+  }
+  function bindArtTab(tab) {
+    if (!artState) return;
+    tab.dataset.art = JSON.stringify({ path: artState.path, tier: artState.tier, fromJob: artState.fromJob });
+    artTab = tab;
+    markActiveTab(tab);
+  }
+  function selectArtifactTab(tab) {
+    let st = null;
+    try { st = JSON.parse(tab.dataset.art || "null"); } catch { st = null; }
+    if (st && st.path) renderArtifact(st.path, st.tier, st.fromJob);
+    artTab = tab;
+    showPane("pane-artifact");
+    markActiveTab(tab);
+  }
+  function selectTab(tab) {
+    if (tab.dataset.pane === "pane-artifact" && tab.dataset.art) selectArtifactTab(tab);
+    else showPane(tab.dataset.pane);
+  }
   document.querySelectorAll(".ctab[data-pane]").forEach((t) =>
-    t.addEventListener("click", () => showPane(t.dataset.pane)));
+    t.addEventListener("click", () => selectTab(t)));
   const PIN_SVG = '<svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1a3.2 3.2 0 0 1 3.2 3.2c0 2.4-3.2 6.3-3.2 6.3S2.8 6.6 2.8 4.2A3.2 3.2 0 0 1 6 1z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="4.2" r="1.1" fill="currentColor"/></svg>';
   // LIVE data layer: every render below fetches from the server. Doc keys
   // are workspace-relative paths; past keys are MSP session ids; device
@@ -869,6 +896,7 @@
     return fromJob ? "scripts tier · render job" : "scripts tier · owner opt-in";
   }
   let artState = null;
+  let artTab = null;
   function renderArtifact(path, tier, fromJob) {
     const t = tier === "scripts" ? "scripts" : "static";
     artState = { path, tier: t, fromJob: t === "scripts" && fromJob === true };
@@ -878,10 +906,28 @@
     document.getElementById("art-why").textContent = artWhy(t, artState.fromJob);
     document.getElementById("art-toggle").textContent = t === "static" ? "Run scripts" : "Back to static";
     document.getElementById("art-source").style.display = isTextArtifact(path) ? "" : "none";
+    const nav = document.getElementById("art-nav");
+    nav.hidden = true;
+    nav.textContent = "";
     const f = document.createElement("iframe");
     f.id = "artframe";
     f.title = "artifact";
     f.setAttribute("sandbox", t === "scripts" ? "allow-scripts" : "");
+    // Navigation can't be blocked by policy (Chromium has no
+    // navigate-to): count this frame's loads — a second load means
+    // the artifact navigated away, so blank it and say so inline.
+    // Setting about:blank fires one more load; the guard swallows it.
+    let loads = 0;
+    let stopped = false;
+    f.addEventListener("load", () => {
+      loads++;
+      if (loads >= 2 && !stopped) {
+        stopped = true;
+        f.src = "about:blank";
+        nav.textContent = "This file tried to navigate away and was stopped";
+        nav.hidden = false;
+      }
+    });
     f.src = "/api/artifact?path=" + encodeURIComponent(path) + (t === "scripts" ? "&tier=scripts" : "");
     document.getElementById("artframe").replaceWith(f);
   }
@@ -1060,21 +1106,23 @@
   document.querySelectorAll(".ctab.working").forEach(wireWorkingTab);
   function openSlot(id, key, name) {
     const open = document.querySelector('.ctab[data-pane="' + id + '"][data-key="' + key + '"]');
-    if (open) { showPane(id); return; }
+    if (open) { showPane(id); if (id === "pane-artifact") bindArtTab(open); return; }
     let slot = document.querySelector(".ctab.working:not(.pinned)");
     if (!slot) {
       slot = document.createElement("div");
       slot.className = "ctab working";
       slot.title = "Preview slot — the next selection replaces this unless pinned";
       slot.innerHTML = '<button class="pinbtn" title="Pin — keep this tab when opening something else">' + PIN_SVG + '</button><span class="t"></span><span class="x" title="Close">×</span>';
-      slot.addEventListener("click", () => showPane(slot.dataset.pane));
+      slot.addEventListener("click", () => selectTab(slot));
       wireWorkingTab(slot);
       document.querySelector(".tabbar").appendChild(slot);
     }
     slot.dataset.pane = id;
     slot.dataset.key = key;
+    if (id !== "pane-artifact") delete slot.dataset.art;
     slot.querySelector(".t").textContent = name;
     showPane(id);
+    if (id === "pane-artifact") bindArtTab(slot);
   }
   function topWorkspace(file) {
     const row = document.querySelector('#wslist [data-path="' + file + '"]')
@@ -1415,6 +1463,7 @@
     if (!artState) return;
     const next = artState.tier === "static" ? "scripts" : "static";
     renderArtifact(artState.path, next, false);
+    if (artTab && artTab.isConnected) bindArtTab(artTab);
   });
   document.getElementById("art-source").addEventListener("click", () => {
     if (!artState) return;
