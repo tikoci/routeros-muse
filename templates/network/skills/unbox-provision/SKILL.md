@@ -223,7 +223,7 @@ networks — that is import-existing-network.
   file; plan/TOML intent for the device (zero ceremony:
   one router.toml + one observations/ folder suffices).
 - A twin at the target firmware for step 3
-  (`quickchr list`; the long-lived twins are never deleted).
+  (`quickchr list`; never remove shared twins or retained evidence specimens).
 - Bench access for step 5 when hardware is real
   (netinstall server or console); camera for steps 1–2
   with EXIF/GPS handling decided up front.
