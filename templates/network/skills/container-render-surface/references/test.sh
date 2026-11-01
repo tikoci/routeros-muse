@@ -51,7 +51,7 @@ for ver, (root, note, rh, nh, rl, nl) in bodies.items():
     marker = f"t28-render-{ver}"
     check(marker in txt, f"{ver} marker {marker} in YAML")
 tr = open(f"{refs}/twin-run.md").read()
-for cite in ("orca", "2026-10-30", "twin-app", "7.26beta3"):
+for cite in ("KVM host", "2026-10-30", "CHR twin", "7.26beta3"):
     check(cite in tr, f"twin-run cites {cite}")
 sys.exit(1 if fails else 0)
 EOF

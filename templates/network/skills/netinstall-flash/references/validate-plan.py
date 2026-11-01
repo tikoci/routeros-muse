@@ -6,8 +6,9 @@ Two plan kinds (see SKILL.md §0):
   kind=server — a RouterOS /tool/netinstall package-flow server entry.
 
 Rules are grounded in the routeros-netinstall domain skill (R1-R4, R6-R7)
-and one observed hardware row shape (R5/R8: bigdude /tool/netinstall read,
-2026-10-31, redacted to field names). Exit 0 = plan passes; non-zero prints
+and one observed hardware row shape (R5/R8: a production-hardware
+/tool/netinstall read, 2026-10-31, redacted to field names).
+Exit 0 = plan passes; non-zero prints
 the failed rule id(s), one per line, as FAIL <id>: <reason>.
 Stdlib only.
 """

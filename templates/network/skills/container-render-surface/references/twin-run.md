@@ -1,14 +1,13 @@
 # twin-run: t28-render v1 + v2 sync drill
 
-Machine: orca. Date: 2026-10-30. Target: twin-app (CHR 7.26beta3, x86).
-Operator: habitat-c, inline (wave-2 fan-out down platform-side).
-Full transcript: notes/t28-render-proof.md. No secrets below.
+Machine: a KVM host. Date: 2026-10-30. Target: a CHR twin (7.26beta3, x86).
+Operator: a local CLI agent, inline. No secrets below.
 
 ## Pre-state (adopt)
 
 - /app: 103 total, custom=true: *1 t26-hello-node (disabled=false, live)
 - /container: *7 node:alpine stopped, *8 nginx:alpine stopped, *9 app-t26-hello-node running
-- /file: 19 entries (incl. pcie1/t26/app.js 73 B from T26)
+- /file: 19 entries (incl. pcie1/t26/app.js 73 B from an earlier /app drill)
 - Residue observed, untouched: duplicate t26 dstnat *4/*5, orphan veth-app-birdnet-go
 
 ## Deploy v1 (record hashes first)
@@ -17,7 +16,7 @@ Full transcript: notes/t28-render-proof.md. No secrets below.
 python3 validate: v1 transport-safe, keys ok, 639 bytes; pyyaml parse ok
 v1 root sha256: 0aeeb5cdff68981c 131 B; note sha256: e754a7b1076deb7c 38 B
 centrs explain '/app/add yaml="..."' -> verdict: pass (656 bytes)
-centrs execute --quickchr twin-app --yes '/app/add yaml="..."' -> *69 (native-api)
+centrs execute --quickchr <twin> --yes '/app/add yaml="..."' -> *69 (native-api)
 centrs execute ... '/app/set numbers=*69 use-https=no' -> ok
 centrs execute ... '/app/set numbers=*69 disabled=no' -> ok (after one transient timeout, re-polled)
 ```
@@ -52,7 +51,7 @@ sha256 served: root e732a34105e34b42 131 B; note 622d9eb83f63184f 49 B — MATCH
 cascade verified: container + veth + dstnat + bridge port removed by app (log lines)
 /file/remove x4 fetch files -> all True
 final: containers *7/*8/*9; apps 103/1 custom (*1); nat t26-only; files 20 (19 + box-generated autosupout.old.rif)
-quickchr stop twin-app -> stopped
+quickchr stop <twin> -> stopped
 ```
 
 ## Anomaly
@@ -60,4 +59,4 @@ quickchr stop twin-app -> stopped
 23:14:20 `Automatic supout.rif file generated due to service malfunction`
 during v1 start-load (same window as transient REST timeouts). Drill
 completed hash-exact regardless. Supout stays on the box, local-only.
-Upstream filing: T26 Lane-3 bucket, not filed here.
+Upstream filing: left for the /app follow-up work, not filed here.

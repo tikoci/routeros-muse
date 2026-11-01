@@ -1,10 +1,10 @@
 # twin-run — wireless-vlan-setup guest-VLAN drill
 
-Date: 2026-10-30. Machine: orca (KVM host). Target: twin1,
-CHR 7.26beta3 x86, user NIC, ports 9100-9105. Driver: centrs
-via `--quickchr`. Full transcript: notes/t28-wifivlan-proof.md
-(commands + trimmed outputs). twin2/twin3/twin4 untouched;
-twin1 left pristine and stopped (its prior state).
+Date: 2026-10-30. Machine: a KVM host. Target: a CHR twin,
+7.26beta3 x86, user NIC, ports 9100-9105. Driver: centrs
+via `--quickchr`. Commands + trimmed outputs follow.
+Other twins untouched; the drill twin left pristine and
+stopped (its prior state).
 
 ## Commands (each ran; returns observed)
 
@@ -26,14 +26,14 @@ packets / 264 bytes AND dstnat diverter 6 packets / 264
 bytes (same packets; log confirms `in:ether1
 out:t28-wv-guest`). g2o rows 0/0 — zero-hit = match-unproven,
 stated honestly. Static lease `AA:BB:CC:DD:EE:01` ->
-10.20.20.150 reads `waiting`/`never` (no L2 client in lab).
+10.20.20.150 reads `waiting`/`never` (no L2 client attached).
 
 Teardown (8 writes, dependency order): nat divert -> filter
 rows -> lease -> dhcp server -> dhcp network -> pool ->
 addresses -> vlans, each `{"ret":""}`. Re-prints: vlan, pool,
 dhcp-server, dhcp-network, lease all `{}`; address back to
 DHCP-only ether1; filter + nat back to the factory
-`unused-hs-chain` placeholder. `quickchr stop twin1`.
+`unused-hs-chain` placeholder. `quickchr stop <twin>`.
 
 ## What this run does NOT cover (pending)
 

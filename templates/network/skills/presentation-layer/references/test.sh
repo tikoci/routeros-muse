@@ -15,7 +15,7 @@ trap 'rm -rf "$work"' EXIT INT TERM
 fail=0
 
 python3 "$refs/render-views.py" --fixtures "$refs/fixtures" --out "$work/out"
-html="$work/out/views-orca.html"
+html="$work/out/views-local.html"
 svg="$work/out/views-board.svg"
 links="$work/out/views-links.md"
 for f in "$html" "$svg" "$work/out/shot.html" "$links"; do
@@ -58,7 +58,7 @@ fi
 if grep -qF "#/wireless" "$links" && grep -qF "router.invalid" "$links"; then
   echo "ok links: webfig fragments on documentation host"
 else echo "FAIL links: fragments/host"; fail=1; fi
-if grep -qF "orca" "$links" && grep -qF "muse-app" "$links"; then
+if grep -qF "local workstation agent" "$links" && grep -qF "sandboxed agent app" "$links"; then
   echo "ok links: harness routing present"
 else echo "FAIL links: harness routing"; fail=1; fi
 

@@ -10,7 +10,7 @@ fail=0
 pass() { echo "ok: $1"; }
 failf() { echo "FAIL: $1"; fail=1; }
 
-# 1. device-record fixture carries every K9 binding key.
+# 1. device-record fixture carries every slot-vs-label binding key.
 for k in device label_model label_serial label_mac bound_at bound_by \
     password_ref rendered_baseline first_pull; do
   if grep -q "^$k = " "$refs/device-record.example.toml"; then pass "device key $k";
@@ -40,8 +40,8 @@ else failf "twin-run.md must cite a date (YYYY-MM-DD)"; fi
 if grep -qiE "twin|chr|hardware|routeros" "$refs/twin-run.md"; then
   pass "twin-run.md names the proof target"
 else failf "twin-run.md must name the proof target"; fi
-if grep -q "orca" "$refs/twin-run.md"; then pass "twin-run.md cites machine orca";
-else failf "twin-run.md must cite machine orca"; fi
+if grep -q "KVM host" "$refs/twin-run.md"; then pass "twin-run.md cites the machine";
+else failf "twin-run.md must cite the machine"; fi
 
 # 4. frontmatter contract of the owning SKILL.md.
 front=$(sed -n '/^---$/,/^---$/p' "$skill_dir/SKILL.md")
