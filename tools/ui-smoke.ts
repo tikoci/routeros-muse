@@ -865,6 +865,58 @@ try {
 			newSteer.includes("WinBox"),
 			newSteer,
 		);
+		// T93: the template select defaults to minimal and scaffolds
+		// network on request. No new temp roots: both creates land in
+		// the picker's own creation dir.
+		const tplDefault = await page.locator("#pktemplate").inputValue();
+		check(
+			"template select defaults to minimal",
+			tplDefault === "minimal",
+			tplDefault,
+		);
+		await page.selectOption("#pktemplate", "network");
+		const netNote = (await page.locator("#pkcreatenote").textContent()) ?? "";
+		check(
+			"create note follows the template",
+			netNote.includes("network template"),
+			netNote,
+		);
+		await page.fill("#pkname", "smoke-net");
+		await page.click("#pkcreate");
+		await page.waitForFunction(
+			() =>
+				(document.getElementById("pklist")?.textContent ?? "").includes(
+					"smoke-net",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		const netCmd = (await page.locator("#pkcmd").textContent()) ?? "";
+		check(
+			"network create scaffolds at the default location",
+			netCmd.includes(path.join(pickNets, "smoke-net")),
+			netCmd,
+		);
+		const netStart = path.join(pickNets, "smoke-net", "START-HERE.md");
+		check(
+			"network create writes the full starter",
+			nodeFs.existsSync(netStart),
+			netStart,
+		);
+		const netToml = nodeFs.readFileSync(
+			path.join(pickNets, "smoke-net", "workspace.toml"),
+			"utf8",
+		);
+		check(
+			"network create stamps template provenance",
+			netToml.includes("[template]") && netToml.includes('name = "network"'),
+			netToml.slice(-120),
+		);
+		check(
+			"network create keeps the manifest out",
+			!nodeFs.existsSync(path.join(pickNets, "smoke-net", "template.toml")),
+		);
+		await page.screenshot({ path: path.join(OUT, "12b-picker-template.png") });
 		await pickBatch;
 		await page.screenshot({ path: path.join(OUT, "12-picker.png") });
 	} finally {
