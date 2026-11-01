@@ -824,9 +824,9 @@ updated = "2026-11-01"
 [[task]]
 id = "T83"
 title = "Render workspace artifacts in Mode B under the approved offline sandbox contract"
-status = "active"
+status = "done"
 detail = "D17/D19 are still unfulfilled in the real UI: renderDoc puts HTML into textContent, no iframe/render surface exists, and generic HTML/SVG/PNG files are absent from the picker tree. Add an explicit artifact opener/viewer, static-default and opt-in inline-script sandbox tiers (no same-origin or external refs), with agent-visible instructions. Replace the topology HTML CDN dependency with packaged/offline delivery per T41/D21. Acceptance is a real visual report/topology opened through the browser, offline and console-clean; an HTTP 200 or source-text assertion does not pass."
-evidence = "T80 real-browser file opener: sourceShown=true, renderedHeadingCount=0, frameCount=0 (notes/t80-surface-probe.ts; out/t80-review/artifact-source.png). ui.html renderDoc/loadTree; jobs.ts mermaidPage loads jsdelivr externally. T33 APIs/files exist; rendering in the product does not."
+evidence = "T80 real-browser file opener: sourceShown=true, renderedHeadingCount=0, frameCount=0 (notes/t80-surface-probe.ts; out/t80-review/artifact-source.png). ui.html renderDoc/loadTree; jobs.ts mermaidPage loads jsdelivr externally. T33 APIs/files exist; rendering in the product does not.; DONE 2026-11-01: muse t3/secure-offline-artifact-viewer (3) + t3/t83-followup (8) + t3/t83-followup2 (8), four codex sol reviews (7, 6, then 2 low findings; no UI-origin escape found in any round); orchestrator fixed the last two in 3a4e954 (verify budget per member, key tmp fd). Shipped: CSP sandbox + nosniff on every artifact, static default, owner opt-in scripts, serve-time HMAC provenance for render jobs (key in dataHome), offline mermaid 12.2.0 inlined, nav-away detection + iframe csp attr, per-tab state, no symlinks/FIFOs. Accepted residuals (documented): immediate navigation escapes detection and its first request leaves; dir-swap race. Merged with main (presentation-layer conflict resolved, T96 guard carve-out cleared, T83 tests moved onto the T94 tmp helper); main gate 348/0, smoke green, tmpdir clean."
 blocked_by = ["T33"]
 agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"

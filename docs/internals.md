@@ -95,14 +95,43 @@ row carries the production MikroTik symbol + Meta mark (T35). T40
 split the UI-agnostic reads out of the server into
 `src/lib/workspace.ts` (tree/recents/files/alerts/artifacts) and
 `src/lib/fleet.ts` (devices/stats/twins); the routes are thin
-wrappers over those modules.
+wrappers over those modules. `GET /api/artifact` serves any
+workspace path with a renderable extension (T83: html/htm/svg/
+png/jpg/jpeg/gif/webp, 8 MiB cap) behind the same auth as the
+other `/api` routes, with per-tier sandbox CSP + nosniff +
+no-store; the tree annotates each artifact with a tier hint
+(the serve tier is decided from the bytes, the viewer label
+from a fresh meta fetch). No symlink anywhere in the path:
+lstat walk, `O_NOFOLLOW` open, fstat + fd-read so one opened
+object is checked and served;
+a swapped dir component mid-request is an accepted residual,
+same class as the T97 preflight-vs-write window.
 
-Render services (T33 done): `src/render/jobs.ts` runs named jobs into
-`<workspace>/reports/render/<job>-<stamp>/` with source + time
-(`job.json`). Topology splits by context per D21 (web: mermaid .mmd +
-HTML; CLI: DOT + `dot -Tsvg`, text fallback); report renders markdown
-to self-contained HTML. Map/chart have defined contracts and honest
-not-built errors. Served via `POST /api/render` + `GET /api/artifact`.
+Render services (T33 done, T83 viewer): `src/render/jobs.ts` runs
+named jobs into `<workspace>/reports/render/<job>-<stamp>/` with
+source + time + sandbox tier (`job.json`: topology scripts, report
+static) plus an HMAC provenance signature (`job.json.sig` over
+tier + sha256 of every artifact member the job signed, keyed
+from `<dataHome>/routeros-muse/render.key`). Topology splits
+by context
+per D21 (web: mermaid .mmd + HTML with the pinned mermaid bundle
+inlined, fully offline; CLI: DOT + `dot -Tsvg`, text fallback);
+report renders markdown to self-contained HTML. Map/chart have
+defined contracts and honest not-built errors. Served via
+`POST /api/render` + `GET /api/artifact`; the UI opens artifacts
+framed in a middle tab (T83, D17/D19): static by default, scripts
+only for verified render-job tiers (a forged `job.json`, a flipped
+tier, or edited outputs fail closed to static, unlabeled) or the
+owner's Run scripts toggle — scripts are the owner's opt-in. The
+provenance defends against forged/edited workspace metadata, not a
+same-user shell reading the key. Fetches and subresources are
+blocked by the opaque-origin CSP, but navigation is NOT blockable
+by browser policy (Chromium has no `navigate-to`): the UI counts
+the frame's loads and blanks a navigating artifact with an inline
+notice instead. Artifacts must be self-contained. Residual: an
+artifact that navigates before its own load completes can escape
+the load counter — the first request out can't be prevented
+either, only reacted to.
 
 ## Templates (T93)
 
@@ -152,8 +181,10 @@ before done. Hermetic: temp workspace + temp muse home, echo
 provider, real server in-process, playwright chromium. Asserts page
 load, zero unexpected console errors, a real composer roundtrip,
 card rendering via the `window.__smoke` hook, open-in-tab wiring,
-the diff renderer, the lock/unlock/bypass/missing auth legs, and
-the no-workspace picker (list/open/prune/create); screenshots land
+the diff renderer, the lock/unlock/bypass/missing auth legs,
+the no-workspace picker (list/open/prune/create), and the T83
+artifact viewer (offline topology render, tier toggle, svg/png,
+static report); screenshots land
 in `out/ui-smoke/` for eyeballing. First run needs the browser once:
 `bunx playwright install chromium` (pinned `playwright` devDep).
 Not part of `bun test`: browsers are too slow/flaky for the unit

@@ -4,11 +4,13 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
+import { artifactTier, listRecents, type TierMemo } from "../src/lib/workspace";
 import {
 	markdownHtml,
 	runRenderJob,
 	runTopology,
 	topologyDot,
+	topologyHtmlOrThrow,
 	topologyMermaid,
 	topologyText,
 } from "../src/render/jobs";
@@ -28,6 +30,13 @@ const TOPO = {
 
 function makeRoot(): string {
 	return mktmp("t33-render-");
+}
+
+// Provenance-key homes for the job tests: each job signs with its
+// own key, never the real data home. Cleaned after the file.
+
+function makeDataHome(): string {
+	return mktmp("t33-render-dh-");
 }
 
 describe("topology sources", () => {
@@ -53,7 +62,7 @@ describe("topology sources", () => {
 describe("render jobs", () => {
 	test("web context emits mmd + html + source-time record", async () => {
 		const root = makeRoot();
-		const res = await runTopology(root, TOPO, "web");
+		const res = await runTopology(root, TOPO, "web", makeDataHome());
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("topology job failed");
 		expect(res.files).toContain("topology.mmd");
@@ -71,9 +80,84 @@ describe("render jobs", () => {
 		expect(html).toContain("gateway");
 	});
 
+	test("topology html is offline: inlined mermaid, no external script", async () => {
+		const root = makeRoot();
+		const res = await runTopology(root, TOPO, "web", makeDataHome());
+		expect(res.ok).toBe(true);
+		if (!res.ok) throw new Error("topology job failed");
+		const html = nodeFs.readFileSync(
+			path.join(root, res.dir, "topology.html"),
+			"utf8",
+		);
+		expect(html).not.toContain('src="http');
+		expect(html).not.toContain("src='http");
+		expect(html).toContain("mermaid.initialize");
+		// the browser bundle rides inside the file, not the network.
+		expect(html.length).toBeGreaterThan(1_000_000);
+	});
+
+	test("job.json carries the sandbox tier: topology scripts, report static", async () => {
+		const root = makeRoot();
+		const topo = await runTopology(root, TOPO, "web", makeDataHome());
+		expect(topo.ok).toBe(true);
+		if (!topo.ok) throw new Error("topology job failed");
+		const topoJob = JSON.parse(
+			nodeFs.readFileSync(path.join(root, topo.dir, "job.json"), "utf8"),
+		) as Record<string, unknown>;
+		expect(topoJob["tier"]).toBe("scripts");
+		const rep = await runRenderJob(
+			root,
+			"report",
+			{ title: "R", markdown: "# hi" },
+			"web",
+			makeDataHome(),
+		);
+		expect(rep.ok).toBe(true);
+		if (!rep.ok) throw new Error("report job failed");
+		const repJob = JSON.parse(
+			nodeFs.readFileSync(path.join(root, rep.dir, "job.json"), "utf8"),
+		) as Record<string, unknown>;
+		expect(repJob["tier"]).toBe("static");
+	});
+
+	test("jobs sign job.json.sig with a 0600 key beside the registry home", async () => {
+		const root = makeRoot();
+		try {
+			const dh = makeDataHome();
+			const rep = await runRenderJob(
+				root,
+				"report",
+				{ title: "R", markdown: "# hi" },
+				"web",
+				dh,
+			);
+			expect(rep.ok).toBe(true);
+			if (!rep.ok) throw new Error("report job failed");
+			const sig = nodeFs
+				.readFileSync(path.join(root, rep.dir, "job.json.sig"), "utf8")
+				.trim();
+			expect(sig).toMatch(/^[0-9a-f]{64}$/);
+			const mode = nodeFs.statSync(
+				path.join(dh, "routeros-muse", "render.key"),
+			).mode;
+			expect(mode & 0o077).toBe(0);
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a missing mermaid bundle fails the job honestly", () => {
+		expect(() => topologyHtmlOrThrow("t", "flowchart LR\n", null)).toThrow(
+			/mermaid browser bundle/,
+		);
+		const html = topologyHtmlOrThrow("t", "flowchart LR\n", "/*bundle*/");
+		expect(html).toContain("/*bundle*/");
+		expect(html).not.toContain('src="http');
+	});
+
 	test("cli context emits dot plus svg-or-text", async () => {
 		const root = makeRoot();
-		const res = await runTopology(root, TOPO, "cli");
+		const res = await runTopology(root, TOPO, "cli", makeDataHome());
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("topology job failed");
 		expect(res.files).toContain("topology.dot");
@@ -105,6 +189,7 @@ describe("render jobs", () => {
 			"report",
 			{ title: "R", markdown: "# hi" },
 			"web",
+			makeDataHome(),
 		);
 		expect(res.ok).toBe(true);
 		if (!res.ok) throw new Error("report job failed");
@@ -134,6 +219,84 @@ describe("render jobs", () => {
 		const root = makeRoot();
 		const res = await runRenderJob(root, "topology", { nodes: [] }, "web");
 		expect(res.ok).toBe(false);
+	});
+
+	test("job.json signs artifact members only", async () => {
+		const root = makeRoot();
+		try {
+			const dh = makeDataHome();
+			const topo = await runTopology(root, TOPO, "web", dh);
+			expect(topo.ok).toBe(true);
+			if (!topo.ok) throw new Error("topology job failed");
+			const tj = JSON.parse(
+				nodeFs.readFileSync(path.join(root, topo.dir, "job.json"), "utf8"),
+			) as Record<string, unknown>;
+			expect(tj["files"]).toEqual(["topology.html"]);
+			const rep = await runRenderJob(
+				root,
+				"report",
+				{ title: "R", markdown: "# hi" },
+				"web",
+				dh,
+			);
+			expect(rep.ok).toBe(true);
+			if (!rep.ok) throw new Error("report job failed");
+			const rj = JSON.parse(
+				nodeFs.readFileSync(path.join(root, rep.dir, "job.json"), "utf8"),
+			) as Record<string, unknown>;
+			expect(rj["files"]).toEqual(["report.html"]);
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("an unwritable data home still writes outputs, unsigned, with a warning", async () => {
+		const root = makeRoot();
+		try {
+			// A file where the key dir should be: mkdir fails however
+			// privileged the runner is.
+			const dhFile = path.join(root, "not-a-dir");
+			nodeFs.writeFileSync(dhFile, "x");
+			const res = await runTopology(root, TOPO, "web", dhFile);
+			expect(res.ok).toBe(true);
+			if (!res.ok) throw new Error(`job failed: ${res.why}`);
+			expect(res.warning).toMatch(/^provenance unavailable: /);
+			expect(nodeFs.existsSync(path.join(root, res.dir, "topology.html"))).toBe(
+				true,
+			);
+			expect(nodeFs.existsSync(path.join(root, res.dir, "job.json.sig"))).toBe(
+				false,
+			);
+			expect(
+				artifactTier(root, `${res.dir}/topology.html`, { dataHome: dhFile }),
+			).toBe("static");
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("after running a job, recents lists its primary artifact", async () => {
+		const root = makeRoot();
+		try {
+			const dh = makeDataHome();
+			nodeFs.writeFileSync(
+				path.join(root, "workspace.toml"),
+				"canonical = true\n",
+			);
+			const res = await runTopology(root, TOPO, "web", dh);
+			expect(res.ok).toBe(true);
+			if (!res.ok) throw new Error("topology job failed");
+			const rows = listRecents(root, {
+				dataHome: dh,
+				cache: new Map<string, TierMemo>(),
+			});
+			const hit = rows.find((r) => r.path === `${res.dir}/topology.html`);
+			expect(hit).toBeDefined();
+			expect(hit?.kind).toBe("artifact");
+			expect(hit?.tier).toBe("scripts");
+		} finally {
+			nodeFs.rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -165,10 +328,15 @@ describe("render routes", () => {
 				).json()) as { ok: boolean; dir: string; files: string[] };
 				expect(r.ok).toBe(true);
 				const art = await fetch(
-					`${srv.url}api/artifact?path=${encodeURIComponent(`${r.dir}/topology.mmd`)}`,
+					`${srv.url}api/artifact?path=${encodeURIComponent(`${r.dir}/topology.html`)}`,
 				);
 				expect(art.status).toBe(200);
-				expect(await art.text()).toContain("flowchart LR");
+				expect(await art.text()).toContain("mermaid.initialize");
+				// T83: source files are not renderable artifacts.
+				const src = await fetch(
+					`${srv.url}api/artifact?path=${encodeURIComponent(`${r.dir}/topology.mmd`)}`,
+				);
+				expect(src.status).toBe(400);
 				const outside = await fetch(
 					`${srv.url}api/artifact?path=${encodeURIComponent("workspace.toml")}`,
 				);

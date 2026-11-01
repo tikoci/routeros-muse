@@ -144,14 +144,14 @@ looking and what they need to do next.
 ### 4. Deliver (to the evidence channel, then record)
 
 - Deliver to the harness's matrix-listed evidence
-  channel: local workstation → local files + coord pointer; sandboxed
+  channel: local workstation → local files + handoff-note pointer; sandboxed
   agents → Issue or Drive .md in place (collected: the harness matrix);
   unprobed harnesses → file/PNG handoff + a note that
   the channel is assumed, not observed.
 - On render/display failure: STOP and demote. Per harness-matrix
   recovery, a green matrix cell that fails to render
   lied — reproduce, demote to pending with the failure
-  output, post to coord, re-probe. Never retry the
+  output, note it in an `inbox/` handoff, re-probe. Never retry the
   same surface twice without new evidence.
 - Record the delivery per `evidence-ledger`: which
   view, which harness, matrix date keyed off, and
@@ -202,7 +202,7 @@ is part of any render path here.
 - A delivery record (view, harness, matrix date,
   owner-confirmed or pending).
 - On failure: a matrix demotion (pending cell +
-  failure output + coord post), never a silent retry.
+  failure output + handoff note), never a silent retry.
 
 ### Verification
 
@@ -219,7 +219,7 @@ is part of any render path here.
 ### Recovery
 
 - Matrix cell lied (render/display failed) → demote
-  to pending with failure output + coord post (see
+  to pending with failure output + handoff note (see
   step 4). The cell, not the renderer, is the suspect.
 - No observed surface for the finding kind → fall
   back one rung (live page → PNG → short text) and
@@ -239,10 +239,23 @@ is part of any render path here.
 - No live-harness display check exists yet: the PNG
   mechanism is proven locally, but sandbox-PNG-inline
   and phone-thread delivery are pending day-0 probes
-  (collected: the owner-presentation notes via map-reports).
+  (collected from earlier field runs, via map-reports).
 - The present-it table is adopted OPINION, not measured
   UX — the first owner who misunderstands a picked
   artifact overrules the table; record the correction.
 - Essay fallback is a floor, not a license: two
   consecutive text fallbacks for the same harness is
   a probe-the-harness task (harness-capability-inventory), not a style.
+
+## Showing things to the owner (Mode B)
+
+- Write self-contained HTML/SVG/PNG into the workspace
+  (`reports/` preferred); the owner opens them framed.
+- Everything inline: outside fonts, scripts, images and
+  fetches are blocked. Navigation can't be *prevented*
+  (no navigate-to), only detected and stopped.
+- Residual: a navigation before the file finishes loading
+  can escape detection, and the first request still goes
+  out — no navigation is the contract.
+- Static by default: scripts run only via Run scripts or
+  the render jobs (topology, report).

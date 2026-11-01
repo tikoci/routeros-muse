@@ -38,13 +38,19 @@ import {
 } from "../lib/tools";
 import {
 	ageOf,
+	artifactProvenanceForBuffer,
+	artifactSecurityHeaders,
+	artifactTier,
 	CDB_ENCRYPT_STEERING,
+	isArtifactPath,
 	listAlerts,
 	listRecents,
 	readTomlSections,
 	readWorkspaceFile,
 	resolveArtifact,
 	scaffoldWorkspace,
+	serveArtifactTier,
+	type TierMemo,
 	type TreeEntry,
 	walkTree,
 	writeWorkspaceFile,
@@ -1079,10 +1085,29 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				if (p === "/api/tree") {
 					const out: TreeEntry[] = [];
 					walkTree(root, 0, out);
-					return json({ root, entries: out });
+					// Artifact entries carry a sandbox tier HINT for
+					// display; the viewer re-verifies via meta on open
+					// and the route decides from the served bytes.
+					// One memo per request: every artifact in a render
+					// dir shares its single verification.
+					const cx = {
+						dataHome: opts.dataHome,
+						cache: new Map<string, TierMemo>(),
+					};
+					const entries = out.map((e) =>
+						isArtifactPath(e.path)
+							? { ...e, tier: artifactTier(root, e.path, cx) }
+							: e,
+					);
+					return json({ root, entries });
 				}
 				if (p === "/api/recents") {
-					return json({ recents: listRecents(root) });
+					// One tier memo per request, as in /api/tree.
+					const cx = {
+						dataHome: opts.dataHome,
+						cache: new Map<string, TierMemo>(),
+					};
+					return json({ recents: listRecents(root, cx) });
 				}
 				if (p === "/api/file" && req.method === "GET") {
 					const rel = url.searchParams.get("path") ?? "";
@@ -1731,16 +1756,50 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const body = (await req.json()) as { job?: string; input?: unknown };
 					if (typeof body.job !== "string")
 						return json({ ok: false, why: "need {job, input}" }, 400);
-					const res = await runRenderJob(root, body.job, body.input, "web");
+					const res = await runRenderJob(
+						root,
+						body.job,
+						body.input,
+						"web",
+						opts.dataHome,
+					);
 					return json(res, res.ok ? 200 : 400);
 				}
 				if (p === "/api/artifact") {
 					const rel = url.searchParams.get("path") ?? "";
 					const res = resolveArtifact(root, rel);
 					if (!res.ok) return json({ ok: false, why: res.why }, res.status);
-					const file = Bun.file(res.full);
-					return new Response(file, {
-						headers: { "content-type": res.contentType },
+					// Serve-time tier: a client tier name is never
+					// trusted (a stale tree must not grant scripts to
+					// edited bytes) — only the owner's opt-in bit is
+					// read from the query, and provenance is decided
+					// against the exact buffer just read through the
+					// fd, never a reopened pathname.
+					const optin = url.searchParams.get("optin") === "1";
+					const tier = serveArtifactTier(root, rel, res.body, {
+						dataHome: opts.dataHome,
+						optin,
+					});
+					return new Response(new Uint8Array(res.body), {
+						headers: {
+							"content-type": res.contentType,
+							...artifactSecurityHeaders(tier),
+						},
+					});
+				}
+				if (p === "/api/artifact/meta") {
+					// Fresh provenance label for the viewer tab: always
+					// 200, null on anything unresolvable or unverified.
+					const rel = url.searchParams.get("path") ?? "";
+					const res = resolveArtifact(root, rel);
+					if (!res.ok) return json({ provenance: null });
+					return json({
+						provenance: artifactProvenanceForBuffer(
+							root,
+							rel,
+							res.body,
+							opts.dataHome,
+						),
 					});
 				}
 				if (p.startsWith("/api/past/")) {

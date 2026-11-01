@@ -105,13 +105,9 @@ describe("shipped templates carry no pilot-lab residue", () => {
 		if (!root) throw new Error("templates root missing under test");
 		const hits: string[] = [];
 		for (const f of allFiles(root)) {
-			// presentation-layer is owned by another branch; it skips
-			// the markdown-only patterns until that branch lands.
-			const ownMD = f.endsWith(".md") && !f.includes("presentation-layer");
-			const more = f.includes("presentation-layer")
-				? DENY_MORE.filter((re) => !re.test("owner-presentation"))
-				: DENY_MORE;
-			const deny = ownMD ? [...DENY, ...more, ...DENY_MD] : [...DENY, ...more];
+			const deny = f.endsWith(".md")
+				? [...DENY, ...DENY_MORE, ...DENY_MD]
+				: [...DENY, ...DENY_MORE];
 			// Whole-file matching so a citation wrapped across lines is
 			// still caught; the line number comes from the match index.
 			const text = nodeFs.readFileSync(f, "utf8");

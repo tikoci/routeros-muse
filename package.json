@@ -24,7 +24,8 @@
 	"dependencies": {
 		"@tikoci/centrs": "next",
 		"@tikoci/quickchr": "next",
-		"@tikoci/rosetta": "next"
+		"@tikoci/rosetta": "next",
+		"mermaid": "12.2.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.4",
