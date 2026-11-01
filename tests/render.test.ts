@@ -5,11 +5,7 @@ import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
-import {
-	artifactTier,
-	listRecents,
-	type TierMemo,
-} from "../src/lib/workspace";
+import { artifactTier, listRecents, type TierMemo } from "../src/lib/workspace";
 import {
 	markdownHtml,
 	runRenderJob,
@@ -269,9 +265,9 @@ describe("render jobs", () => {
 			expect(res.ok).toBe(true);
 			if (!res.ok) throw new Error(`job failed: ${res.why}`);
 			expect(res.warning).toMatch(/^provenance unavailable: /);
-			expect(
-				nodeFs.existsSync(path.join(root, res.dir, "topology.html")),
-			).toBe(true);
+			expect(nodeFs.existsSync(path.join(root, res.dir, "topology.html"))).toBe(
+				true,
+			);
 			expect(nodeFs.existsSync(path.join(root, res.dir, "job.json.sig"))).toBe(
 				false,
 			);

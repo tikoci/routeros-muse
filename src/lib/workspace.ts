@@ -844,7 +844,7 @@ function verifyRenderDir(
 		return STATIC_MEMO;
 	}
 	const manifest = parseJobManifest(parsed);
-	if (!manifest || manifest.tier !== "scripts") return STATIC_MEMO;
+	if (manifest?.tier !== "scripts") return STATIC_MEMO;
 	const key = readRenderKey(dataHome);
 	if (!key) return STATIC_MEMO;
 	const hashes: Record<string, string> = {};

@@ -510,9 +510,9 @@ describe("serve-time provenance (T83 followup 2)", () => {
 				if (!res.ok) throw new Error("topology job failed");
 				const rel = `${res.dir}/topology.html`;
 				// The tree loads while the job is fresh: a scripts hint.
-				const tree = (await (
-					await fetch(`${srv.url}api/tree`)
-				).json()) as { entries: { path: string; tier?: string }[] };
+				const tree = (await (await fetch(`${srv.url}api/tree`)).json()) as {
+					entries: { path: string; tier?: string }[];
+				};
 				expect(tree.entries.find((e) => e.path === rel)?.tier).toBe("scripts");
 				// Edit after the tree loaded; open from the stale entry,
 				// carrying its stale tier. Serve time must refuse it.
@@ -642,10 +642,7 @@ describe("serve-time provenance (T83 followup 2)", () => {
 					const dir = path.join(ws, "reports", "render", `shapejob-${i}`);
 					nodeFs.mkdirSync(dir, { recursive: true });
 					nodeFs.writeFileSync(path.join(dir, "x.html"), "<title>x</title>");
-					nodeFs.writeFileSync(
-						path.join(dir, "job.json"),
-						JSON.stringify(raw),
-					);
+					nodeFs.writeFileSync(path.join(dir, "job.json"), JSON.stringify(raw));
 					nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
 				});
 				expect((await fetch(`${srv.url}api/tree`)).status).toBe(200);
@@ -695,16 +692,14 @@ describe("serve-time provenance (T83 followup 2)", () => {
 		const key = ensureRenderKey(dh);
 		const sig = signJobPayload(
 			key,
-			canonicalJobPayload(
-				jobDirRel,
-				"scripts",
-				{ "big.html": sha256Hex(nodeFs.readFileSync(member)) },
-			),
+			canonicalJobPayload(jobDirRel, "scripts", {
+				"big.html": sha256Hex(nodeFs.readFileSync(member)),
+			}),
 		);
 		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
-		expect(
-			artifactTier(ws, `${jobDirRel}/big.html`, { dataHome: dh }),
-		).toBe("static");
+		expect(artifactTier(ws, `${jobDirRel}/big.html`, { dataHome: dh })).toBe(
+			"static",
+		);
 	});
 
 	test("a forged oversized job is rejected by shape before its members", () => {
@@ -721,7 +716,8 @@ describe("serve-time provenance (T83 followup 2)", () => {
 		// total (16 MiB), and the file count alone is over the shape
 		// cap — so no member is ever read.
 		expect(nodeFs.statSync(huge).size).toBeGreaterThan(16 * 1024 * 1024);
-		for (const f of files.slice(1)) nodeFs.writeFileSync(path.join(dir, f), "x");
+		for (const f of files.slice(1))
+			nodeFs.writeFileSync(path.join(dir, f), "x");
 		nodeFs.writeFileSync(
 			path.join(dir, "job.json"),
 			JSON.stringify({ tier: "scripts", files }),
@@ -808,29 +804,25 @@ describe("serve-time provenance (T83 followup 2)", () => {
 		});
 	});
 
-	test(
-		"a FIFO member resolves static promptly",
-		() => {
-			const ws = makeWs();
-			const dh = makeDir("t83-fu2-dh-");
-			const jobDirRel = "reports/render/fifo-stamp";
-			const dir = path.join(ws, jobDirRel);
-			nodeFs.mkdirSync(dir, { recursive: true });
-			makeFifo(path.join(dir, "m.html"));
-			nodeFs.writeFileSync(
-				path.join(dir, "job.json"),
-				JSON.stringify({ tier: "scripts", files: ["m.html"] }),
-			);
-			nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
-			// A real key on disk: without it the lookup bails before
-			// the member read and the hang goes unexercised.
-			ensureRenderKey(dh);
-			expect(artifactTier(ws, `${jobDirRel}/m.html`, { dataHome: dh })).toBe(
-				"static",
-			);
-		},
-		10_000,
-	);
+	test("a FIFO member resolves static promptly", () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-fu2-dh-");
+		const jobDirRel = "reports/render/fifo-stamp";
+		const dir = path.join(ws, jobDirRel);
+		nodeFs.mkdirSync(dir, { recursive: true });
+		makeFifo(path.join(dir, "m.html"));
+		nodeFs.writeFileSync(
+			path.join(dir, "job.json"),
+			JSON.stringify({ tier: "scripts", files: ["m.html"] }),
+		);
+		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
+		// A real key on disk: without it the lookup bails before
+		// the member read and the hang goes unexercised.
+		ensureRenderKey(dh);
+		expect(artifactTier(ws, `${jobDirRel}/m.html`, { dataHome: dh })).toBe(
+			"static",
+		);
+	}, 10_000);
 
 	test("resolveArtifact refuses FIFOs before opening", () => {
 		const ws = makeWs();
@@ -845,7 +837,10 @@ describe("serve-time provenance (T83 followup 2)", () => {
 		raws.forEach((raw, i) => {
 			const ws = makeWs();
 			const dh = makeDir("t83-fu2-dh-");
-			nodeFs.writeFileSync(path.join(ws, "workspace.toml"), "canonical = true\n");
+			nodeFs.writeFileSync(
+				path.join(ws, "workspace.toml"),
+				"canonical = true\n",
+			);
 			const jobDirRel = `reports/render/null-${i}`;
 			const dir = path.join(ws, jobDirRel);
 			nodeFs.mkdirSync(dir, { recursive: true });
