@@ -38,6 +38,7 @@ import {
 } from "../lib/tools";
 import {
 	ageOf,
+	artifactProvenanceForBuffer,
 	artifactSecurityHeaders,
 	artifactTier,
 	CDB_ENCRYPT_STEERING,
@@ -48,6 +49,7 @@ import {
 	readWorkspaceFile,
 	resolveArtifact,
 	scaffoldWorkspace,
+	serveArtifactTier,
 	type TierMemo,
 	type TreeEntry,
 	walkTree,
@@ -1083,8 +1085,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				if (p === "/api/tree") {
 					const out: TreeEntry[] = [];
 					walkTree(root, 0, out);
-					// Artifact entries carry their sandbox tier so the
-					// viewer opens render-job scripts without a re-fetch.
+					// Artifact entries carry a sandbox tier HINT for
+					// display; the viewer re-verifies via meta on open
+					// and the route decides from the served bytes.
 					// One memo per request: every artifact in a render
 					// dir shares its single verification.
 					const cx = {
@@ -1766,13 +1769,37 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const rel = url.searchParams.get("path") ?? "";
 					const res = resolveArtifact(root, rel);
 					if (!res.ok) return json({ ok: false, why: res.why }, res.status);
-					// The buffer is the checked object itself (fd-read),
-					// never a reopened pathname.
+					// Serve-time tier: a client tier name is never
+					// trusted (a stale tree must not grant scripts to
+					// edited bytes) — only the owner's opt-in bit is
+					// read from the query, and provenance is decided
+					// against the exact buffer just read through the
+					// fd, never a reopened pathname.
+					const optin = url.searchParams.get("optin") === "1";
+					const tier = serveArtifactTier(root, rel, res.body, {
+						dataHome: opts.dataHome,
+						optin,
+					});
 					return new Response(new Uint8Array(res.body), {
 						headers: {
 							"content-type": res.contentType,
-							...artifactSecurityHeaders(url.searchParams.get("tier")),
+							...artifactSecurityHeaders(tier),
 						},
+					});
+				}
+				if (p === "/api/artifact/meta") {
+					// Fresh provenance label for the viewer tab: always
+					// 200, null on anything unresolvable or unverified.
+					const rel = url.searchParams.get("path") ?? "";
+					const res = resolveArtifact(root, rel);
+					if (!res.ok) return json({ provenance: null });
+					return json({
+						provenance: artifactProvenanceForBuffer(
+							root,
+							rel,
+							res.body,
+							opts.dataHome,
+						),
 					});
 				}
 				if (p.startsWith("/api/past/")) {

@@ -5,6 +5,12 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import {
+	canonicalJobPayload,
+	ensureRenderKey,
+	sha256Hex,
+	signJobPayload,
+} from "../src/lib/renderSig";
 import { have } from "../src/lib/run";
 import {
 	ARTIFACT_CSP,
@@ -13,6 +19,7 @@ import {
 	artifactTier,
 	isArtifactPath,
 	JOB_META_MAX_BYTES,
+	listRecents,
 	resolveArtifact,
 	type TierMemo,
 } from "../src/lib/workspace";
@@ -34,6 +41,12 @@ function makeWs(): string {
 	const ws = makeDir("t83-art-ws-");
 	nodeFs.writeFileSync(path.join(ws, "workspace.toml"), "canonical = true\n");
 	return ws;
+}
+
+/** Bun's node:fs has no mkfifoSync; the coreutils binary fills in. */
+function makeFifo(p: string): void {
+	const r = Bun.spawnSync(["mkfifo", p]);
+	if (r.exitCode !== 0) throw new Error(`mkfifo ${p} failed`);
 }
 
 const STATIC_CSP =
@@ -417,7 +430,7 @@ describe("artifact security headers", () => {
 describe("artifact route", () => {
 	const t = have("muse") ? test : test.skip;
 	t(
-		"GET /api/artifact serves bytes with tier headers",
+		"GET /api/artifact serves bytes with serve-time headers",
 		async () => {
 			const ws = makeWs();
 			nodeFs.mkdirSync(path.join(ws, "reports"), { recursive: true });
@@ -441,7 +454,11 @@ describe("artifact route", () => {
 				expect(res.headers.get("x-content-type-options")).toBe("nosniff");
 				expect(res.headers.get("cache-control")).toBe("no-store");
 				expect(await res.text()).toContain("<title>t</title>");
-				const js = await fetch(`${base}&tier=scripts`);
+				// Client tier names are ignored; only opt-in grants.
+				const stale = await fetch(`${base}&tier=scripts`);
+				expect(stale.status).toBe(200);
+				expect(stale.headers.get("content-security-policy")).toBe(STATIC_CSP);
+				const js = await fetch(`${base}&optin=1`);
 				expect(js.status).toBe(200);
 				expect(js.headers.get("content-security-policy")).toBe(SCRIPTS_CSP);
 				const evil = await fetch(`${base}&tier=evil`);
@@ -460,4 +477,410 @@ describe("artifact route", () => {
 		},
 		30_000,
 	);
+});
+
+describe("serve-time provenance (T83 followup 2)", () => {
+	const t = have("muse") ? test : test.skip;
+	const TOPO2 = {
+		title: "prov2",
+		nodes: [{ id: "gw" }, { id: "ap" }],
+		links: [{ from: "gw", to: "ap" }],
+	};
+
+	async function startWs() {
+		const ws = makeWs();
+		const dh = makeDir("t83-fu2-dh-");
+		const srv = await startServer({
+			allowOpenCdb: true,
+			workspace: ws,
+			provider: "echo",
+			museHome: makeDir("t83-fu2-home-"),
+			dataHome: dh,
+		});
+		return { ws, dh, srv };
+	}
+
+	t(
+		"reviewer repro: edited bytes opened from a stale tree entry stay static",
+		async () => {
+			const { ws, dh, srv } = await startWs();
+			try {
+				const res = await runTopology(ws, TOPO2, "web", dh);
+				expect(res.ok).toBe(true);
+				if (!res.ok) throw new Error("topology job failed");
+				const rel = `${res.dir}/topology.html`;
+				// The tree loads while the job is fresh: a scripts hint.
+				const tree = (await (
+					await fetch(`${srv.url}api/tree`)
+				).json()) as { entries: { path: string; tier?: string }[] };
+				expect(tree.entries.find((e) => e.path === rel)?.tier).toBe("scripts");
+				// Edit after the tree loaded; open from the stale entry,
+				// carrying its stale tier. Serve time must refuse it.
+				nodeFs.appendFileSync(path.join(ws, rel), "<!-- edited -->\n");
+				const art = await fetch(
+					`${srv.url}api/artifact?path=${encodeURIComponent(rel)}&tier=scripts`,
+				);
+				expect(art.status).toBe(200);
+				expect(art.headers.get("content-security-policy")).toBe(STATIC_CSP);
+				const meta = (await (
+					await fetch(
+						`${srv.url}api/artifact/meta?path=${encodeURIComponent(rel)}`,
+					)
+				).json()) as { provenance: string | null };
+				expect(meta.provenance).toBeNull();
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	t(
+		"the route ignores any client tier parameter",
+		async () => {
+			const { ws, dh, srv } = await startWs();
+			try {
+				nodeFs.writeFileSync(
+					path.join(ws, "plain.html"),
+					"<!doctype html><title>p</title>",
+				);
+				const res = await runTopology(ws, TOPO2, "web", dh);
+				expect(res.ok).toBe(true);
+				if (!res.ok) throw new Error("topology job failed");
+				const job = `${res.dir}/topology.html`;
+				const cspOf = async (rel: string, q: string): Promise<string> => {
+					const r = await fetch(
+						`${srv.url}api/artifact?path=${encodeURIComponent(rel)}${q}`,
+					);
+					expect(r.status).toBe(200);
+					return r.headers.get("content-security-policy") ?? "";
+				};
+				// A client tier never grants scripts to static bytes.
+				expect(await cspOf("plain.html", "&tier=scripts")).toBe(STATIC_CSP);
+				expect(await cspOf("plain.html", "&tier=evil")).toBe(STATIC_CSP);
+				// ... and never downgrades verified bytes either: the
+				// server decides from the buffer it just read.
+				expect(await cspOf(job, "")).toBe(SCRIPTS_CSP);
+				expect(await cspOf(job, "&tier=static")).toBe(SCRIPTS_CSP);
+				expect(await cspOf(job, "&tier=scripts")).toBe(SCRIPTS_CSP);
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	t(
+		"owner opt-in grants scripts; nothing else does",
+		async () => {
+			const { ws, dh, srv } = await startWs();
+			try {
+				nodeFs.writeFileSync(path.join(ws, "plain.html"), "<title>p</title>");
+				const res = await runTopology(ws, TOPO2, "web", dh);
+				expect(res.ok).toBe(true);
+				if (!res.ok) throw new Error("topology job failed");
+				const job = `${res.dir}/topology.html`;
+				const cspOf = async (rel: string, q: string): Promise<string> => {
+					const r = await fetch(
+						`${srv.url}api/artifact?path=${encodeURIComponent(rel)}${q}`,
+					);
+					expect(r.status).toBe(200);
+					return r.headers.get("content-security-policy") ?? "";
+				};
+				expect(await cspOf("plain.html", "&optin=1")).toBe(SCRIPTS_CSP);
+				expect(await cspOf("plain.html", "&optin=0")).toBe(STATIC_CSP);
+				expect(await cspOf("plain.html", "&optin=yes")).toBe(STATIC_CSP);
+				expect(await cspOf("plain.html", "")).toBe(STATIC_CSP);
+				// Edited job bytes lose the render grant but keep opt-in.
+				nodeFs.appendFileSync(path.join(ws, job), "<!-- edited -->\n");
+				expect(await cspOf(job, "")).toBe(STATIC_CSP);
+				expect(await cspOf(job, "&optin=1")).toBe(SCRIPTS_CSP);
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	t(
+		"meta reports fresh provenance",
+		async () => {
+			const { ws, dh, srv } = await startWs();
+			try {
+				nodeFs.writeFileSync(path.join(ws, "plain.html"), "<title>p</title>");
+				const res = await runTopology(ws, TOPO2, "web", dh);
+				expect(res.ok).toBe(true);
+				if (!res.ok) throw new Error("topology job failed");
+				const job = `${res.dir}/topology.html`;
+				const provOf = async (rel: string): Promise<unknown> => {
+					const r = await fetch(
+						`${srv.url}api/artifact/meta?path=${encodeURIComponent(rel)}`,
+					);
+					expect(r.status).toBe(200);
+					return ((await r.json()) as { provenance: unknown }).provenance;
+				};
+				expect(await provOf(job)).toBe("render-job");
+				nodeFs.appendFileSync(path.join(ws, job), "<!-- edited -->\n");
+				expect(await provOf(job)).toBeNull();
+				expect(await provOf("plain.html")).toBeNull();
+				expect(await provOf("missing.html")).toBeNull();
+				expect(await provOf("workspace.toml")).toBeNull();
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	t(
+		"null-shaped job.json keeps tree and recents at 200",
+		async () => {
+			const { ws, srv } = await startWs();
+			try {
+				const raws: unknown[] = [null, [], 5, "x"];
+				raws.forEach((raw, i) => {
+					const dir = path.join(ws, "reports", "render", `shapejob-${i}`);
+					nodeFs.mkdirSync(dir, { recursive: true });
+					nodeFs.writeFileSync(path.join(dir, "x.html"), "<title>x</title>");
+					nodeFs.writeFileSync(
+						path.join(dir, "job.json"),
+						JSON.stringify(raw),
+					);
+					nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
+				});
+				expect((await fetch(`${srv.url}api/tree`)).status).toBe(200);
+				expect((await fetch(`${srv.url}api/recents`)).status).toBe(200);
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	t(
+		"fifo.html serves 400 within the timeout",
+		async () => {
+			const { ws, srv } = await startWs();
+			try {
+				makeFifo(path.join(ws, "fifo.html"));
+				const r = await fetch(
+					`${srv.url}api/artifact?path=${encodeURIComponent("fifo.html")}`,
+					{ signal: AbortSignal.timeout(10_000) },
+				);
+				expect(r.status).toBe(400);
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	test("an over-cap member is rejected without trusting its bytes", () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-fu2-dh-");
+		const jobDirRel = "reports/render/big-stamp";
+		const dir = path.join(ws, jobDirRel);
+		nodeFs.mkdirSync(dir, { recursive: true });
+		// Sparse: instant, no disk. The size gate must refuse it
+		// before any read — asserted by the size precondition, not
+		// timing.
+		const member = path.join(dir, "big.html");
+		nodeFs.writeFileSync(member, "");
+		nodeFs.truncateSync(member, ARTIFACT_MAX_BYTES + 1);
+		expect(nodeFs.statSync(member).size).toBeGreaterThan(ARTIFACT_MAX_BYTES);
+		nodeFs.writeFileSync(
+			path.join(dir, "job.json"),
+			JSON.stringify({ tier: "scripts", files: ["big.html"] }),
+		);
+		const key = ensureRenderKey(dh);
+		const sig = signJobPayload(
+			key,
+			canonicalJobPayload(
+				jobDirRel,
+				"scripts",
+				{ "big.html": sha256Hex(nodeFs.readFileSync(member)) },
+			),
+		);
+		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
+		expect(
+			artifactTier(ws, `${jobDirRel}/big.html`, { dataHome: dh }),
+		).toBe("static");
+	});
+
+	test("a forged oversized job is rejected by shape before its members", () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-fu2-dh-");
+		const jobDirRel = "reports/render/many-stamp";
+		const dir = path.join(ws, jobDirRel);
+		nodeFs.mkdirSync(dir, { recursive: true });
+		const files = Array.from({ length: 17 }, (_, i) => `m${i}.html`);
+		const huge = path.join(dir, "m0.html");
+		nodeFs.writeFileSync(huge, "");
+		nodeFs.truncateSync(huge, 64 * 1024 * 1024);
+		// Precondition, not timing: the member dwarfs the per-verify
+		// total (16 MiB), and the file count alone is over the shape
+		// cap — so no member is ever read.
+		expect(nodeFs.statSync(huge).size).toBeGreaterThan(16 * 1024 * 1024);
+		for (const f of files.slice(1)) nodeFs.writeFileSync(path.join(dir, f), "x");
+		nodeFs.writeFileSync(
+			path.join(dir, "job.json"),
+			JSON.stringify({ tier: "scripts", files }),
+		);
+		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
+		// A real key on disk: without it the lookup bails before any
+		// member read and the no-read property goes unexercised.
+		ensureRenderKey(dh);
+		expect(artifactTier(ws, `${jobDirRel}/m1.html`, { dataHome: dh })).toBe(
+			"static",
+		);
+	});
+
+	test("seventeen validly-signed members still grant nothing", () => {
+		const ws = makeWs();
+		const dh = makeDir("t83-fu2-dh-");
+		const jobDirRel = "reports/render/cap-stamp";
+		const dir = path.join(ws, jobDirRel);
+		nodeFs.mkdirSync(dir, { recursive: true });
+		const files = Array.from({ length: 17 }, (_, i) => `m${i}.html`);
+		const hashes: Record<string, string> = {};
+		for (const f of files) {
+			nodeFs.writeFileSync(path.join(dir, f), `<title>${f}</title>`);
+			hashes[f] = sha256Hex(nodeFs.readFileSync(path.join(dir, f)));
+		}
+		nodeFs.writeFileSync(
+			path.join(dir, "job.json"),
+			JSON.stringify({ tier: "scripts", files }),
+		);
+		const sig = signJobPayload(
+			ensureRenderKey(dh),
+			canonicalJobPayload(jobDirRel, "scripts", hashes),
+		);
+		nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
+		expect(artifactTier(ws, `${jobDirRel}/m0.html`, { dataHome: dh })).toBe(
+			"static",
+		);
+	});
+
+	test("duplicate or invalid member names grant nothing", () => {
+		const cases: { files: unknown[]; setup: string[]; request: string }[] = [
+			{ files: ["a.html", "a.html"], setup: ["a.html"], request: "a.html" },
+			{ files: ["evil.exe"], setup: ["evil.exe"], request: "evil.exe" },
+			{ files: ["noext"], setup: ["noext"], request: "noext" },
+			{ files: ["../x.html"], setup: [], request: "x.html" },
+			{ files: ["sub/a.html"], setup: ["sub/a.html"], request: "other.html" },
+			{ files: ["a.html", 5], setup: ["a.html"], request: "a.html" },
+		];
+		cases.forEach((c, i) => {
+			const ws = makeWs();
+			const dh = makeDir("t83-fu2-dh-");
+			const jobDirRel = `reports/render/names-${i}`;
+			const dir = path.join(ws, jobDirRel);
+			nodeFs.mkdirSync(dir, { recursive: true });
+			const hashes: Record<string, string> = {};
+			for (const f of c.setup) {
+				const full = path.join(dir, f);
+				nodeFs.mkdirSync(path.dirname(full), { recursive: true });
+				nodeFs.writeFileSync(full, "<title>t</title>");
+				hashes[f] = sha256Hex(nodeFs.readFileSync(full));
+			}
+			// Signed with the real key over the hashable members (a
+			// zero hash where nothing hashable backs the name): the
+			// old code grants the contained cases, the shape gate
+			// refuses them all.
+			for (const f of c.files) {
+				if (typeof f === "string" && hashes[f] === undefined) {
+					hashes[f] = "0".repeat(64);
+				}
+			}
+			nodeFs.writeFileSync(
+				path.join(dir, "job.json"),
+				JSON.stringify({ tier: "scripts", files: c.files }),
+			);
+			const sig = signJobPayload(
+				ensureRenderKey(dh),
+				canonicalJobPayload(jobDirRel, "scripts", hashes),
+			);
+			nodeFs.writeFileSync(path.join(dir, "job.json.sig"), `${sig}\n`);
+			expect(
+				artifactTier(ws, `${jobDirRel}/${c.request}`, { dataHome: dh }),
+				JSON.stringify(c.files),
+			).toBe("static");
+		});
+	});
+
+	test(
+		"a FIFO member resolves static promptly",
+		() => {
+			const ws = makeWs();
+			const dh = makeDir("t83-fu2-dh-");
+			const jobDirRel = "reports/render/fifo-stamp";
+			const dir = path.join(ws, jobDirRel);
+			nodeFs.mkdirSync(dir, { recursive: true });
+			makeFifo(path.join(dir, "m.html"));
+			nodeFs.writeFileSync(
+				path.join(dir, "job.json"),
+				JSON.stringify({ tier: "scripts", files: ["m.html"] }),
+			);
+			nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
+			// A real key on disk: without it the lookup bails before
+			// the member read and the hang goes unexercised.
+			ensureRenderKey(dh);
+			expect(artifactTier(ws, `${jobDirRel}/m.html`, { dataHome: dh })).toBe(
+				"static",
+			);
+		},
+		10_000,
+	);
+
+	test("resolveArtifact refuses FIFOs before opening", () => {
+		const ws = makeWs();
+		makeFifo(path.join(ws, "fifo.html"));
+		const r = resolveArtifact(ws, "fifo.html");
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.status).toBe(400);
+	});
+
+	test("null-shaped job.json fails closed without throwing", () => {
+		const raws: unknown[] = [null, [], 5, "x"];
+		raws.forEach((raw, i) => {
+			const ws = makeWs();
+			const dh = makeDir("t83-fu2-dh-");
+			nodeFs.writeFileSync(path.join(ws, "workspace.toml"), "canonical = true\n");
+			const jobDirRel = `reports/render/null-${i}`;
+			const dir = path.join(ws, jobDirRel);
+			nodeFs.mkdirSync(dir, { recursive: true });
+			nodeFs.writeFileSync(path.join(dir, "x.html"), "<title>x</title>");
+			nodeFs.writeFileSync(path.join(dir, "job.json"), JSON.stringify(raw));
+			nodeFs.writeFileSync(path.join(dir, "job.json.sig"), "0".repeat(64));
+			expect(artifactTier(ws, `${jobDirRel}/x.html`, { dataHome: dh })).toBe(
+				"static",
+			);
+			expect(() => listRecents(ws, { dataHome: dh })).not.toThrow();
+		});
+	});
+});
+
+describe("artifact frame pins (T83 followup 2)", () => {
+	function uiBytes(): string {
+		return nodeFs.readFileSync(
+			path.join(import.meta.dir, "..", "src", "serve", "ui.html"),
+			"utf8",
+		);
+	}
+
+	test("the framed CSP strings are pinned in the UI bytes", () => {
+		const ui = uiBytes();
+		expect(ui).toContain(ARTIFACT_CSP.static);
+		expect(ui).toContain(ARTIFACT_CSP.scripts);
+	});
+
+	test("the frame carries its tier CSP as its csp attribute", () => {
+		expect(uiBytes()).toContain('setAttribute("csp"');
+	});
+
+	test("the frame src carries opt-in, never a tier name", () => {
+		const ui = uiBytes();
+		expect(ui).toContain("optin=1");
+		expect(ui).not.toContain("&tier=");
+	});
 });
