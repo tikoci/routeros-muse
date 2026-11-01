@@ -121,7 +121,12 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const consoleErrors: string[] = [];
 // T83: sandboxed artifact frames report their own script blocks; the
 // frame URL separates those expected notices from real errors below.
+// The deliberate nav-abort fixture (navaway.html) also reports its
+// aborted escape as a net error; that rides its own named array so
+// the final filter stays explicit about what it excuses.
 const artifactBlocks: string[] = [];
+const artifactBlockUrls: string[] = [];
+const navAbortErrors: string[] = [];
 function isKnownArtifactBlock(text: string): boolean {
 	return (
 		text.includes("because the document's frame is sandboxed") ||
@@ -132,7 +137,15 @@ page.on("console", (msg) => {
 	if (msg.type() === "error") {
 		const text = msg.text().slice(0, 300);
 		consoleErrors.push(text);
-		if (msg.location().url.includes("/api/artifact")) artifactBlocks.push(text);
+		const url = msg.location().url;
+		if (url.includes("/api/artifact")) {
+			if (url.includes("navaway.html") && text.includes("net::ERR_")) {
+				navAbortErrors.push(text);
+			} else {
+				artifactBlocks.push(text);
+				artifactBlockUrls.push(url);
+			}
+		}
 	}
 });
 // T89: every 4xx/5xx response is recorded route-specifically; the final
@@ -1542,11 +1555,14 @@ try {
 		await t84Srv.stop();
 	}
 
-	// T83: the artifact viewer. A topology render job opens framed in
-	// the scripts tier with a real mermaid SVG and zero outside
-	// requests; a static probe page blocks its inline script until the
-	// owner toggles Run scripts; SVG and PNG display; the report job
-	// opens static. Screenshots 24-26.
+	// T83: the artifact viewer. Render primaries surface in recents;
+	// a topology render job opens framed in the scripts tier with a
+	// real mermaid SVG, zero outside requests, zero CSP violations
+	// (live listener plus a static markup scan); a static probe page
+	// blocks its inline script until the owner toggles Run scripts; a
+	// navigating artifact is blanked with an inline notice; each
+	// artifact tab keeps its own artifact; SVG and PNG display; the
+	// report job opens static. Screenshots 24-28.
 	const t83Ws = makeWorkspace();
 	nodeFs.mkdirSync(path.join(t83Ws, "reports"), { recursive: true });
 	nodeFs.writeFileSync(
@@ -1563,6 +1579,20 @@ try {
 			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
 			"base64",
 		),
+	);
+	// T83 followup: a scripts-tier escape attempt (runs only after the
+	// owner's Run scripts opt-in) plus two files for the per-tab leg.
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "navaway.html"),
+		'<!doctype html><html><body><div id="n">stay</div><script>location.href="http://example.invalid/";</script></body></html>\n',
+	);
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "first.html"),
+		'<!doctype html><html><body><div id="who">first</div></body></html>\n',
+	);
+	nodeFs.writeFileSync(
+		path.join(t83Ws, "reports", "second.html"),
+		'<!doctype html><html><body><div id="who">second</div></body></html>\n',
 	);
 	const t83Srv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
@@ -1625,18 +1655,34 @@ try {
 			await page.waitForSelector("#pane-artifact.active", { timeout: 10_000 });
 		};
 		const artFrame = page.frameLocator("#artframe");
-		// Offline proof: abort and record every request leaving the box.
+		// Render primaries surface in recents with the ART kind.
+		for (const primary of ["topology.html", "report.html"]) {
+			const row = page.locator(`#wslist .docrow[data-path$="${primary}"]`);
+			await row.first().waitFor({ timeout: 10_000 });
+			check(
+				`t83 recents lists the ${primary} primary`,
+				(await row.count()) === 1 &&
+					((await row.first().locator(".kchip").textContent()) ?? "") === "ART",
+			);
+		}
+		// Offline proof: abort and record every request that is not to
+		// this server's own loopback port.
 		const externalHosts: string[] = [];
+		const t83Port = new URL(t83Srv.url).port;
 		await page.route("**/*", async (route) => {
-			const host = new URL(route.request().url()).hostname;
-			if (host === "127.0.0.1" || host === "localhost") {
+			const u = new URL(route.request().url());
+			if (
+				(u.hostname === "127.0.0.1" || u.hostname === "localhost") &&
+				u.port === t83Port
+			) {
 				await route.continue();
 			} else {
-				externalHosts.push(host);
+				externalHosts.push(u.host);
 				await route.abort();
 			}
 		});
 		try {
+			const blocksBefore = artifactBlocks.length;
 			await openFromTree("topology.html");
 			check(
 				"t83 topology opens in the scripts tier",
@@ -1645,6 +1691,19 @@ try {
 						"render job",
 					),
 			);
+			let topoFrame = page.frame({ url: /topology\.html/ });
+			for (let i = 0; i < 100 && !topoFrame; i++) {
+				await new Promise((r) => setTimeout(r, 100));
+				topoFrame = page.frame({ url: /topology\.html/ });
+			}
+			check("t83 topology frame is reachable", topoFrame !== null);
+			await topoFrame?.evaluate(() => {
+				const w = window as unknown as { __spv: string[] };
+				w.__spv = [];
+				document.addEventListener("securitypolicyviolation", (e) => {
+					w.__spv.push(`${e.violatedDirective} ${e.blockedURI}`);
+				});
+			});
 			await artFrame.locator("svg .node").first().waitFor({ timeout: 30_000 });
 			const topoNodes = await artFrame.locator("svg .node").count();
 			check("t83 mermaid svg renders nodes", topoNodes >= 2, `n=${topoNodes}`);
@@ -1653,14 +1712,56 @@ try {
 				externalHosts.length === 0,
 				externalHosts.join(","),
 			);
+			check(
+				"t83 topology logs zero frame errors",
+				artifactBlocks.length === blocksBefore,
+				artifactBlocks.slice(blocksBefore).join(" | "),
+			);
+			// Keep observing past render: our own output must not even
+			// attempt an external load.
+			await new Promise((r) => setTimeout(r, 2000));
+			const spv =
+				(await topoFrame?.evaluate(
+					() => (window as unknown as { __spv: string[] }).__spv,
+				)) ?? null;
+			check(
+				"t83 topology raises zero csp violations",
+				Array.isArray(spv) && spv.length === 0,
+				(spv ?? ["no frame"]).join(" | "),
+			);
 			await page.screenshot({ path: path.join(OUT, "24-t83-topology.png") });
 		} finally {
 			await page.unroute("**/*");
+		}
+		// Static scan of the generated file: no external src/href in
+		// the markup (scripts stripped first — the mermaid bundle is
+		// code, not markup).
+		{
+			const renderRoot = path.join(t83Ws, "reports", "render");
+			let topoSrc = "";
+			for (const jd of nodeFs.readdirSync(renderRoot)) {
+				const cand = path.join(renderRoot, jd, "topology.html");
+				if (nodeFs.existsSync(cand))
+					topoSrc = nodeFs.readFileSync(cand, "utf8");
+			}
+			check("t83 generated topology.html found", topoSrc.length > 0);
+			const markup = topoSrc.replace(/<script[\s>][\s\S]*?<\/script\s*>/gi, "");
+			const extRefs =
+				markup.match(/\b(?:src|href)\s*=\s*["']https?:\/\//gi) ?? [];
+			check(
+				"t83 topology markup carries no external src/href",
+				extRefs.length === 0,
+				extRefs.slice(0, 3).join(" | "),
+			);
 		}
 		await openFromTree("probe.html");
 		check(
 			"t83 probe opens static",
 			((await page.locator("#art-tier").textContent()) ?? "") === "static",
+		);
+		check(
+			"t83 live sandbox starts empty",
+			(await page.locator("#artframe").getAttribute("sandbox")) === "",
 		);
 		await artFrame.locator("#t").waitFor({ timeout: 10_000 });
 		const before = (await artFrame.locator("#t").textContent()) ?? "";
@@ -1692,7 +1793,100 @@ try {
 			after === "yes",
 			after ?? "",
 		);
+		check(
+			"t83 live sandbox holds only allow-scripts",
+			(await page.locator("#artframe").getAttribute("sandbox")) ===
+				"allow-scripts",
+		);
 		await page.screenshot({ path: path.join(OUT, "26-t83-probe-scripts.png") });
+		// Navigation cannot be blocked by policy (Chromium has no
+		// navigate-to): the UI counts the frame's loads and blanks a
+		// navigating artifact with an inline notice. Screenshots 27-28.
+		const navHosts: string[] = [];
+		await page.route("**/*", async (route) => {
+			const host = new URL(route.request().url()).hostname;
+			if (host === "127.0.0.1" || host === "localhost") {
+				await route.continue();
+			} else {
+				navHosts.push(host);
+				await route.abort();
+			}
+		});
+		try {
+			await openFromTree("navaway.html");
+			check(
+				"t83 nav fixture opens static",
+				((await page.locator("#art-tier").textContent()) ?? "") === "static",
+			);
+			await page.locator("#art-toggle").click();
+			let navStopped = false;
+			try {
+				await page
+					.locator("#art-nav")
+					.waitFor({ state: "visible", timeout: 10_000 });
+				navStopped = true;
+			} catch {
+				navStopped = false;
+			}
+			check(
+				"t83 navigating artifact is stopped with a notice",
+				navStopped &&
+					((await page.locator("#art-nav").textContent()) ?? "").includes(
+						"tried to navigate away",
+					),
+			);
+			check(
+				"t83 stopped frame is blank",
+				(await page.locator("#artframe").getAttribute("src")) === "about:blank",
+			);
+			check(
+				"t83 the escape attempt really fired",
+				navHosts.includes("example.invalid"),
+				navHosts.join(","),
+			);
+			check(
+				"t83 the nav abort surfaces its net error",
+				navAbortErrors.length >= 1,
+				navAbortErrors.join(" | "),
+			);
+			await page.screenshot({ path: path.join(OUT, "27-t83-navaway.png") });
+		} finally {
+			await page.unroute("**/*");
+		}
+		// Each artifact tab keeps its own artifact: pin the first,
+		// open the second, reselect the first.
+		await openFromTree("first.html");
+		const firstTab = page.locator(".ctab.working", {
+			has: page.locator(".t", { hasText: "first.html" }),
+		});
+		await firstTab.locator(".pinbtn").click();
+		await openFromTree("second.html");
+		check(
+			"t83 second artifact binds",
+			((await page.locator("#art-title").textContent()) ?? "") ===
+				"second.html",
+		);
+		const firstTabAgain = page.locator(".ctab.working", {
+			has: page.locator(".t", { hasText: "first.html" }),
+		});
+		await firstTabAgain.locator(".t").click();
+		await page
+			.waitForFunction(
+				() =>
+					document.getElementById("art-title")?.textContent === "first.html",
+				undefined,
+				{ timeout: 10_000 },
+			)
+			.catch(() => {});
+		check(
+			"t83 reselecting the first tab re-binds its header",
+			((await page.locator("#art-title").textContent()) ?? "") === "first.html",
+		);
+		check(
+			"t83 reselecting the first tab re-binds its frame",
+			((await artFrame.locator("#who").textContent()) ?? "") === "first",
+		);
+		await page.screenshot({ path: path.join(OUT, "28-t83-tabs.png") });
 		await openFromTree("pic.svg");
 		await artFrame.locator("svg").first().waitFor({ timeout: 10_000 });
 		check(
@@ -1719,6 +1913,17 @@ try {
 			"t83 artifact frame errors are only sandbox/csp blocks",
 			artifactBlocks.every(isKnownArtifactBlock),
 			artifactBlocks.join(" | "),
+		);
+		// Expected frame errors come only from the deliberate probe
+		// fixtures, named explicitly: probe.html (static-phase script
+		// block) and navaway.html (static-phase block; its aborted
+		// escape rides navAbortErrors instead).
+		check(
+			"t83 frame errors come only from the probe fixtures",
+			artifactBlockUrls.every(
+				(u) => u.includes("probe.html") || u.includes("navaway.html"),
+			),
+			artifactBlockUrls.join(" | "),
 		);
 	} finally {
 		await t83Srv.stop();
@@ -1926,7 +2131,8 @@ try {
 	const unexpectedConsole = consoleErrors.filter(
 		(e) =>
 			!expectedStatuses.includes(resourceStatus(e) ?? -1) &&
-			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)),
+			!(artifactBlocks.includes(e) && isKnownArtifactBlock(e)) &&
+			!navAbortErrors.includes(e),
 	);
 	check(
 		"console errors are only the expected resource loads",
