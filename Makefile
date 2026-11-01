@@ -11,8 +11,19 @@ smoke:
 lint:
 	bun run lint
 
-# The full pre-handoff gate: lint + tests + browser smoke.
-gate: lint test smoke
+# The full pre-handoff gate: lint, then the suite + smoke under a fresh
+# private TMPDIR (T94). Fails if anything is left behind in it; the
+# checker lists the leftovers. All three stages run even when an early
+# one fails, so one gate shows lint/test/smoke/leak signal together.
+gate: lint
+	@tmpdir=$$(mktemp -d); \
+	echo "gate TMPDIR: $$tmpdir"; \
+	fail=0; \
+	TMPDIR="$$tmpdir" bun test || fail=1; \
+	TMPDIR="$$tmpdir" bun tools/ui-smoke.ts || fail=1; \
+	bun tools/check-tmpdir.ts "$$tmpdir" || fail=1; \
+	rm -rf "$$tmpdir"; \
+	exit $$fail
 
 # Router captures (tools/pull, folded from pull/Makefile at T14): one
 # command captures one router into files under out/ (local-only, never
