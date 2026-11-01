@@ -245,3 +245,16 @@ is part of any render path here.
 - Essay fallback is a floor, not a license: two
   consecutive text fallbacks for the same harness is
   a probe-the-harness task (#54), not a style.
+
+## Showing things to the owner (Mode B)
+
+- Write self-contained HTML/SVG/PNG into the
+  workspace (`reports/` preferred); the owner opens
+  them framed in a middle tab from the file tree.
+- No external refs, ever: fonts, scripts, images,
+  and fetches outside the file are blocked.
+- Static is the default: inline styles and images
+  render; inline scripts stay blocked until the
+  owner clicks Run scripts. The built-in render
+  jobs (topology, report) are the paved path when
+  they fit — topology runs scripts by design.
