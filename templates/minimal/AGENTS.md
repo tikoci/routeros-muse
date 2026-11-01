@@ -9,7 +9,10 @@ execution, leave evidence.
 
 Write self-contained HTML/SVG/PNG into the workspace
 (`reports/` preferred); the owner opens them framed in a
-middle tab from the file tree. No external refs — they are
-blocked. Static is the default: inline scripts run only
-when the owner clicks Run scripts, or for the built-in
-render jobs (topology, report).
+middle tab from the file tree. Fetches and subresources
+are blocked, so everything must be inline; a file that
+navigates away is blanked with a notice (navigation can't
+be prevented by browser policy, only detected and stopped).
+Static is the default: inline scripts run only when the
+owner clicks Run scripts, or for the built-in render jobs
+(topology, report) — scripts are the owner's opt-in.
