@@ -1,6 +1,6 @@
 // Mode B server tests (T31 slice 2). Echo provider + isolated homes;
 // hermetic, no API cost. Skipped when `muse` is not on PATH.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
@@ -28,6 +28,9 @@ import {
 	lanUrls,
 	startServer,
 } from "../src/serve/server";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const HAVE_MUSE = have("muse");
 const HAVE_CENTRS = have("centrs");
@@ -36,7 +39,7 @@ const tc = HAVE_MUSE && HAVE_CENTRS ? test : test.skip;
 const tcentrs = HAVE_CENTRS ? test : test.skip;
 
 function makeWorkspace(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t31-serve-ws-"));
+	const dir = mktmp("t31-serve-ws-");
 	nodeFs.writeFileSync(path.join(dir, "workspace.toml"), "canonical = true\n");
 	nodeFs.writeFileSync(
 		path.join(dir, "router.toml"),
@@ -56,11 +59,11 @@ const CATALOG_FIXTURE = path.join(import.meta.dir, "fixtures", "model-catalog");
 // T40 hermeticity: every test server gets its own data home, so
 // workspace boots never touch the developer's real registry.
 function makeDataHome(): string {
-	return nodeFs.mkdtempSync(path.join(os.tmpdir(), "t31-serve-dh-"));
+	return mktmp("t31-serve-dh-");
 }
 
 function makeHome(seeded = true): string {
-	const home = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t31-serve-home-"));
+	const home = mktmp("t31-serve-home-");
 	if (seeded) {
 		const dir = path.join(home, "muse", "model-catalog");
 		nodeFs.mkdirSync(dir, { recursive: true });
@@ -464,7 +467,7 @@ describe("serve", () => {
 	tc(
 		"no-workspace cdbFile override serves that registry, never the operator CDB",
 		async () => {
-			const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t46-serve-cdb-"));
+			const dir = mktmp("t46-serve-cdb-");
 			const emptyCdb = path.join(dir, "empty.cdb");
 			const init = Bun.spawnSync(["centrs", "devices", "init"], {
 				env: { ...process.env, CENTRS_CDB_FILE: emptyCdb },
@@ -1101,12 +1104,10 @@ describe("auth (T39)", () => {
 	t(
 		"hermetic logged-out probe reports absent (no turn cost)",
 		async () => {
-			const home = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t39-nohome-"));
-			const config = nodeFs.mkdtempSync(
-				path.join(os.tmpdir(), "t39-noconfig-"),
-			);
+			const home = mktmp("t39-nohome-");
+			const config = mktmp("t39-noconfig-");
 			nodeFs.mkdirSync(path.join(config, "muse"), { recursive: true });
-			const ws = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t39-probe-ws-"));
+			const ws = mktmp("t39-probe-ws-");
 			const got = await probeMetaAuth(
 				() =>
 					MspClient.spawn({
@@ -1128,7 +1129,7 @@ describe("package tool bundle (T51)", () => {
 	const tstub = process.platform === "win32" ? test.skip : test;
 
 	function stubTrilogy(): string {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t51-srvbin-"));
+		const dir = mktmp("t51-srvbin-");
 		const shim = (name: string, body: string): void => {
 			const file = path.join(dir, name);
 			nodeFs.writeFileSync(file, `#!/bin/sh\n${body}\n`);
@@ -1337,7 +1338,7 @@ describe("unlock context (T64)", () => {
 	});
 
 	tcentrs("detection reports an explicit missing path as missing", async () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t64-missing-"));
+		const dir = mktmp("t64-missing-");
 		const got = await detectCdbMode(path.join(dir, "device.cdb"));
 		expect(got.mode).toBe("missing");
 	});
@@ -1345,7 +1346,7 @@ describe("unlock context (T64)", () => {
 	t64stub(
 		"verify refuses the open-file warning with a single spawn",
 		async () => {
-			const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t64-verbin-"));
+			const dir = mktmp("t64-verbin-");
 			const calls = path.join(dir, "calls.log");
 			writeShim(
 				dir,
@@ -1367,7 +1368,7 @@ describe("unlock context (T64)", () => {
 	);
 
 	tcentrs("verify requires encrypted against real CDBs", async () => {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t64-verify-"));
+		const dir = mktmp("t64-verify-");
 		const openCdb = path.join(dir, "open.cdb");
 		const init = childProcess.spawnSync("centrs", ["devices", "init"], {
 			env: { ...process.env, CENTRS_CDB_FILE: openCdb },
@@ -1447,7 +1448,7 @@ describe("unlock context (T64)", () => {
 	t64stub(
 		"device rows carry no password key",
 		async () => {
-			const bin = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t64-redact-"));
+			const bin = mktmp("t64-redact-");
 			writeShim(
 				bin,
 				"centrs",
@@ -1489,7 +1490,7 @@ describe("unlock context (T64)", () => {
 	function stubMuseBin(): { bin: string; seen: string } {
 		const realBin = toolBinDir();
 		if (!realBin) throw new Error("installed bundle required");
-		const bin = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t64-musebin-"));
+		const bin = mktmp("t64-musebin-");
 		const seen = path.join(bin, "muse-env.txt");
 		const out = JSON.stringify(seen);
 		writeShim(
@@ -1504,7 +1505,7 @@ describe("unlock context (T64)", () => {
 	}
 
 	function seedEncrypted(): string {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t64-seed-"));
+		const dir = mktmp("t64-seed-");
 		const cdb = path.join(dir, "seeded.cdb");
 		nodeFs.copyFileSync(ENCRYPTED_FIXTURE, cdb);
 		const added = childProcess.spawnSync(
@@ -1709,7 +1710,7 @@ describe("set credentials (T48)", () => {
 	};
 
 	function seedOpenCdb(records: SeedRecord[]): string {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t48-seed-"));
+		const dir = mktmp("t48-seed-");
 		const cdb = path.join(dir, "seeded.cdb");
 		const env = { ...process.env, CENTRS_CDB_FILE: cdb };
 		const init = childProcess.spawnSync("centrs", ["devices", "init"], { env });
@@ -1726,7 +1727,7 @@ describe("set credentials (T48)", () => {
 	}
 
 	function seedEncryptedCdb(user?: string): string {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t48-enc-"));
+		const dir = mktmp("t48-enc-");
 		const cdb = path.join(dir, "seeded.cdb");
 		nodeFs.copyFileSync(T48_FIXTURE, cdb);
 		const env = {
@@ -1742,7 +1743,7 @@ describe("set credentials (T48)", () => {
 	}
 
 	function makeCredWorkspace(routerToml: string, cdb: string): string {
-		const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t48-ws-"));
+		const dir = mktmp("t48-ws-");
 		nodeFs.writeFileSync(
 			path.join(dir, "workspace.toml"),
 			"canonical = true\n",

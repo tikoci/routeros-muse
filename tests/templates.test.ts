@@ -4,7 +4,6 @@
 // temp dirs (all cleaned in afterAll), stub centrs, no live turns.
 import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
 	copyTemplateFiles,
@@ -18,22 +17,12 @@ import { toolEnv } from "../src/lib/tools";
 import { scaffoldIntoDir, scaffoldWorkspace } from "../src/lib/workspace";
 import { startServer } from "../src/serve/server";
 import { readAndValidate } from "../src/steps/workspace";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const POSIX = process.platform !== "win32";
 const tposix = POSIX ? test : test.skip;
-
-const tmpdirs: string[] = [];
-afterAll(() => {
-	for (const d of tmpdirs) {
-		nodeFs.rmSync(d, { recursive: true, force: true });
-	}
-});
-
-function mktmp(prefix: string): string {
-	const d = nodeFs.mkdtempSync(path.join(os.tmpdir(), prefix));
-	tmpdirs.push(d);
-	return d;
-}
 
 function writeShim(dir: string, name: string, body: string): void {
 	const file = path.join(dir, name);

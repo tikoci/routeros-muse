@@ -8,12 +8,14 @@
 // sessionNotLoaded, like the real host), and a stub centrs emulates
 // an encrypted CDB for unlock tokens. The ambient `muse` binary is
 // only probed for presence (the server's spawn gate), never run.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
 import { startServer } from "../src/serve/server";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const HAVE_MUSE = have("muse");
 // Shell shims (POSIX) + the server's ambient-muse spawn gate.
@@ -145,7 +147,7 @@ function writeShim(dir: string, name: string, body: string): void {
 
 /** Fronted PATH dir: stateful fake muse + stub trilogy (all hermetic). */
 function stubBin(): { bin: string; log: string } {
-	const bin = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t81-bin-"));
+	const bin = mktmp("t81-bin-");
 	const log = path.join(bin, "msp.log");
 	nodeFs.writeFileSync(path.join(bin, "fake-muse.ts"), FAKE_MUSE);
 	writeShim(
@@ -179,14 +181,14 @@ async function startT81Srv(bin: string): Promise<{
 	url: string;
 	stop: () => Promise<void>;
 }> {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t81-cdb-"));
+	const dir = mktmp("t81-cdb-");
 	const cdb = path.join(dir, "device.cdb");
 	nodeFs.writeFileSync(cdb, "t81 stub-backed CDB placeholder\n");
 	return startServer({
-		dataHome: nodeFs.mkdtempSync(path.join(os.tmpdir(), "t81-dh-")),
+		dataHome: mktmp("t81-dh-"),
 		noWorkspace: true,
 		provider: "echo",
-		museHome: nodeFs.mkdtempSync(path.join(os.tmpdir(), "t81-home-")),
+		museHome: mktmp("t81-home-"),
 		cdbFile: cdb,
 		toolBinDir: bin,
 	});

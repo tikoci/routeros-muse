@@ -4,8 +4,9 @@
 // via toolBinDir; bypass-mode servers (no CDB, no centrs). The ambient
 // `muse` binary is only probed for presence (the server's spawn gate),
 // never run.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { have } from "../src/lib/run";
+import { cleanupTmpdirs } from "./helpers/tmp";
 import {
 	countT71Lines,
 	pollT71Log,
@@ -15,6 +16,8 @@ import {
 	t71SpawnedPids,
 	withT71Env,
 } from "./t71-fake";
+
+afterAll(cleanupTmpdirs);
 
 const HAVE_MUSE = have("muse");
 // Shell shims (POSIX) + the server's ambient-muse spawn gate.

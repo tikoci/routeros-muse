@@ -1,7 +1,7 @@
 // Workspaces registry + picker + creation (T40). Hermetic: temp
 // data homes and creation roots, seeded temp CDBs; no network, no
 // live meta turns.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -19,24 +19,27 @@ import { have } from "../src/lib/run";
 import { toolEnv } from "../src/lib/tools";
 import { scaffoldWorkspace, validWorkspaceName } from "../src/lib/workspace";
 import { serveCommand, startServer } from "../src/serve/server";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const HAVE_CENTRS = have("centrs");
 const POSIX = process.platform !== "win32";
 const tcentrs = POSIX && HAVE_CENTRS ? test : test.skip;
 
 function tempDataHome(): string {
-	return nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-reg-home-"));
+	return mktmp("t40-reg-home-");
 }
 
 function makeWsDir(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-reg-ws-"));
+	const dir = mktmp("t40-reg-ws-");
 	nodeFs.writeFileSync(path.join(dir, "workspace.toml"), "canonical = true\n");
 	nodeFs.writeFileSync(path.join(dir, "AGENTS.md"), "# ws\n");
 	return dir;
 }
 
 function makeHome(): string {
-	const home = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-reg-mhome-"));
+	const home = mktmp("t40-reg-mhome-");
 	const dir = path.join(home, "muse", "model-catalog");
 	nodeFs.mkdirSync(dir, { recursive: true });
 	const fixture = path.join(import.meta.dir, "fixtures", "model-catalog");
@@ -163,7 +166,7 @@ describe("workspace names", () => {
 
 describe("scaffold", () => {
 	test("bad names + existing targets refuse without touching disk", async () => {
-		const parent = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-scaf-"));
+		const parent = mktmp("t40-scaf-");
 		const bad = await scaffoldWorkspace(parent, "../evil", {});
 		expect(bad.ok).toBe(false);
 		if (!bad.ok) expect(bad.why).toContain("one path segment");
@@ -175,9 +178,9 @@ describe("scaffold", () => {
 	});
 
 	test("missing centrs rolls the target back", async () => {
-		const parent = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-scaf-"));
+		const parent = mktmp("t40-scaf-");
 		// PATH with sh but no centrs: have() answers honestly false.
-		const shOnly = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-shonly-"));
+		const shOnly = mktmp("t40-shonly-");
 		if (POSIX) nodeFs.symlinkSync("/bin/sh", path.join(shOnly, "sh"));
 		const env = toolEnv(null, { ...process.env, PATH: POSIX ? shOnly : "" });
 		const res = await scaffoldWorkspace(parent, "noroll", env);
@@ -190,7 +193,7 @@ describe("scaffold", () => {
 	tcentrs(
 		"success writes the minimal runnable workspace",
 		async () => {
-			const parent = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t40-scaf-"));
+			const parent = mktmp("t40-scaf-");
 			const res = await scaffoldWorkspace(parent, "acme", toolEnv(null));
 			expect(res.ok).toBe(true);
 			if (!res.ok) throw new Error("scaffold failed");

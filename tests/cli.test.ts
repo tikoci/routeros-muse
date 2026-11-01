@@ -5,7 +5,6 @@
 // injected probes; no live meta turns, no real routers.
 import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
 	HelpRequest,
@@ -14,7 +13,7 @@ import {
 	usage,
 	VersionRequest,
 } from "../src/cli/args";
-import { runCode, runDoctor } from "../src/cli/checks";
+import { type CheckDeps, runCode, runDoctor } from "../src/cli/checks";
 import { runInit } from "../src/cli/init";
 import { browserOpenCommand, openBrowser } from "../src/cli/open";
 import { type ResolveDeps, resolveStart } from "../src/cli/resolve";
@@ -25,24 +24,13 @@ import {
 	registryFile,
 } from "../src/lib/registry";
 import { Stop } from "../src/lib/stop";
-import { detectInstalled, toolBinDir, toolEnv } from "../src/lib/tools";
-import { museAuthFile } from "../src/steps/agent";
+import { toolEnv } from "../src/lib/tools";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const POSIX = process.platform !== "win32";
 const tposix = POSIX ? test : test.skip;
-
-const tmpdirs: string[] = [];
-afterAll(() => {
-	for (const d of tmpdirs) {
-		nodeFs.rmSync(d, { recursive: true, force: true });
-	}
-});
-
-function mktmp(prefix: string): string {
-	const d = nodeFs.mkdtempSync(path.join(os.tmpdir(), prefix));
-	tmpdirs.push(d);
-	return d;
-}
 
 function writeShim(dir: string, name: string, body: string): void {
 	const file = path.join(dir, name);
@@ -526,111 +514,60 @@ describe("runInit", () => {
 	});
 });
 
-// code exec legs need a present+authed muse (else checkAgent stops by
-// design); mirror the agent heuristic synchronously for the skip.
-function museUsable(): boolean {
-	if (process.env["META_API_KEY"]?.trim()) return true;
-	try {
-		return nodeFs.readFileSync(museAuthFile(), "utf8").trim().length > 2;
-	} catch {
-		return false;
-	}
+// T94: hermetic launch legs. Auth + trilogy detection are injected
+// fixtures (authed; all three tools at the pinned versions), so the
+// exec-passthrough assertion always runs: no real-auth skip, no
+// real-binary probe (quickchr version phones home), and no silent
+// stop-path downgrade when tools are missing. No separate
+// real-machine leg: tools.test.ts already anchors real detection,
+// and real auth is untestable hermetically.
+const FIXTURE_INSTALLED = {
+	quickchr: "9.9.1-t94",
+	centrs: "9.9.2-t94",
+	rosetta: "9.9.3-t94",
+};
+
+function stubCodeDeps(exec: CheckDeps["exec"]): CheckDeps {
+	return {
+		exec,
+		agent: async () => {},
+		detectInstalled: async () => FIXTURE_INSTALLED,
+		twins: async () => ({
+			capable: false,
+			detail: "stub",
+			defined: null,
+			running: null,
+		}),
+		lan: async () => ({ reachable: false, via: [] }),
+	};
 }
-const tcode = POSIX && museUsable() ? test : test.skip;
 
 describe("runCode", () => {
-	tcode("print-only never execs", async () => {
+	tposix("print-only never execs", async () => {
 		const dir = mktmp("t93-code-print-");
-		const installed = await detectInstalled(toolEnv(toolBinDir()));
-		// A missing tool stops at pins (by design) instead of exec'ing.
-		if (!installed.quickchr || !installed.centrs || !installed.rosetta) {
-			writeWorkspace(dir);
-			let execs = 0;
-			await expect(
-				runCode(
-					{ dir, yes: true, printOnly: true, passthrough: [] },
-					{
-						exec: async () => {
-							execs++;
-							throw new Error("must not exec");
-						},
-					},
-				),
-			).rejects.toThrow(Stop);
-			expect(execs).toBe(0);
-			return;
-		}
-		writeWorkspace(dir, {
-			quickchr: installed.quickchr,
-			centrs: installed.centrs,
-			rosetta: installed.rosetta,
-		});
+		writeWorkspace(dir, FIXTURE_INSTALLED);
 		let execs = 0;
 		await runCode(
-			{
-				dir,
-				yes: true,
-				printOnly: true,
-				passthrough: ["--yolo"],
-			},
-			{
-				exec: async () => {
-					execs++;
-					throw new Error("must not exec");
-				},
-				twins: async () => ({
-					capable: false,
-					detail: "stub",
-					defined: null,
-					running: null,
-				}),
-				lan: async () => ({ reachable: false, via: [] }),
-			},
+			{ dir, yes: true, printOnly: true, passthrough: ["--yolo"] },
+			stubCodeDeps(async () => {
+				execs++;
+				throw new Error("must not exec");
+			}),
 		);
 		expect(execs).toBe(0);
 	});
 
-	tcode("exec receives the passthrough verbatim", async () => {
+	tposix("exec receives the passthrough verbatim", async () => {
 		const dir = mktmp("t93-code-exec-");
-		const installed = await detectInstalled(toolEnv(toolBinDir()));
+		writeWorkspace(dir, FIXTURE_INSTALLED);
 		const seen: { dir: string; args: string[] }[] = [];
-		if (!installed.quickchr || !installed.centrs || !installed.rosetta) {
-			writeWorkspace(dir);
-			await expect(
-				runCode(
-					{ dir, yes: true, printOnly: false, passthrough: ["-c"] },
-					{
-						exec: async (d, a) => {
-							seen.push({ dir: d, args: a });
-							throw new Error("exec-spy");
-						},
-					},
-				),
-			).rejects.toThrow(Stop);
-			expect(seen).toEqual([]);
-			return;
-		}
-		writeWorkspace(dir, {
-			quickchr: installed.quickchr,
-			centrs: installed.centrs,
-			rosetta: installed.rosetta,
-		});
 		await expect(
 			runCode(
 				{ dir, yes: true, printOnly: false, passthrough: ["-c", "--yolo"] },
-				{
-					exec: async (d, a) => {
-						seen.push({ dir: d, args: a });
-						throw new Error("exec-spy");
-					},
-					twins: async () => ({
-						capable: false,
-						detail: "stub",
-						defined: null,
-						running: null,
-					}),
-					lan: async () => ({ reachable: false, via: [] }),
-				},
+				stubCodeDeps(async (d, a) => {
+					seen.push({ dir: d, args: a });
+					throw new Error("exec-spy");
+				}),
 			),
 		).rejects.toThrow("exec-spy");
 		expect(seen).toEqual([{ dir, args: ["-c", "--yolo"] }]);
@@ -648,6 +585,8 @@ describe("runDoctor", () => {
 		process.env["PATH"] = `${bin}${path.delimiter}${savedPath ?? ""}`;
 		try {
 			const report = await runDoctor(dir, {
+				agent: async () => ({ missing: [] }),
+				detectInstalled: async () => FIXTURE_INSTALLED,
 				twins: async () => ({
 					capable: false,
 					detail: "stub",
@@ -668,6 +607,8 @@ describe("runDoctor", () => {
 	tposix("an invalid workspace fails the report, not the run", async () => {
 		const dir = mktmp("t93-doctor-badws-");
 		const report = await runDoctor(dir, {
+			agent: async () => ({ missing: [] }),
+			detectInstalled: async () => FIXTURE_INSTALLED,
 			twins: async () => ({
 				capable: true,
 				detail: "stub",

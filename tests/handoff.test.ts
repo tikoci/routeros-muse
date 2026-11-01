@@ -1,11 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { listHandoffs } from "../src/steps/handoff";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 function makeWs(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t30-handoff-"));
+	const dir = mktmp("t30-handoff-");
 	nodeFs.mkdirSync(path.join(dir, "operations"), { recursive: true });
 	nodeFs.mkdirSync(path.join(dir, "inbox"), { recursive: true });
 	return dir;

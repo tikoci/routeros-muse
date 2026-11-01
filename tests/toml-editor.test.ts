@@ -1,11 +1,13 @@
 // T84: TOML editor must fail closed on shapes it cannot re-emit.
 // Seeded workspace, echo provider, no routers, no network.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { readDevices } from "../src/lib/fleet";
 import { startServer } from "../src/serve/server";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const CATALOG_FIXTURE = path.join(import.meta.dir, "fixtures", "model-catalog");
 
@@ -48,11 +50,11 @@ count = 3
 `;
 
 function makeDataHome(): string {
-	return nodeFs.mkdtempSync(path.join(os.tmpdir(), "t84-dh-"));
+	return mktmp("t84-dh-");
 }
 
 function makeHome(): string {
-	const home = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t84-home-"));
+	const home = mktmp("t84-home-");
 	const dir = path.join(home, "muse", "model-catalog");
 	nodeFs.mkdirSync(dir, { recursive: true });
 	for (const f of nodeFs.readdirSync(CATALOG_FIXTURE)) {
@@ -62,7 +64,7 @@ function makeHome(): string {
 }
 
 function makeWorkspace(): string {
-	const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "t84-ws-"));
+	const dir = mktmp("t84-ws-");
 	nodeFs.writeFileSync(
 		path.join(dir, "workspace.toml"),
 		'[home]\ntype = "single-copy"\ncanonical = true\n',

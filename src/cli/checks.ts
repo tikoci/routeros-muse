@@ -51,11 +51,19 @@ export type CheckDeps = {
 	/** Probe overrides (tests skip the slow/network legs). */
 	twins?: () => Promise<TwinReport>;
 	lan?: (router?: string) => Promise<LanReport>;
+	/** Agent check (tests inject an authed stub; default checkAgent). */
+	agent?: typeof checkAgent;
+	/** Trilogy detection (tests inject fixtures; default detectInstalled). */
+	detectInstalled?: typeof detectInstalled;
 };
 
 export type DoctorDeps = {
 	twins?: () => Promise<TwinReport>;
 	lan?: (router?: string) => Promise<LanReport>;
+	/** Agent facts (tests inject a stub; default reportAgent). */
+	agent?: typeof reportAgent;
+	/** Trilogy detection (tests inject fixtures; default detectInstalled). */
+	detectInstalled?: typeof detectInstalled;
 };
 
 export type DoctorReport = { ok: boolean; failures: string[] };
@@ -86,11 +94,12 @@ export async function runCode(opts: CodeOpts, deps: CheckDeps): Promise<void> {
 	for (const line of toolSourceLines(pinnedTools(), binDir)) {
 		console.log(line);
 	}
-	const installed = await detectInstalled(tools);
+	const detect = deps.detectInstalled ?? detectInstalled;
+	const installed = await detect(tools);
 	printInstalled(installed);
 
 	console.log("== 3. agent ==");
-	await checkAgent(ctx);
+	await (deps.agent ?? checkAgent)(ctx);
 
 	console.log("== 4. workspace ==");
 	const { dir, config } = await openWorkspace(ctx.args.workspace, ctx);
@@ -183,11 +192,12 @@ export async function runDoctor(
 	for (const line of toolSourceLines(pinnedTools(), binDir)) {
 		console.log(line);
 	}
-	const installed = await detectInstalled(tools);
+	const detect = deps.detectInstalled ?? detectInstalled;
+	const installed = await detect(tools);
 	printInstalled(installed);
 
 	console.log("== 3. agent ==");
-	const agent = await reportAgent(label);
+	const agent = await (deps.agent ?? reportAgent)(label);
 	failures.push(...agent.missing);
 
 	console.log("== 4. workspace ==");
