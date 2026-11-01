@@ -384,6 +384,7 @@
   .setrow label { display: flex; gap: 9px; align-items: center; cursor: pointer; }
   #pkname { background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font: 12.5px var(--sans); padding: 6px 9px; outline: none; width: 100%; box-sizing: border-box; }
   #pkname:focus { border-color: var(--accent); }
+  #pktemplate { background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font: 12.5px var(--sans); padding: 6px 9px; outline: none; width: 100%; box-sizing: border-box; }
   #pkcmd { font: 11px var(--mono); color: var(--text); user-select: text; overflow-wrap: anywhere; }
   .wsdead { color: var(--faint); }
   .setnote { font-size: 11.5px; color: var(--faint); margin-top: 8px; }
@@ -469,7 +470,7 @@
         <div class="statpop" id="statpop">
           <h4 id="statpop-h">Session</h4>
           <div class="arow"><span class="k">Model</span><span class="v" id="sp-model">…</span></div>
-          <div class="arow"><span class="k">Access</span><span class="v">Ask first</span></div>
+          <div class="arow"><span class="k">Access</span><span class="v" id="sp-access">…</span></div>
           <div class="arow"><span class="k">Context</span><span class="v" id="sp-ctx">…</span></div>
           <div class="arow"><span class="k">Tokens</span><span class="v" id="sp-tok">…</span></div>
           <div class="arow"><span class="k">Turns</span><span class="v" id="sp-turns">…</span></div>
@@ -573,6 +574,7 @@
         <div class="rblock">
           <div class="rsect">New workspace</div>
           <div class="setrow"><input id="pkname" placeholder="name" aria-label="New workspace name"></div>
+          <div class="setrow"><select id="pktemplate" aria-label="Template"></select></div>
           <button class="btn rbtn" id="pkcreate">Create</button>
           <div class="setnote" id="pkcreatenote">minimal scaffold · device.cdb starts open (encrypt in WinBox)</div>
           <div class="throttle" id="pkerr" style="display:none"></div>
@@ -589,7 +591,7 @@
           <div class="rsect">Agent · muse, local</div>
           <div class="agenthead"><span class="dot ok"></span><span id="set-muse">muse …</span><span class="conn" id="set-conn">…</span></div>
           <div class="arow"><span class="k">Model</span><span class="v" id="set-model">…</span></div>
-          <div class="arow"><span class="k">Access</span><span class="v">Ask first</span></div>
+          <div class="arow"><span class="k">Access</span><span class="v" id="set-access">…</span></div>
           <div class="arow"><span class="k">Context</span><span class="v" id="set-ctx">…</span></div>
           <div class="arow"><span class="k">Session</span><span class="v" id="set-session">…</span></div>
           <button class="btn rbtn" title="Drop the session and run the OAuth flow again">Reconnect</button>
@@ -2142,7 +2144,20 @@
       box.innerHTML = "";
       const rows = j.workspaces || [];
       $("pkempty").style.display = rows.length === 0 ? "" : "none";
-      $("pkcreatenote").textContent = "in " + (j.defaultDir || "~/Networks") + " · minimal scaffold · device.cdb starts open (encrypt in WinBox)";
+      pkDefaultDir = j.defaultDir || "~/Networks";
+      const tmps = j.templates || [];
+      const sel = $("pktemplate");
+      const prev = sel.value || "minimal";
+      sel.innerHTML = "";
+      for (const t of tmps) {
+        const opt = document.createElement("option");
+        opt.value = t.name;
+        opt.textContent = t.name + (t.description ? " — " + t.description : "");
+        sel.appendChild(opt);
+      }
+      if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+      updateCreateNote();
+      sel.onchange = updateCreateNote;
       let dead = 0;
       for (const w of rows) {
         const row = document.createElement("div");
@@ -2190,17 +2205,25 @@
     } catch (e) { err.textContent = "not opened: " + e.message; err.style.display = ""; }
   }
 
+  let pkDefaultDir = "~/Networks";
+  function updateCreateNote() {
+    const sel = $("pktemplate");
+    const t = (sel.value || "minimal") + " template";
+    $("pkcreatenote").textContent = "in " + pkDefaultDir + " · " + t + " · device.cdb starts open (encrypt in WinBox)";
+  }
+
   function wireWorkspaces() {
     $("pkcreate").addEventListener("click", async () => {
       const err = $("pkerr");
       err.style.display = "none";
       const name = $("pkname").value.trim();
+      const template = $("pktemplate").value || "minimal";
       $("pkcreate").disabled = true;
       try {
         const r = await fetch("/api/workspaces", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "create", name }),
+          body: JSON.stringify({ action: "create", name, template }),
         });
         const j = await r.json();
         if (!j.ok) { err.textContent = "not created: " + j.why; err.style.display = ""; return; }
@@ -2315,7 +2338,10 @@
       const eff = (sj.ok && sj.effort) || "max";
       $("seleffort").textContent = cap(eff);
       const acc = (sj.ok && sj.access) || "onRequest";
-      $("selaccess").textContent = (ACCESS.find((a) => a[0] === acc) || [])[1] || acc;
+      const accLabel = (ACCESS.find((a) => a[0] === acc) || [])[1] || acc;
+      $("selaccess").textContent = accLabel;
+      $("set-access").textContent = accLabel;
+      $("sp-access").textContent = accLabel;
     } catch { /* selectors keep placeholders */ }
   }
 
@@ -2354,7 +2380,10 @@
         ACCESS.map((a) => ({ value: a[0], label: a[1] })),
         (ACCESS.find((a) => a[1] === $("selaccess").textContent) || [])[0],
         (v) => postControl("/api/chat/access", { mode: v }, $("sel-access-btn"), (ACCESS.find((a) => a[0] === v) || [])[1]).then(() => {
-          $("selaccess").textContent = (ACCESS.find((a) => a[0] === v) || [])[1] || v;
+          const accLabel = (ACCESS.find((a) => a[0] === v) || [])[1] || v;
+          $("selaccess").textContent = accLabel;
+          $("set-access").textContent = accLabel;
+          $("sp-access").textContent = accLabel;
         }),
       );
     });
@@ -2381,7 +2410,12 @@
         $("set-model").textContent = lab;
       }
       if (j.effort) $("seleffort").textContent = cap(j.effort);
-      if (j.access) $("selaccess").textContent = (ACCESS.find((a) => a[0] === j.access) || [])[1] || j.access;
+      if (j.access) {
+        const accLabel = (ACCESS.find((a) => a[0] === j.access) || [])[1] || j.access;
+        $("selaccess").textContent = accLabel;
+        $("set-access").textContent = accLabel;
+        $("sp-access").textContent = accLabel;
+      }
       const ring = $("ctxring");
       if (j.contextPct != null) {
         ring.style.strokeDashoffset = String(50.3 * (1 - j.contextPct / 100));

@@ -26,6 +26,7 @@ import {
 	registryFile,
 } from "../lib/registry";
 import { have, run } from "../lib/run";
+import { listTemplates, type TemplateMeta } from "../lib/templates";
 import {
 	toolBinDir as defaultToolBinDir,
 	detectInstalled,
@@ -37,6 +38,7 @@ import {
 } from "../lib/tools";
 import {
 	ageOf,
+	CDB_ENCRYPT_STEERING,
 	listAlerts,
 	listRecents,
 	readTomlSections,
@@ -105,6 +107,12 @@ export type ServeOpts = {
 	 * hermetically. Defaults to ~/Networks.
 	 */
 	defaultWorkspaceDir?: string;
+	/**
+	 * Default MSP approval mode for the main session (T93 --yolo:
+	 * allowAll). The access selector reads this same state, so the
+	 * UI shows it as it already would. Defaults to onRequest.
+	 */
+	defaultApprovalMode?: ApprovalMode;
 };
 
 /** Reachable LAN URLs for a port (external IPv4 only, no loopback/link-local). */
@@ -319,10 +327,6 @@ export function transcriptItems(events: ViewEvent[]): TranscriptItem[] {
 
 const UI_PATH = new URL("./ui.html", import.meta.url);
 
-/** WinBox-encryption steering for fresh scaffolds, until C14 ships. */
-const ENCRYPT_STEERING =
-	"device.cdb starts open: encrypt it in WinBox before trusting it (one-command centrs encryption is tracked upstream at tikoci/centrs#558).";
-
 /**
  * Restart line for open-in-place (T40): the server binds its root at
  * boot, so opening another workspace is a restart at that path — the
@@ -385,6 +389,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// warns but never blocks the boot.
 	const regFile = registryFile(opts.dataHome);
 	const defaultDir = defaultWorkspacesDir(opts.defaultWorkspaceDir);
+	// T93: the picker create flow offers these templates (minimal
+	// default); read once at boot from the package templates dir.
+	const templates: TemplateMeta[] = listTemplates();
 	if (!noWs) {
 		try {
 			registerWorkspace(regFile, path.basename(root), root);
@@ -456,7 +463,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	let totalTokens: number | null = null;
 	let lastModelId: string | null = null;
 	let lastEffort: string | null = null;
-	let lastAccess: string | null = null;
+	let lastAccess: string | null = opts.defaultApprovalMode ?? null;
 	let sessionStartedAt: number | null = null;
 	const sse = new Set<(line: string) => void>();
 
@@ -705,7 +712,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			}
 			const { session } = await client.sessionStart({
 				workspaceRoot: root,
-				approvalMode: "onRequest",
+				approvalMode: opts.defaultApprovalMode ?? "onRequest",
 			});
 			if (!isMine() || mainOwner !== key || mspOwner !== key) {
 				const cur = mainPromise;
@@ -977,6 +984,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json({
 						workspaces,
 						defaultDir,
+						templates,
 						...(corrupt ? { corrupt: true } : {}),
 					});
 				}
@@ -984,6 +992,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const body = (await req.json()) as {
 						action?: unknown;
 						name?: unknown;
+						template?: unknown;
 					};
 					if (body.action === "prune") {
 						const { removed } = pruneRegistry(regFile);
@@ -996,18 +1005,33 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								400,
 							);
 						}
+						const template =
+							typeof body.template === "string" && body.template
+								? body.template
+								: "minimal";
+						if (!templates.some((t) => t.name === template)) {
+							return json(
+								{
+									ok: false,
+									why: `unknown template: ${template} (have: ${templates.map((t) => t.name).join(", ") || "none"})`,
+								},
+								400,
+							);
+						}
 						const made = await scaffoldWorkspace(
 							defaultDir,
 							body.name,
 							envFor(req),
+							template,
 						);
 						if (!made.ok) return json({ ok: false, why: made.why }, 400);
 						const workspace = registerWorkspace(regFile, body.name, made.dir);
 						return json({
 							ok: true,
 							workspace,
+							template,
 							command: serveCommand(made.dir),
-							steering: ENCRYPT_STEERING,
+							steering: CDB_ENCRYPT_STEERING,
 						});
 					}
 					if (body.action === "open") {
@@ -1511,7 +1535,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							ageMin: 0,
 							model: null,
 							effort: null,
-							access: null,
+							// The configured default (T93 --yolo), so the
+							// access selector shows it before any turn;
+							// null without one, exactly as before.
+							access: lastAccess,
 						});
 					}
 					const key = workerKey(req);
