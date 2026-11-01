@@ -307,3 +307,75 @@ describe("scaffold spawn failure (T97 follow-up)", () => {
 		},
 	);
 });
+
+describe("scaffold destination policy (T97 follow-up)", () => {
+	tposix(
+		"a destination under a symlinked ancestor lands in the real target",
+		async () => {
+			const outer = mktmp("t97b-symparent-");
+			const real = path.join(outer, "real");
+			nodeFs.mkdirSync(real);
+			const link = path.join(outer, "link");
+			nodeFs.symlinkSync(real, link);
+			const named = path.join(link, "ws");
+			const res = await scaffoldIntoDir(
+				named,
+				toolEnv(stubCentrsBin()),
+				"minimal",
+			);
+			expect(res.ok).toBe(true);
+			if (!res.ok) return;
+			// The result echoes the caller's spelling; the bytes land real.
+			expect(res.dir).toBe(named);
+			expect(nodeFs.realpathSync(named)).toBe(path.join(real, "ws"));
+			expect(nodeFs.existsSync(path.join(real, "ws", "workspace.toml"))).toBe(
+				true,
+			);
+		},
+	);
+
+	tposix(
+		"a named symlink to an empty dir scaffolds into its target",
+		async () => {
+			const outer = mktmp("t97b-symdest-");
+			const target = path.join(outer, "target");
+			nodeFs.mkdirSync(target);
+			const link = path.join(outer, "wsl");
+			nodeFs.symlinkSync(target, link);
+			const res = await scaffoldIntoDir(
+				link,
+				toolEnv(stubCentrsBin()),
+				"minimal",
+			);
+			expect(res.ok).toBe(true);
+			if (!res.ok) return;
+			expect(res.dir).toBe(link);
+			expect(nodeFs.lstatSync(link).isSymbolicLink()).toBe(true);
+			expect(nodeFs.existsSync(path.join(target, "workspace.toml"))).toBe(true);
+		},
+	);
+
+	tposix("intoDir failure removes ancestors this run created", async () => {
+		const base = mktmp("t97b-anc-");
+		const deep = path.join(base, "a", "b", "ws");
+		const res = await scaffoldIntoDir(
+			deep,
+			toolEnv(failingCentrsBin()),
+			"minimal",
+		);
+		expect(res.ok).toBe(false);
+		expect(nodeFs.existsSync(path.join(base, "a"))).toBe(false);
+	});
+
+	tposix("picker failure removes ancestors this run created", async () => {
+		const base = mktmp("t97b-ancws-");
+		const parent = path.join(base, "p1", "p2");
+		const res = await scaffoldWorkspace(
+			parent,
+			"ws",
+			toolEnv(failingCentrsBin()),
+		);
+		expect(res.ok).toBe(false);
+		expect(nodeFs.existsSync(path.join(base, "p1"))).toBe(false);
+	});
+});
