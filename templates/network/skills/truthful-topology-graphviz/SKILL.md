@@ -99,10 +99,10 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
   use, never a dependency — collected: the platform explainer);
   vendor-PDF antenna patterns read by eye (label as read by
   eye, cite the page, keep variants separate, never digitize a
-  curve into false precision — collected: the owner-presentation notes
-  + rosetta review); phone-GPS pins (12–15 m camera error
+  curve into false precision — collected: earlier field runs
+  + rosetta reference); phone-GPS pins (12–15 m camera error
   recorded; photos NOT used as precise equipment pins —
-  collected: the owner-presentation notes).
+  collected: earlier field runs).
 - Inferred never graduates silently: a dashed edge becomes
   solid only when a read confirms it, and the confirming read
   is cited like any other. Regeneration preserves the marking
@@ -123,10 +123,10 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
   review's table — different edits publish differently).
   Who re-renders, on what trigger, and where the fresh SVG
   lands belong in the recipe that uses this skill.
-- Delivery follows the owner-presentation rules: renders land
+- Delivery follows the presentation rules: renders land
   where the owner reads — dashboard, whiteboard (decision-board-lifecycle), or PNG
   screenshot into chat (1080×1350 portrait precedent,
-  the owner-presentation rules). The SVG is the truth; the PNG is the
+  the presentation rules). The SVG is the truth; the PNG is the
   postage.
 
 ### 4. Polish (Image around truth, never as truth)

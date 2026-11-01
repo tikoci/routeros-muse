@@ -53,8 +53,8 @@ detail, describe its SHAPE, not the detail.
   the agent-feedback privacy line): names, places, addresses,
   serials, credentials, topology, private code, deployment-
   specific assumptions. Public repo URLs and skill names only.
-- The executed precedent (collected: the brief ran): the
-  "Coding Agent Feedback" doc EXISTS — a private-network
+- The executed precedent (collected: the brief ran): an
+  operator feedback doc EXISTS — a private-network
   operator read the brief, mined their repo, and delivered
   patterns + feedback + flags + tests with the labels below.
   Extraction is a proven pipeline, not a proposal.

@@ -39,7 +39,7 @@ twin; the new hardware is touched at step 5, read at step 6.
 
 ### 0. Sticker-identity bootstrap (device vs label vs serial)
 
-- The rule (collected, homework §6): the device ID names
+- The rule (collected, from an earlier field run): the device ID names
   the JOB (`<site>-<location>-<role>`); the label is what
   is on the UNIT; the serial binds hardware to device at
   unbox. A device outlives the hardware in it (concept
@@ -57,14 +57,14 @@ twin; the new hardware is touched at step 5, read at step 6.
   (binding-match True). First bare-id compare mismatched —
   the prefix rule is load-bearing, re-verify it, don't
   bypass it.
-- Collected reconciliations (concept review §6, Codex
-  §6): identifiers from the photo are still checked
+- Collected reconciliations (from pilot feedback):
+  identifiers from the photo are still checked
   against the CONNECTED device; once connected the router
   reports its own model and even regulatory SKU
   (journaled: `/interface/wifi/radio countries`).
 - Red line (collected, brief + grounds): the sticker's
-  default password is a credential. Precedent (feedback
-  §4, VERIFIED): sticker passwords sit in a per-device
+  default password is a credential. Precedent (from pilot
+  feedback, VERIFIED): sticker passwords sit in a per-device
   git-ignored file AND the harness denies reading it.
   Never in the ledger, never in a capture, never pasted.
 
@@ -77,16 +77,16 @@ twin; the new hardware is touched at step 5, read at step 6.
   (ports, radios, version constraints) → device bound, twin
   shaped, install sheet produced.
 - Masking is BEFORE the first cloud call INCLUDING
-  segmentation (concept review §6): the password region
+  segmentation (design-review rule): the password region
   never leaves the device unmasked. If the segmenter
   only runs in-cloud, the photo with the password goes
-  nowhere — low-risk fallbacks (homework §11): tape over
+  nowhere — low-risk fallbacks (from an earlier field run): tape over
   the password before the photo, or on-device crop to
   identifiers-only first.
-- SAM segments; it does not read text (homework §11):
+- SAM segments; it does not read text (from an earlier field run):
   reading is the vision model's job. Don't promise OCR
   from the segmenter.
-- Photos carry location (feedback §4): strip EXIF GPS
+- Photos carry location (from pilot feedback): strip EXIF GPS
   before any photo enters a shared folder or cloud model —
   unless location IS the point (siting), and then keep it
   out of public material.
@@ -97,13 +97,13 @@ twin; the new hardware is touched at step 5, read at step 6.
 
 ### 2. Unbox-baseline render (plan → bench script)
 
-- Collected shape (feedback §3, VERIFIED commit
+- Collected shape (from pilot feedback, VERIFIED commit
   history): structural changes start in TOML; `render`
   turns a device into a FULL netinstall script —
   secrets stay placeholders, filled only in the copy
   that is uploaded; `stage` uploads to the netinstall
   server with the harness asking the human first.
-- Baseline contents (collected, feedback §3): agent
+- Baseline contents (collected, from pilot feedback): agent
   accounts (reader + admin), management access,
   `/system/note` shown at login, time + DNS,
   `device-mode` for bridge needs, the bridge itself
@@ -119,7 +119,7 @@ twin; the new hardware is touched at step 5, read at step 6.
   exact. The twin executed the MECHANISM; accounts,
   access, time, DNS, device-mode are prescribed, not run.
 - Inferred: where the main router is hand-built rather
-  than rendered (feedback §3), the exception is named,
+  than rendered (from pilot feedback), the exception is named,
   not silently absorbed — the render covers the fleet
   shape.
 
@@ -153,23 +153,23 @@ twin; the new hardware is touched at step 5, read at step 6.
 
 - Collected routes: several
   provisioning routes exist — netinstall, a reset script,
-  or step-by-step changes. Feedback §3 order: reset or
+  or step-by-step changes. Collected order (from pilot feedback): reset or
   netinstall on
   the BENCH, install sheet for the person on site, then
   first pull. Lockout on the bench is expected and
-  cheap (feedback §3 table) — that is WHY the bench
+  cheap (the bench-vs-manage table) — that is WHY the bench
   exists.
 - Observed route (the twin drill): staged-script apply
   (steps above). Netinstall/reset paths prescribed, not
   exercised here — netinstall-flash owns the
   netinstall-package flow when it lands.
-- Install sheet (collected, feedback §4): IKEA-style —
+- Install sheet (collected, from pilot feedback): IKEA-style —
   what goes where, what comes out, how to tell it
   worked. (DESIGN): after install, the holder
   photographs the wiring and the agent checks it against
   the sheet ("ether2 vs ether1") — no credentials in
   frame, a natural vision job.
-- Approval shape at unbox (collected, feedback §3):
+- Approval shape at unbox (collected, from pilot feedback):
   "reset this device and install the render" is
   NORMAL at unbox and alarming in look-after — separate
   entry skills, separate policy classes. Stage/upload
@@ -240,7 +240,7 @@ networks — that is import-existing-network.
 - Step 6: reads only. Captures stay local (`pull/out/`);
   never print/commit/paste serials, IDs, MACs, addresses.
 - Sticker passwords: git-ignored per-device file, harness
-  denies reading (feedback §4 precedent). Refuse any flow
+  denies reading (pilot-feedback precedent). Refuse any flow
   that would log, ledger, or cloud-send them.
 
 ### Envs

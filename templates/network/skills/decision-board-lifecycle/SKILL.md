@@ -8,8 +8,9 @@ tested: none
 # `decision-board-lifecycle` skill (author → discuss → link → retire → correct) [template v1 draft]
 
 Promoted from a whiteboard contract
-(source-verified in a private workspace checkout), the
-owner-presentation rules, demo beats O1–O3, and the
+(source-verified in a private workspace checkout),
+presentation practice from earlier field runs, demo
+beats O1–O3, and the
 `/app` deployment semantics (re-read on request, verified).
 Core rule: a board is DISCUSSION — not
 authorization, not the accepted plan. Decisions belong in the
@@ -156,8 +157,8 @@ explanation feel like part of the workspace.
   router's copy. Different edits have different publication
   behavior — put reload/restart semantics in the recipe; do not
   guess (collected: the semantics table).
-- PNG delivery for the non-expert owner (journaled, collected:
-  the owner-presentation rules): the owner looks at things on a phone in
+- PNG delivery for the non-expert owner (journaled, collected
+  from earlier field runs): the owner looks at things on a phone in
   a text thread, so the useful output is often a PNG, not a web
   page — 1080×1350 phone-portrait pages, `?p=N` rendering one
   page, headless Chrome screenshotting each to its own PNG for

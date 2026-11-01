@@ -147,7 +147,7 @@ the window; step 5 closes it into the records.
   redacted export + stripped JSON + manifest, checker
   clean. The pull is the flash's proof of life.
 - Commit message marks the boundary (collected:
-  the review feedback): "netinstalled …, first pull".
+  an earlier review): "netinstalled …, first pull".
   Device/label/serial binding follows unbox-provision's rule
   (system-id + license-id + sticker photo).
 - File the window report next to the plan: window

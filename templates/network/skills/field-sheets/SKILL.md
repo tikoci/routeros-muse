@@ -12,10 +12,11 @@ pole cannot read TOML. This skill translates one location
 at a time into a sheet that says what goes where, what
 comes out, and how to tell it worked — and it holds the
 line the other way: a checked box is not proof a cable
-moved. Sources: concept review §10 (field sheets), the
-showing-the-owner note §2 (setup sheets), feedback §3
-(install sheet), the demo catalog (install photo check),
-and the human-artifact-agent loop pattern. No twin, no box writes:
+moved. Sources: an internal design review (field-sheet shape),
+setup-sheet practice from an earlier field run, install-sheet
+shape from pilot feedback, install-photo checks from an
+earlier field run, and the human-artifact-agent loop pattern.
+No twin, no box writes:
 records reads + local rendering only. Fixtures synthetic.
 
 Boundaries (stated both ways so nothing is absorbed
@@ -71,8 +72,8 @@ reference renderer rejects it mechanically.
   on the unit"), ports as seen ("ether1 ← cable from
   the ground box"), aiming in compass words ("faces
   northeast toward the barn roof"), never degrees
-  alone. Collected shape: IKEA-style, one page per
-  location (showing-the-owner §2).
+  alone. Collected shape (from an earlier field run):
+  IKEA-style, one page per location.
 - Say what stays untouched, not just what moves:
   "SFP ← empty (do not plug anything here)" and
   "ether2 → house router (do not unplug)" prevent
@@ -115,7 +116,7 @@ reference renderer rejects it mechanically.
 ### 3. Render + deliver (the owner's phone is the screen)
 
 - Phone PNG first: 1080×1350 portrait per page
-  (showing-the-owner §2: iMessage/RCS-ready), one
+  (from an earlier field run: iMessage/RCS-ready), one
   PNG per location. Print HTML from the same spec
   for the bench. Observed: fixture page renders
   1080×1350, non-blank, zero external refs (offline
@@ -158,8 +159,7 @@ sheet; or answering "what do I do when I get there".
 ### Prereqs
 
 - The device record(s) for the location.
-- Concept-review §10 + showing-the-owner §2 read
-  (the procedure's sources).
+- The §0–§3 procedure read (this skill states it fully).
 - python3 + headless chromium for the reference
   renderer (stdlib + browser only, offline).
 - A named hands contact for delivery; steps 0–3

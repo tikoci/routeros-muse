@@ -10,8 +10,8 @@ tested: self-test
 The owner never reads TOML or a RouterOS command —
 about half the physical-world work (siting, aim, power, install)
 ended as something to *show* the owner: a map, a marked photo, a
-sheet for the person on the pole (collected: the owner-presentation
-notes). This skill holds the MAP halves of the owner-presentation
+sheet for the person on the pole (collected: earlier field runs).
+This skill holds the MAP halves of the presentation
 work: site-map generation plus the map halves of
 setup-sheet-png-render, install-photo-evidence, and
 human-correction-roundtrip. The FIELD halves (device jobs,
@@ -47,10 +47,10 @@ forgery of evidence, not a shortcut.
   positions: the map reads it, and Fix GPS writes corrections
   back in the same format. KML means the owner can also open
   it in Google Earth on a phone, with no new app (collected:
-  the owner-presentation notes).
+  earlier field runs).
 - The template carries a `gis` block per site: layer URLs,
   fields to keep, and a source label per layer (inferred
-  shape, collected proposal: the owner-presentation notes).
+  shape, collected proposal from earlier field runs).
   `references/fixtures/gis.json` shows the
   shape; operators bring their own layer URLs.
 - There is no Meta maps API — no public tiles/geocoding SDK
@@ -63,18 +63,18 @@ forgery of evidence, not a shortcut.
 - Fetched features cache by bounding box; a cached box that
   already contains the requested one is reused, so a small
   GPS correction does not refetch everything (collected:
-  the owner-presentation notes).
+  earlier field runs).
 - Privacy is load-bearing: the map is the most
   location-revealing thing the workspace makes. Choose
   parcel fields so no owner names come through; never show
   it in public video without blurring; keep the GIS cache
-  out of any public repo (collected: the owner-presentation notes).
+  out of any public repo (collected: earlier field runs).
 
 ### 1. Generate (one Leaflet page per site)
 
 - One generated HTML page per site (Leaflet, no build step),
   regenerated from the records, never hand-edited. Layers
-  (collected: the owner-presentation notes):
+  (collected: earlier field runs):
   - Backgrounds: satellite, topographic, and USGS 3DEP
     LiDAR hillshade — the hillshade shows ridges, gullies,
     and tree lines that satellite hides, and that is what
@@ -90,9 +90,9 @@ forgery of evidence, not a shortcut.
   uplink, antenna gain from what each radio reports. "A
   sketch, not a survey" is written into the model AND the
   page — that label is what made it safe to show a
-  non-expert (collected: the owner-presentation notes).
-- Present-it rule for this artifact (collected:
-  the owner-presentation rules): owner asking "where / what covers
+  non-expert (collected: earlier field runs).
+- Present-it rule for this artifact (from earlier field runs):
+  owner asking "where / what covers
   what" gets the site map (page or single image) with
   source labels per layer, "estimate" on coverage, and a
   capture date.
@@ -107,13 +107,13 @@ forgery of evidence, not a shortcut.
 - Pending: first render against real records + live tile/GIS
   endpoints (needs sandbox egress probes: ArcGIS, USGS
   hillshade, OSM tiles through the proxy — collected probe
-  list: the owner-presentation notes).
+  list from earlier field runs).
 
 ### 2. Render (the 1080×1350 PNG path — MAP half of setup-sheet-png-render)
 
 - The owner looks at things on a phone, in a text thread —
   the useful output is often a PNG/JPEG, not a web page
-  (collected: the owner-presentation rules). The render primitive:
+  (from earlier field runs). The render primitive:
   a `?p=N` query renders a single page, and a headless
   browser screenshots each page to its own PNG, ready for
   iMessage/RCS. The same records give an HTML version for
@@ -122,8 +122,8 @@ forgery of evidence, not a shortcut.
   drawn and labelled, sent as a single JPEG) were composed
   by a small tile/line/label program on macOS; on Linux
   the equivalent is a headless Chromium screenshot of the
-  map page, or a small canvas render (collected:
-  the owner-presentation rules). Whiteboards screenshot the same
+  map page, or a small canvas render (from earlier
+  field runs). Whiteboards screenshot the same
   way (boards themselves are decision-board-lifecycle).
 - Observed (this skill's self-test): headless Chromium
   renders the fixture page to an exact 1080×1350 PNG
@@ -131,7 +131,7 @@ forgery of evidence, not a shortcut.
   `references/check-png.py`; 564 unique sampled colors on
   the proving run). The PNG-path mechanism is proven; only
   real-record content is pending.
-- Pending (collected day-0 probes: the owner-presentation notes):
+- Pending (collected day-0 probes from earlier field runs):
   sandbox-generated PNG shown inline in the Muse phone app;
   headless browser available in the sandbox (its browser
   cannot reach loopback, but a file render may still work).
@@ -146,7 +146,7 @@ forgery of evidence, not a shortcut.
 ### 3. File (image→data evidence — MAP half of install-photo-evidence)
 
 - Pictures also flow into the records (collected:
-  the owner-presentation notes): phone panoramas fitted to a LiDAR
+  earlier field runs): phone panoramas fitted to a LiDAR
   skyline (recovered position/heading when phone GPS was
   ~90 m stale and compass ~95° off; same fit gave
   winter-sun hours); antenna patterns read off vendor PDFs
@@ -155,7 +155,7 @@ forgery of evidence, not a shortcut.
   with sha256 and EXIF provenance in an index file. Camera
   GPS error (12–15 m) is recorded, and the photos are NOT
   used as precise equipment pins (collected:
-  the owner-presentation notes). Photos say what the records
+  earlier field runs). Photos say what the records
   cannot: "the wAP is at the window, facing the street"
   settled a coverage question no router reading could.
 - Prescribed but pending: U2 install-photo check (photo of
@@ -165,10 +165,10 @@ forgery of evidence, not a shortcut.
   SAM segmentation DESIGN; keep GPS out of public frames);
   vendor-PDF digitizing done carefully — cite the page,
   keep variants separate, never digitize a curve into false
-  precision (collected: the demo catalog, the owner-presentation notes).
+  precision (collected: earlier field runs).
 - Demo rules for every published frame: no names, places,
   addresses, or serials; strip EXIF GPS from photos
-  (collected: the demo catalog's rules). pre-publish-scrub
+  (collected: presentation rules from earlier field runs). pre-publish-scrub
   gates any public step.
 - Boundary with field-sheets: the install SHEET the photo is checked
   against, and any field checklist the photo completes,
@@ -185,7 +185,7 @@ forgery of evidence, not a shortcut.
   exports KML for Google Earth inspection. When
   regenerated data already contains a correction, the page
   clears the corresponding local edit within a small
-  tolerance (collected: the concept review, the owner-presentation notes).
+  tolerance (collected: an earlier design review and field runs).
 - This is the human → artifact → agent → structured-record
   loop: the human supplies spatial judgment through a map;
   the agent handles file editing and propagation — no
@@ -224,7 +224,7 @@ Load when: mapping device positions or RF coverage; rendering
 a setup sheet or annotated-map image; filing install or site
 photos as evidence; accepting a location/label correction
 from the owner; asking which artifact fits the person looking
-(present-it table: the owner-presentation rules). (Entry-skill +
+(present-it table: the presentation rules). (Entry-skill +
 capability-probe pattern.)
 
 ### Prereqs

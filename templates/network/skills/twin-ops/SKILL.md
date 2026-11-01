@@ -202,7 +202,7 @@ capability-probe pattern.)
   disposable twin and records it.
 - Second-disk state is outside qcow2 boot snapshots: disk-side
   cells rebuild by recipe, not by snapshot load.
-- Sourced 2026-10-29 (homework §13 journal, via cmr-fleet-guard):
+- Sourced 2026-10-29 (journaled, via cmr-fleet-guard):
   sanitize VPN/CMR-controller-addresses/tokens before booting a
   twin from production-derived state — a twin VPN-join test really
   joined the production VPN and left a member behind; a CMR

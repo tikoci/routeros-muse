@@ -39,14 +39,14 @@ wallpaper — the question decides which layers load.
   (a) Starlink context — is there usable sky, what
   obstructs, where does the dish live; (b) LiDAR
   terrain — do ridges/gullies/tree lines break the
-  radio path (collected: showing-the-owner §1 via map-reports
+  radio path (collected via map-reports
   — hillshade shows what satellite hides, and that
   decides where a link works); (c) parcels — whose
   land the link crosses, where the property lines run
   (built once, reused); (d) solar — winter-sun hours
-  at an off-grid site (collected precedent: the
-  panorama-to-LiDAR fit that recovered sun hours,
-  showing-the-owner §3 via map-reports §3).
+  at an off-grid site (collected precedent: a
+  panorama-to-LiDAR fit that recovered sun hours; see
+  map-reports §3).
 - Record the question + the decision it gates ("link
   A→B on 5 GHz: go/no-go by Friday") before loading
   any layer. Unasked layers stay off — a page with
@@ -63,7 +63,7 @@ wallpaper — the question decides which layers load.
   not Starlink performance claims (no throughput
   promises from a map).
 - LiDAR terrain: USGS 3DEP hillshade background
-  (collected: showing-the-owner §1) + any local DEM
+  (collected from earlier field runs) + any local DEM
   hint for the path profile. Hillshade is for READING
   terrain (ridges, gullies, tree lines), not for
   numbers — path-loss math says what it is or stays out.
@@ -97,8 +97,7 @@ wallpaper — the question decides which layers load.
   link-question header, and the "planning sketch, not
   a survey" label. Fixture mode makes zero
   page-initiated network requests.
-- Present-it rule for this artifact (collected:
-  showing-the-owner §5 via presentation-layer): owner asking "will
+- Present-it rule for this artifact (see presentation-layer): owner asking "will
   this link work / where does the dish go" gets the
   outdoor page or a single image of it, with source
   labels per layer and a capture date.
@@ -213,7 +212,7 @@ are public-data endpoints plus local terrain reads.
 
 - Layer source unreachable → last-good cached box with
   its capture date + source error; never swap areas
-  silently (map-reports Recovery, concept-review §12 rule).
+  silently (map-reports Recovery rule).
 - Parcel fields leak owner data → drop the layer,
   re-allow-list, scrub per pre-publish-scrub, record the anomaly.
 - Page disagrees with records → regenerate; records win.

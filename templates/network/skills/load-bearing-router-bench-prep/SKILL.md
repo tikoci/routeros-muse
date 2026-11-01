@@ -7,11 +7,11 @@ tested: none
 
 # `load-bearing-router-bench-prep` skill (unbundle → back up → budget → re-prove) [template v1 draft]
 
-Promoted from the load-bearing journal (homework §4: VPN
-controller + cross-site RADIUS roles), the bench-loan probes,
-the sizing notes (512 MB budgets, L009/RB5009 roles),
-the re-prove-per-box rule (demo-hardware-notes), and the
-bench-vs-manage table (feedback §4). No secrets
+Promoted from a journaled load-bearing loan (VPN
+controller + cross-site RADIUS roles), bench-loan probes,
+sizing notes (512 MB budgets, L009/RB5009 roles),
+the re-prove-per-box rule, and a
+bench-vs-manage table from pilot feedback. No secrets
 below; identities travel as backup-exists, never as values.
 
 ## Part 1 — The checklist (the site survives the loan)
@@ -31,11 +31,10 @@ doesn't happen.
 
 ### 0. Roles (what breaks if it leaves)
 
-A demo router can be load-bearing on the real network TODAY
-[JOURNALED, homework §4]: besides the dashboard, it can be the VPN
-controller for its site AND the RADIUS server the OTHER site
-uses for human router logins. A reset, a netinstall, or taking
-it to the bench has effects beyond its own site.
+A demo router can be load-bearing on the real network TODAY.
+A journaled deployment demonstrated both dependencies: VPN control
+for one site and RADIUS login service for another. A reset, a
+netinstall, or taking it to the bench has effects beyond its own site.
 
 - Inventory roles per box before ANY loan/reset/netinstall:
   VPN controller/member, RADIUS server/client, dashboard
@@ -47,7 +46,7 @@ it to the bench has effects beyond its own site.
   logins depending on THIS box's RADIUS is invisible from
   this site's dashboard. Check both directions (who I serve
   + who serves me) before the loan.
-- Role split across units is normal (demo-hardware-notes):
+- Role split across units is normal (from an earlier field run):
   beep-vs-container requirements may split the casting across
   two units (cold open vs container story). One box needn't do
   everything — but every role needs an OWNER, on-bench or
@@ -58,7 +57,7 @@ it to the bench has effects beyond its own site.
 
 ### 1. Unbundle (backup identity, fallback logins)
 
-P8 probe (homework): "Loaned router unbundled from the real
+P8 probe: "Loaned router unbundled from the real
 network (VPN identity backed up, other site's login fallback)"
 → pass signal: "A reset of the loaned router doesn't affect the
 other site" → fallback: "Don't reset it; do Set up on a
@@ -84,7 +83,7 @@ unbundle, no loan — use a different box.
   take over (or the outage is scheduled + announced),
   tunnels re-home or wait. Each dependent gets one line:
   moved / paused / scheduled-outage — no silent gaps.
-- Bench-vs-manage table (feedback §4): on the bench,
+- Bench-vs-manage table (from pilot feedback): on the bench,
   lockout is EXPECTED AND CHEAP (console рядом, reset free);
   remote, lockout is the main risk. The unbundle is what
   converts the loan from "remote risk" to "bench cheap" —
@@ -93,21 +92,21 @@ unbundle, no loan — use a different box.
 
 ### 2. Budget (RAM, roles, power, console)
 
-P7 probe (homework): "Free RAM on the loaned router with the
+P7 probe: "Free RAM on the loaned router with the
 dashboard + cloudflared running" → "Headroom for one more
 Bun container" → fallback: "Run centrs on the workstation side, not
 the router." Budgets are measured-with-stack-running, not
 nameplate.
 
 - RAM: measure FREE with the current stack running BEFORE
-  adding containers (homework §4: dashboard + cloudflared +
-  centrs service in 512 MB). Sizing opinions (feedback):
+  adding containers (from an earlier field run: dashboard + cloudflared +
+  centrs service in 512 MB). Sizing opinions (from pilot feedback):
   L009/512 MB hosts a THIN bridge/dashboard comfortably —
   NOT an agent harness (that needs the RB5009-class box or
-  a workstation; Codex §5 test list before promising
-  harness-in-container). No RAM headroom = the work moves
+  a workstation; don't promise harness-in-container
+  until it's verified on a twin). No RAM headroom = the work moves
   (workstation-side, bigger box), not "try anyway and OOM".
-- Roles per unit (demo-hardware-notes): match
+- Roles per unit (from an earlier field run): match
   the unit to the job's needs (radios? containers? beep?
   CPU?) — e.g. an older beep-capable unit for beep demos,
   a 512 MB unit for thin-bridge proofs, a headroom-class
@@ -130,7 +129,7 @@ nameplate.
 ### 3. Re-prove (on THAT box, not its cousin)
 
 The Cloudflare path was once proven on the WRONG router
-(homework §4, VERIFIED box identity: arm64/2-core/
+(JOURNALED, VERIFIED box identity: arm64/2-core/
 512 MB/128 MB flash/7.26beta3 vs the RB1100AHx4 ARM32 the
 path was proven on): three of four fixes depend on the
 router's own config — origin address the container can
@@ -138,8 +137,8 @@ reach, macvlan vs bridge, input-chain accept rule. Rule:
 
 - P0–P9 probes run against THE unit on the bench, not
   against memory of a different box
-  (demo-hardware-notes, verbatim rule). Re-run the path
-  sequence day 0–1 on the bench unit (homework: use the
+  (verbatim rule from an earlier field run). Re-run the path
+  sequence day 0–1 on the bench unit (from an earlier field run: use the
   official arm64 cloudflared image there; the community
   ARM32 build isn't needed).
 - Input rules must survive restarts (JOURNALED): a rule
@@ -149,7 +148,7 @@ reach, macvlan vs bridge, input-chain accept rule. Rule:
   `in-interface-list=!WAN` + port held up. Pick either
   form, but TEST IT ACROSS A CONTAINER RESTART. Rules
   that die on restart are the bench's favorite heisenbug.
-- Twin support per unit (feedback bench-vs-manage): the
+- Twin support per unit (bench-vs-manage, from pilot feedback): the
   twin tests the WHOLE RENDERED config before hardware is
   touched (except radios) — bench twin at the unit's
   firmware (twin-ops). Sticker→device binding + install
