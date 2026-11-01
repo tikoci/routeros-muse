@@ -824,11 +824,11 @@ updated = "2026-11-01"
 [[task]]
 id = "T83"
 title = "Render workspace artifacts in Mode B under the approved offline sandbox contract"
-status = "needed"
+status = "active"
 detail = "D17/D19 are still unfulfilled in the real UI: renderDoc puts HTML into textContent, no iframe/render surface exists, and generic HTML/SVG/PNG files are absent from the picker tree. Add an explicit artifact opener/viewer, static-default and opt-in inline-script sandbox tiers (no same-origin or external refs), with agent-visible instructions. Replace the topology HTML CDN dependency with packaged/offline delivery per T41/D21. Acceptance is a real visual report/topology opened through the browser, offline and console-clean; an HTTP 200 or source-text assertion does not pass."
 evidence = "T80 real-browser file opener: sourceShown=true, renderedHeadingCount=0, frameCount=0 (notes/t80-surface-probe.ts; out/t80-review/artifact-source.png). ui.html renderDoc/loadTree; jobs.ts mermaidPage loads jsdelivr externally. T33 APIs/files exist; rendering in the product does not."
 blocked_by = ["T33"]
-agent = ""
+agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
 
 [[task]]
@@ -954,19 +954,19 @@ updated = "2026-11-01"
 [[task]]
 id = "T96"
 title = "De-lab the network template skills before GitHub"
-status = "needed"
+status = "active"
 detail = "35 skill files cite the pilot lab router by name plus orca-setup/notes line refs as grounding provenance. D1 allows lab device names, but site-specific service/access/VPN facts and dangling ~/Work note pointers do not belong in a shipped template. Rewrite as generic lessons (tested-on: a RouterOS 7.26 arm router) and drop archive line refs; keep the grounding claims. Gates the D34 GitHub step."
 evidence = "T14 codex review 2026-11-01 (three flagged spots fixed; grep -c bigdude over templates/ shows the rest)"
 blocked_by = []
-agent = ""
+agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
 
 [[task]]
 id = "T97"
 title = "Init write safety: exclusive create, no symlink follow, honest rollback"
-status = "needed"
+status = "active"
 detail = "scaffoldIntoDir/copyTemplateFiles (src/lib/workspace.ts, src/lib/templates.ts) preflight conflicts then write with truncating ops, so: (1) a file created after the scan is overwritten and init reports ok; (2) a dangling workspace.toml symlink passes the scan and init writes+stamps its target outside the workspace; (3) a throw mid-copy leaves partial files (written list is only assigned after copy returns) that block every retry; (4) rollback rmdirs a pre-existing empty destination dir (can delete the caller's cwd). Fix: exclusive non-following creates (wx / O_EXCL|O_NOFOLLOW, lstat in preflight), record each write as it lands, rollback removes only what this run created and never a dir that existed. Fail-first tests for each of the four."
 evidence = "T93 codex gpt-6.1-sol review 2026-11-01: probes COMPETING_WRITER_RAN=True OWNER_DATA_PRESERVED=False; checks-file EEXIST left .gitignore/AGENTS.md/README.md/START-HERE.md; failing centrs shim -> dirStillExists:false"
 blocked_by = ["T93"]
-agent = ""
+agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
