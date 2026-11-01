@@ -14,6 +14,7 @@ import {
 	lstatExists,
 	readTemplateMeta,
 	ScaffoldConflict,
+	type ScaffoldFs,
 	templateDir,
 	templatesRoot,
 } from "./templates";
@@ -548,6 +549,8 @@ export type ScaffoldOpts = {
 	 * write, so a test can land a competing file deterministically.
 	 */
 	afterPreflight?: () => void;
+	/** Writer seam, forwarded to the template copy (tests only). */
+	fs?: ScaffoldFs;
 };
 
 export type ScaffoldResult =
@@ -702,6 +705,7 @@ export async function scaffoldWorkspace(
 			provenance: { name: tpl.name, description: "", version: tpl.version },
 			createdFiles,
 			createdDirs,
+			fs: opts?.fs,
 		});
 	} catch (err) {
 		if (err instanceof ScaffoldConflict) {
@@ -832,6 +836,7 @@ export async function scaffoldIntoDir(
 			provenance: { name: tpl.name, description: "", version: tpl.version },
 			createdFiles,
 			createdDirs,
+			fs: opts?.fs,
 		});
 	} catch (err) {
 		if (err instanceof ScaffoldConflict) {

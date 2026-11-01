@@ -154,22 +154,43 @@ export function listTemplateFiles(dir: string): string[] {
 }
 
 /**
+ * Narrow test seam for scaffold writes (T97 follow-up): lets tests
+ * inject partial/short writes and close failures. Production
+ * callers leave it unset and get node:fs straight through.
+ */
+export type ScaffoldFs = {
+	writeSync?: (
+		fd: number,
+		buf: Buffer,
+		offset: number,
+		length: number,
+	) => number;
+	closeSync?: (fd: number) => void;
+};
+
+/**
  * Exclusive, non-following file create (T97): O_CREAT|O_EXCL
  * fails on any existing path, including a dangling symlink, so
  * a competing writer's file is never truncated. A failed write
  * unlinks the partial file before throwing.
  */
-function writeFileExclusive(full: string, content: string | Buffer): void {
+function writeFileExclusive(
+	full: string,
+	content: string | Buffer,
+	fs?: ScaffoldFs,
+): void {
 	const fd = nodeFs.openSync(full, "wx", 0o666);
+	const writeSync =
+		fs?.writeSync ??
+		((fd: number, buf: Buffer, offset: number, length: number): number =>
+			nodeFs.writeSync(fd, buf, offset, length, null));
+	const closeSync = fs?.closeSync ?? nodeFs.closeSync;
 	try {
-		if (typeof content === "string") {
-			nodeFs.writeSync(fd, content);
-		} else {
-			nodeFs.writeSync(fd, content);
-		}
+		const buf = typeof content === "string" ? Buffer.from(content) : content;
+		writeSync(fd, buf, 0, buf.length);
 	} catch (err) {
 		try {
-			nodeFs.closeSync(fd);
+			closeSync(fd);
 		} catch {
 			// close failure while handling a write failure: ignore
 		}
@@ -180,7 +201,7 @@ function writeFileExclusive(full: string, content: string | Buffer): void {
 		}
 		throw err;
 	}
-	nodeFs.closeSync(fd);
+	closeSync(fd);
 }
 
 /**
@@ -246,6 +267,8 @@ export type CopyOpts = {
 	 */
 	createdFiles?: string[];
 	createdDirs?: string[];
+	/** Writer seam (tests only); production leaves it unset. */
+	fs?: ScaffoldFs;
 };
 
 /**
@@ -281,7 +304,7 @@ export function copyTemplateFiles(
 			content = nodeFs.readFileSync(path.join(template, rel));
 		}
 		try {
-			writeFileExclusive(full, content);
+			writeFileExclusive(full, content, opts?.fs);
 		} catch (err) {
 			if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
 				throw new ScaffoldConflict([rel]);

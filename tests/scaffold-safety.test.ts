@@ -143,3 +143,71 @@ describe("scaffold write safety", () => {
 		expect(nodeFs.readdirSync(dir)).toEqual([]);
 	});
 });
+
+describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
+	tposix("partial writes loop until the file is complete", async () => {
+		const dir = mktmp("t97b-partial-");
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			"minimal",
+			{
+				fs: {
+					writeSync: (fd, buf, offset, length) =>
+						nodeFs.writeSync(fd, buf, offset, Math.min(1, length), null),
+				},
+			},
+		);
+		expect(res.ok).toBe(true);
+		if (!res.ok) return;
+		const agents = nodeFs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+		expect(agents.length).toBeGreaterThan(100);
+		expect(agents).toContain(path.basename(dir));
+	});
+
+	tposix("a zero-byte write fails the scaffold and rolls back", async () => {
+		const dir = mktmp("t97b-short-");
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			"minimal",
+			{
+				fs: { writeSync: () => 0 },
+			},
+		);
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.why).toMatch(/short write/);
+		expect(nodeFs.readdirSync(dir)).toEqual([]);
+	});
+
+	tposix(
+		"a close error rolls back the ledgered file; retry succeeds",
+		async () => {
+			const dir = mktmp("t97b-close-");
+			let closes = 0;
+			const realClose = nodeFs.closeSync;
+			const res = await scaffoldIntoDir(
+				dir,
+				toolEnv(stubCentrsBin()),
+				"minimal",
+				{
+					fs: {
+						closeSync: (fd) => {
+							closes++;
+							if (closes === 1) throw new Error("boom-close");
+							realClose(fd);
+						},
+					},
+				},
+			);
+			expect(res.ok).toBe(false);
+			expect(nodeFs.readdirSync(dir)).toEqual([]);
+			const retry = await scaffoldIntoDir(
+				dir,
+				toolEnv(stubCentrsBin()),
+				"minimal",
+			);
+			expect(retry.ok).toBe(true);
+		},
+	);
+});
