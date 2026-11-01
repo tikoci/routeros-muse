@@ -7,15 +7,15 @@ tested: none
 
 # `twin-ops` skill (build → prove → restore → teardown) [template v1 draft]
 
-Promoted from daily twin practice: twin2 UM build + bisection,
-twin3 7.25 version-axis repeat, T26 /app proving runs, and the
+Promoted from daily twin practice: a twin UM build + bisection,
+a 7.25 version-axis repeat, /app proving runs, and the
 non-disturbance pattern. Used constantly, written down now.
-Backlog #20. No secrets below; machine names are lab roles.
+No secrets below; twin names below are roles, not hosts.
 
 ## Part 1 — The checklist (disposable boxes, durable discipline)
 
-Run top to bottom. Twins are cattle with ONE exception: twin1 and
-twin2 are never deleted.
+Run top to bottom. Twins are cattle with ONE exception: the
+standing pair — the two long-lived twins — is never deleted.
 
 1. Build (or reuse) a twin at the EXACT firmware + packages of the
    question; verify package + disk before trusting it.
@@ -26,7 +26,7 @@ twin2 are never deleted.
 4. Respect other sessions' machines: list PIDs at start and end,
    touch only your own boxes, restore prior running state.
 5. Tear down what you built (or stop it): remove dirty-work boxes,
-   never twin1/twin2, leave the lab as found plus your record.
+   never the standing pair, leave the bench as found plus your record.
 
 ### 0. Build (match the question exactly)
 
@@ -37,15 +37,15 @@ centrs retrieve --quickchr <twin-n> /system/package   # verify pkg present
 quickchr exec <twin-n> "/disk/print"                  # verify 2nd disk present
 ```
 
-- Grounded: twin2 built 7.26beta3 + user-manager + 512M exactly this
-  way (twin2-um.md:13-39); twin3 repeated it for 7.25 reusing the
-  cached `chr-7.25.img` (t1-twin3.md:32-53).
+- Grounded: one twin built 7.26beta3 + user-manager + 512M exactly
+  this way; a second twin repeated it for 7.25 reusing the
+  cached `chr-7.25.img`.
 - Fresh CHR ships routeros-only: packages come from `--add-package`
-  at add (twin-app v1 proved the negative; t26-app-proof.md:21-23).
+  at add (proven by a twin built without it).
 - Container-shaped twins need provisioning AT ADD: `--add-disk 2G
   --add-package container --device-mode-enable container`, then
-  first boot verifies `mode=rose container=yes`
-  (t26-app-proof.md:21-23). Container mode cannot be bolted on later
+  first boot verifies `mode=rose container=yes`.
+  Container mode cannot be bolted on later
   without a set + reboot cycle — build it in.
 - Cached images skip downloads (`Using cached image: chr-7.25`);
   only the package zip fetches at first start. No cache + no
@@ -62,14 +62,14 @@ quickchr snapshot <twin> load <cell-name>   # machine must be running
 ```
 
 - Shape verified from `quickchr snapshot --help` (help-verified, not
-  run-verified in our notes — first user records the run): save
+  run-verified — first user records the run): save
   auto-names ISO-date when omitted; load/delete need the machine
   running; needs qcow2 boot disk. Alias: `quickchr snap`.
 - Snapshot BEFORE the trigger (reboot-to-wedge, db-path move,
   package op), not after: a post-failure snapshot preserves nothing
   useful.
 - Name for the cell (`pre-c2-reboot`, `healthy-s1`): snapshot names
-  are the lab half of the incident results table.
+  are the twin half of the incident results table.
 - Snapshots cover the qcow2 BOOT disk: second-disk (pcie1) state is
   NOT in the snapshot — record disk-side state separately (file
   listings + db triples) or rebuild it by recipe.
@@ -78,18 +78,17 @@ quickchr snapshot <twin> load <cell-name>   # machine must be running
 
 - One procedure per cycle: configure → record pre-state → trigger →
   confirm trigger (TWO signals: uptime ~50s AND write-sect reset) →
-  record post-state. The UM campaign ran 6 cycles unchanged
-  (twin2-bisection.md:11-19).
+  record post-state. The UM campaign ran 6 cycles unchanged.
 - Reboot trigger shape: `quickchr exec <twin> "/system/reboot"` →
   expected `EXEC_FAILED ... "interrupted"` as the connection drops,
-  then `sleep 55` (twin2-um.md:89-97; t1-twin3.md:106-113).
-- Twin-proof states its limits every time (K23): no radios on CHR,
+  then `sleep 55`.
+- Twin-proof states its limits every time: no radios on CHR,
   x86-only packages, CHR lacks `/system/routerboard` (identity via
   license system-id). A twin pass never claims radio/hardware truth.
 - Claim = command + output: every cycle row carries the exact
   commands and their outputs, or it did not happen.
 
-### 3. Non-disturbance (shared lab manners)
+### 3. Non-disturbance (shared-bench manners)
 
 ```sh
 quickchr list   # session START: record names + PIDs + running state
@@ -97,22 +96,21 @@ quickchr list   # session START: record names + PIDs + running state
 quickchr list   # session END: same PIDs, prior running state restored
 ```
 
-- Grounded pattern: the T1 delegate ran zero exec/start/stop/clean/
-  remove against twin1/twin2/twin4 all session — host-side `list`
-  only — and closed with PIDs unchanged (t1-twin3.md:154-167).
-- NEVER delete twin1/twin2: they are the standing lab pair (twin2 is
-  still wedged on /pcie1/c1/c2 as a living specimen). Make your own
-  dirty-work box for destructive probes (twin-app pattern:
-  t26-app-proof.md:5).
+- Grounded pattern: one session ran zero exec/start/stop/clean/
+  remove against other sessions' twins all session — host-side `list`
+  only — and closed with PIDs unchanged.
+- NEVER delete the standing pair: they are the long-lived twins
+  (one may carry a wedge as a living specimen — reproduce around
+  it). Make your own dirty-work box for destructive probes.
 - Restore prior running state at session end: twins you found
   stopped get stopped (`quickchr shutdown` graceful, `stop` for
-  power-cut); twins you found running stay running (T26 runs ended
-  stopped-at-prior-state; t26-app-proof.md:5).
+  power-cut); twins you found running stay running (prior proving
+  runs ended stopped-at-prior-state).
 - `shutdown <name>` requests /system/shutdown over REST with bounded
   hard-stop fallback (default 10s); `stop` is immediate power-cut
   (help-verified). Prefer shutdown; use stop for wedged guests.
 
-### 4. Teardown (leave the lab as found)
+### 4. Teardown (leave the bench as found)
 
 ```sh
 quickchr shutdown <twin>            # graceful; preserves disks + creds
@@ -122,13 +120,14 @@ quickchr clean <twin>               # reset disk to fresh image (keeps the devic
 
 - Shapes from `quickchr stop/shutdown/remove --help` (help-verified):
   remove deletes disk AND state; clean resets the disk but keeps the
-  device; all accept `--all` — never use `--all` in the shared
-  lab (it would take other sessions' twins).
+  device; all accept `--all` — never use `--all` on a shared
+  host (it would take other sessions' twins).
 - Remove YOUR dirty-work boxes when the work closes; stop (not
-  remove) any box another session might reuse, and say so in coord.
+  remove) any box another session might reuse, and announce it in
+  the shared notes.
 - Deleting a twin with unrecorded state destroys evidence: the run
-  record (notes/ + coord post) lands BEFORE the remove.
-- Twin1/twin2 are never remove/clean targets. No exceptions, no
+  record (notes + a shared post) lands BEFORE the remove.
+- The standing pair is never a remove/clean target. No exceptions, no
   "just this once" — rebuild your own instead.
 
 ## Part 2 — Skill doc
@@ -138,12 +137,12 @@ quickchr clean <twin>               # reset disk to fresh image (keeps the devic
 Load when: needing a CHR to test against; reproducing a failure;
 proving a change before production; version-axis questions; lab
 cleanup; "which twin / what state" questions. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
 - quickchr + centrs on PATH; KVM available (`quickchr doctor` all
-  green; orca-setup.md:101-114).
+  green).
 - Disk for images (~130MB base + packages + disks per twin);
   cached `chr-<ver>.img` or network to fetch.
 - The question written down: firmware + packages + disk shape the
@@ -153,10 +152,10 @@ capability-probe pattern: K22.)
 
 - Lab host is yours to build on; other sessions' RUNNING twins are
   read-only curiosities — never exec/start/stop/remove them.
-- twin1/twin2: never delete, never clean; twin2's wedge is a
+- The standing pair: never delete, never clean; a kept wedge is a
   specimen — reproduce around it, don't "fix" it without asking.
-- Production contact from twin work is forbidden: no 172.22.74.254 /
-  192.168.74.1 traffic in a twin session (t1-twin3.md:167).
+- Production contact from twin work is forbidden: no
+  production-address traffic in a twin session.
 
 ### Envs
 
@@ -179,7 +178,7 @@ capability-probe pattern: K22.)
 - Post-cycle: trigger confirmed two-signal, or the cycle is void.
 - Session-end `quickchr list` matches session-start (names + PIDs)
   except your own deliberate builds/removes.
-- Claim discipline: every twin result states CHR limits (K23).
+- Claim discipline: every twin result states CHR limits.
 
 ### Recovery
 

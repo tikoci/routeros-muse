@@ -7,8 +7,8 @@ tested: none
 
 # `webfig-handoff` skill (confirm serving → build link → state the check → verify render) [template v1 draft]
 
-Promoted from the WebFig serving checks on twin1/7.26beta3
-(t28-adopt-proof.md: service + webserver toggles, 200 +
+Promoted from the WebFig serving checks on a 7.26beta3 twin
+(service + webserver toggles, 200 +
 `X-Frame-Options: sameorigin`, 528 KB master bundle carrying
 the fragment machinery). Consumes the `routeros-webfig` DOMAIN
 skill (fragment grammar, view catalog, login flow, embed
@@ -17,8 +17,7 @@ procedure: confirm the serving layer on the TARGET release,
 build links from the catalog (never from CLI paths), attach
 the human's check, and verify the RENDER — never the HTTP
 code. Render checks on 7.26beta3 need a browser and are NOT
-claimed here. Build-tracker references (T/K IDs, notes paths)
-are pointers pending staging scrub. No secrets below.
+claimed here. No secrets below.
 
 ## Part 1 — The checklist (a link without a check is a shrug)
 
@@ -50,7 +49,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://<host-fwd>/webfig/
 # -> 200 (the login app shell; ~26 KB HTML, <title>RouterOS</title>)
 ```
 
-- Grounded (t28-adopt-proof.md): `/ip/service/webserver`
+- Grounded: `/ip/service/webserver`
   EXISTS on 7.26beta3 with independent `webfig-plain` /
   `webfig-secure` toggles — WebFig can be off while REST
   answers. A working REST endpoint does NOT prove WebFig
@@ -99,10 +98,10 @@ https://<router-origin>/webfig/#Bridge.VLANs
 - The check names the VERDICT the human brings (intent,
   "that VLAN shouldn't be there") — never asks them to
   verify agent mechanics ("confirm the rule applied" is
-  the agent's read-back job, #8 step 5).
+  the agent's read-back job, firewall-apply step 5).
 - WebFig can EDIT: opening the UI is not approval of agent
   changes, and the handoff must not imply it. Machine
-  config rides centrs (#8/change-apply); the human's UI is
+  config rides centrs (firewall-apply/change-apply); the human's UI is
   for inspection. Say which side each change is on.
 
 ### 3. Verify the render, never the HTTP code (browser step)
@@ -110,7 +109,7 @@ https://<router-origin>/webfig/#Bridge.VLANs
 - Fragments are NEVER sent to the server (browsers strip
   `#...`; curl does too) — so no fetch, no 200, no header
   check can validate a fragment. Validity is a render
-  property only (t28-adopt-proof.md, load-bearing negative).
+  property only (load-bearing negative).
 - Unknown services/containers can SILENTLY fall back to
   another view while leaving the requested hash in the
   address bar (domain skill: `#CMR` fell back to
@@ -138,7 +137,7 @@ https://<router-origin>/webfig/#Bridge.VLANs
 - Origin discipline for handoffs: changing HTTP→HTTPS,
   changing the port, or another browser profile can force a
   fresh login. Send the EXACT origin the human should keep
-  using (host-forward port for lab, stable hostname + TLS
+  using (host-forward port for twin access, stable hostname + TLS
   for deployed).
 
 ## Part 2 — Skill doc
@@ -165,7 +164,7 @@ UX questions.
 - All serving checks are reads; handoff links are URLs.
   No router writes in this skill's core path.
 - Skin assignment (`/user/group set skin=`) is a WRITE:
-  bigdude rule — reads free, ANY write asks first.
+  production rule — reads free, ANY write asks first.
 - Never send passwords or tokens in a handoff, even to
   the owner (their login, their browser, their secret).
 
