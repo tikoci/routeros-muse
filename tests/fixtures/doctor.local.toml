@@ -1,0 +1,19 @@
+[[tool]]
+id = "qemu"
+os = "linux"
+tier = "recommended"
+detect = "command -v qemu-system-x86_64"
+hint = "OVERLAY HINT"
+why = "overlay why"
+skills = ["twin-ops"]
+required_for = ["twin-ops"]
+
+[[tool]]
+id = "lab-printer"
+os = "linux"
+tier = "helpful"
+detect = "command -v lab-printer"
+hint = "ask the lab"
+why = "a workspace-local extra"
+skills = []
+required_for = []

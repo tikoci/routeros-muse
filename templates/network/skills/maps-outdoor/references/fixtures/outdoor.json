@@ -1,0 +1,17 @@
+{
+  "synthetic": true,
+  "note": "SYNTHETIC fixture for the maps-outdoor self-test. Null-island coords (near lat/lon 1.0), fictional site, never a real place.",
+  "site": "example-outdoor-link",
+  "question": "link ridge-pole to barn-roof on 5 GHz: go/no-go",
+  "layers": {
+    "starlink": {"source": "fixture sky-view notes", "date": "2026-10-30", "grade": "inferred", "sky_view": "open north, tree line south", "dish_spot": {"lat": 1.001, "lon": 1.001}},
+    "lidar": {"source": "fixture hillshade read", "date": "2026-10-30", "grade": "read-by-eye", "terrain": "gully mid-path, ridge clear at both ends"},
+    "parcels": {"source": "fixture parcel extract", "date": "2026-10-30", "grade": "measured", "fields": ["geometry", "line_label"], "crossings": 2},
+    "solar": {"source": "fixture sun estimate", "date": "2026-10-30", "grade": "inferred", "winter_sun_hours": 3.1, "spot": {"lat": 1.003, "lon": 1.002}}
+  },
+  "devices": [
+    {"device": "fx-ridge-pole", "lat": 1.0, "lon": 1.0},
+    {"device": "fx-barn-roof", "lat": 1.005, "lon": 1.004}
+  ],
+  "link": {"from": "fx-ridge-pole", "to": "fx-barn-roof", "distance_km": 2.1, "band": "5 GHz"}
+}

@@ -1,0 +1,343 @@
+# Cross-repo needs: what routeros-muse needs from tikoci tools.
+# Contract: records/README.md (strict subset: [[need]], one-line strings/arrays).
+
+[[need]]
+id = "C1"
+repo = "centrs"
+title = "Redact secret-bearing values in output"
+status = "needed"
+detail = "Plain /export terse returned a live cloud tunnel token with no warning. Minimum: warnings[] for leak classes (password, secret, private-key, community, container envs incl. inline env K=V); ideal: redaction with opt-out. Developer-flagged."
+evidence = "notes/tikoci-issues.md #8; triage item 1, no report-back"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "C2"
+repo = "centrs"
+title = "mac-telnet login timeout vs 7.26beta3"
+status = "active"
+detail = "transport/timeout after 30s despite mac-server set to all and proven L2 adjacency. Needs a real device or bridged-NIC CHR to reproduce."
+evidence = "notes/tikoci-issues.md #1; triage item 2, no report-back; T80 upstream recheck: #546 closed completed / #547 merged 2026-10-28; consumer hardware/L2 end-to-end verification is not established here and remains T23 follow-through. #547 belongs to this need, not C7."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[need]]
+id = "C3"
+repo = "centrs"
+title = "Bare-menu paths flagged write-shaped"
+status = "landed"
+detail = "execute treats /system/identity as a write; with /print it passes. Bare menus should read as reads (or say so). Twin-safe."
+evidence = "centrs 22be4fa (#543) bare menu paths read as reads, branch fix/execute-bare-menu-path-read"
+blocked_by = []
+agent = "triage-2026-10-26"
+updated = "2026-10-27"
+
+[[need]]
+id = "C4"
+repo = "centrs"
+title = "Single --attributes returns scalar"
+status = "landed"
+detail = "Contradicts the array/object shape guidance. Doc fix or shape fix. Twin-safe."
+evidence = "centrs 56f950f (#544) projection rule doc fix, branch docs/retrieve-projection-rule"
+blocked_by = []
+agent = "triage-2026-10-26"
+updated = "2026-10-27"
+
+[[need]]
+id = "C5"
+repo = "centrs"
+title = "CHR /system/routerboard hint"
+status = "landed"
+detail = "Bare validation/unknown-path on CHR; suggest /system/license system-id instead."
+evidence = "centrs 9fa79c6 (#545) routerboard hint, branch fix/retrieve-routerboard-hint"
+blocked_by = []
+agent = "triage-2026-10-26"
+updated = "2026-10-27"
+
+[[need]]
+id = "C6"
+repo = "centrs"
+title = "REST permission denial misreported as retryable"
+status = "landed"
+detail = "HTTP 500 (9) on REST denial reads as outcome-unknown/retryable. Never treat as success."
+evidence = "PR tikoci/centrs#541 merged (GitHub rechecked T80 2026-11-01); live both-transport permission-denied proof already recorded in notes/t28-acl-proof.md; bundled 0.1.9-next.24 contains the new permission code. T23 can proceed with other needs."
+blocked_by = []
+agent = "triage-2026-10-26"
+updated = "2026-11-01"
+
+[[need]]
+id = "C7"
+repo = "centrs"
+title = "Auto protocol selection never fails over"
+status = "needed"
+detail = "Refused 8728 ends the attempt; SSH/REST never tried. Probe-then-pick or failover across transports."
+evidence = "coord 20261027-0337-C #518; current auto-protocol issue/implementation mapping needs T23 audit; T80 correction: #547 fixes C2 directed-broadcast MAC selection, not auto-protocol failover; removed the false open-PR association. Auto-protocol follow-through remains needed under T23."
+blocked_by = []
+agent = "triage-2026-10-26"
+updated = "2026-11-01"
+
+[[need]]
+id = "C8"
+repo = "centrs"
+title = "REST upload first-attempt 0-byte"
+status = "needed"
+detail = "First upload lands 0 bytes; retry with --force is fine. Transient or overwrite-path bug; reproduce on twin."
+evidence = "coord 20261027-0337-C #518"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "C9"
+repo = "centrs"
+title = "Empty-token removal stores empty value"
+status = "needed"
+detail = "devices set target key= should remove the token per docs; stores an empty value instead."
+evidence = "coord 20261027-0337-C #518"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "C10"
+repo = "centrs"
+title = "transfer/execute transport naming gap"
+status = "needed"
+detail = "transfer ignores record via=ssh (methods are rest/native/sftp); needs explicit --via sftp. Unify naming or document."
+evidence = "coord 20261027-0337-C #518"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "C11"
+repo = "centrs"
+title = "Batch SSH 10s default kills long runs silently"
+status = "needed"
+detail = "A 12s frame died mid-payload; --timeout 30s fixes it. Surface the timeout in the error/remediation."
+evidence = "notes/enbeep-bigdude.md phase 1"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "C12"
+repo = "centrs"
+title = "Node port for arm32 /app path"
+status = "needed"
+detail = "NARROWED per D2/Q3 2026-10-28: served dashboard/proxy code must be npm-compatible with no Bun-isms (skill rule); Bun stays workspace-side for repo/tool updates; full Node port of tooling out of scope."
+evidence = "notes/app-feasibility.md; notes/d1-d2-decision.md (narrowing)"
+blocked_by = []
+agent = ""
+updated = "2026-10-28"
+
+[[need]]
+id = "Q1"
+repo = "quickchr"
+title = "exec CRLF output"
+status = "landed"
+detail = "Consumers must normalize before hashing/diffing. Document or add a flag."
+evidence = "quickchr #211/#212 doc line (T4 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[need]]
+id = "Q2"
+repo = "quickchr"
+title = "Local CI signal (act pilot)"
+status = "landed"
+detail = "Full ci.yaml under act on orca incl. KVM CHR smoke; only upload-artifact@v7 is non-signal locally."
+evidence = "coord 20261027-0529-C"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-27"
+
+[[need]]
+id = "R1"
+repo = "rosetta"
+title = "CLI/MCP parity gap table"
+status = "needed"
+detail = "Which MCP tools lack a browse --once equivalent; smallest read-path set (search/explain/lookup/stats/changelogs)."
+evidence = "notes/t2-rosetta-cli.md gap table (probe done; comment on rosetta#54 + PRs open)"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "R2"
+repo = "rosetta"
+title = "Pipeable --once output (#208)"
+status = "landed"
+detail = "Dot-commands emit JSON. Confirm it covers the agent-pipe case; close or file the remainder."
+evidence = "rosetta 98261e3 2026-10-26"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "R3"
+repo = "rosetta"
+title = "--help audit as onboarding surface"
+status = "needed"
+detail = "Can a fresh agent learn the CLI from --help alone; note every gap."
+evidence = "notes/t2-rosetta-cli.md --help audit (probe done; docs PRs open)"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "R4"
+repo = "rosetta"
+title = "DB hygiene for CLI users"
+status = "needed"
+detail = "One-DB-per-version coexistence plus CLI states which DB release it used. Silent-fallback #168 is open upstream: link, do not duplicate."
+evidence = "notes/t2-rosetta-cli.md DB verdict: coexistence holds (#168 stays for download path)"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "R5"
+repo = "rosetta"
+title = "7.26beta3 coverage gap"
+status = "needed"
+detail = "orca DB tops at 7.25rc1; bigdude runs 7.26beta3. Cite DB identity on every rosetta-backed claim until coverage lands."
+evidence = "notes/orca-setup.md"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "R6"
+repo = "rosetta"
+title = "MCP cold start (#167)"
+status = "blocked"
+detail = "First run downloads ~87MB pre-handshake. Pre-warm or fail loudly. Externally blocked: upstream issue decides."
+evidence = "rosetta #167 (upstream open)"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[need]]
+id = "R7"
+repo = "rosetta"
+title = "Device data: default configs plus RF polar plots"
+status = "needed"
+detail = "Rosetta indexes device specs but not per-device default configs nor RF polar-plot data (Mikrotik PDFs unindexed); both needed for device-selection advice; may need a mikrotik.com polar-plot pull task."
+evidence = "T28 backlog v3 device-selection (developer pass 2026-10-29)"
+blocked_by = []
+agent = ""
+updated = "2026-10-29"
+
+[[need]]
+id = "S1"
+repo = "shared"
+title = "Negotiation recipe/skill"
+status = "landed"
+detail = "Probe, select protocol, CDB-first creds, escalate-to-developer checklist; no agent SSH-firsts blind again."
+evidence = "notes/t8-recipe.md (T8 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[need]]
+id = "S2"
+repo = "shared"
+title = "CDB + credential-handoff design"
+status = "landed"
+detail = ".env-to-env mapping is explicitly temporary. Design the durable scheme; no improvised CDBs with secrets meanwhile."
+evidence = "notes/t9-cdb.md (T9 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[need]]
+id = "S3"
+repo = "shared"
+title = "Staged-script-run twin verification"
+status = "landed"
+detail = "Verified on twin1 (see T6): positional run works, readback exact to 24KB, cleanup verified, twin pristine."
+evidence = "notes/t6-staged-run.md"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-27"
+
+[[need]]
+id = "S4"
+repo = "shared"
+title = "arm32 failure-surface map"
+status = "landed"
+detail = "Unscoped. Map where centrs/rosetta break on 32-bit ARM before patch PRs (upstream PRs, no forks)."
+evidence = "notes/t5-arm32.md (T5 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[need]]
+id = "C13"
+repo = "centrs"
+title = "Redacted-default devices show"
+status = "needed"
+detail = "show and mutation envelopes print cleartext passwords; redact by default with explicit opt-in, gated on CDB encryption state."
+evidence = "tikoci/centrs#551 (filed 2026-10-28 per D8; harness-confirmed 2026-11-01, guarded in T64/T48 meanwhile: no raw envelopes to chat/logs)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[need]]
+id = "C14"
+repo = "centrs"
+title = "CDB encrypted init plus open-to-encrypted conversion"
+status = "needed"
+detail = "Supported encrypted-CDB lifecycle: encrypted first-time init (no-clobber, 0600, an existing open CDB must not satisfy encrypted-required) plus one-command open-to-encrypted conversion; explicit backup semantics (converting/rotating never implies old plaintext/ciphertext revoked). Rotation/decryption and any new inspection API stay follow-ups."
+evidence = "tikoci/centrs#558 (filed 2026-10-28; T39 consumer case plus encrypted-init lifecycle comment 2026-11-01); T80 upstream recheck: #558 remains open; T67 permission ruling alone cannot deliver encrypted first-run setup. Keep no-clobber encrypted init and open conversion in the upstream lane; consume through @next, no private CDB writer."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[need]]
+id = "C15"
+repo = "centrs"
+title = "CDB concurrent/stale mutation protection"
+status = "needed"
+detail = "Lost-update guard for read-modify-write across UI plus agent processes: lock the transaction or reject stale snapshots with a typed conflict; never two successes with one lost record. Preserves encryption, atomic replacement, backups."
+evidence = "tikoci/centrs#581 (filed 2026-11-01 with deterministic repro; harness UI+agent writers); T80 additional repro: UI redacted baseline misses sequential saved-password-only drift, not just simultaneous writers; need an upstream secret-safe expected-revision/precondition contract as well as an atomic transaction. Repro notes/t80-credentials-probe.ts; local consumption T82."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[need]]
+id = "C16"
+repo = "centrs"
+title = "Record password via env/stdin for devices set/add"
+status = "needed"
+detail = "Record password is argv-only (--password); only the CDB password has env. Automation and harness writes expose it via ps. Need an env fallback and/or --password-stdin with documented precedence."
+evidence = "tikoci/centrs#582 (filed 2026-11-01 from T48; output side is C13/#551)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[need]]
+id = "C17"
+repo = "centrs"
+title = "Retrieve-side multi-user record selection"
+status = "needed"
+detail = "With two users on one target, retrieve has no working record selector (--user is a login override, --where user= fails, --match rejected) while remediation text advises re-running with --match. Need a retrieve-side selector consistent with show --match, plus corrected remediation text."
+evidence = "tikoci/centrs#583 (filed 2026-11-01 from T80 verification against real centrs 0.1.9-next.24; local consumption T68)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[need]]
+id = "Q3"
+repo = "quickchr"
+title = "Work under the Claude Code sandbox proxy"
+status = "needed"
+detail = "Developer 2026-11-01: quickchr needs a fix to work inside the Claude Code sandbox proxy (egress-proxied environment). Muse-app (Habitat A) already runs multiple CHRs fine. Reproduce, check open quickchr issues first, fix upstream."
+evidence = "developer report 2026-11-01; not yet reproduced"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"

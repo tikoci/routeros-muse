@@ -1,0 +1,7 @@
+name = "wrong-name"
+problem = "Some owner problem."
+rejected_alternative = "Some product rejected because it costs too much and fits poorly."
+records_link = "inventory/sidecars/bad-name.md"
+integration_surface = "none"
+status = "spike"
+synthetic = true

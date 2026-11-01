@@ -1,0 +1,20 @@
+# The one box (N=1). SAMPLE VALUES — replace at instantiate.
+# Device id names the job (site-location-role); label is what is on the
+# unit; serial binds hardware to device at unbox, never before.
+# cdb names the centrs device record for this device (the source of
+# truth for reachability + access); the server points centrs at the
+# workspace device.cdb when it exists. host is break-glass only.
+
+[device]
+id = "demo-office-gw"
+label = "REPLACE-label-on-unit"
+site = "demo-office"
+role = "gateway"
+serial = "UNBOUND-bind-at-unbox"
+cdb = "UNBOUND-centrs-device-handle"
+
+[expect]
+# What the drift check compares pulls against. Grows with the network;
+# starts with identity + addressing shape.
+identity = "demo-office-gw"
+notes = "SAMPLE — owner intent goes here, one line per promise."

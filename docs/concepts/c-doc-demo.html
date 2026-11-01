@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concept C (v2) — Agent on the right</title>
+<style>
+  :root {
+    --bg: #0b0e13; --panel: #11161e; --panel-2: #0d1219; --inset: #161d28;
+    --border: #222c3a; --border-soft: #1a2230;
+    --text: #e9edf3; --muted: #9aa6b5; --faint: #636e7e;
+    --accent: #4d8dff; --accent-dim: rgba(77, 141, 255, 0.13);
+    --green: #3fb950; --green-dim: rgba(63, 185, 80, 0.12);
+    --amber: #d29922; --amber-dim: rgba(210, 153, 34, 0.12);
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  .app { display: flex; height: 100vh; min-width: 1180px; }
+
+  .left { width: 288px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; font-size: 14px; font-weight: 650; }
+  .brand .mode { font: 600 11px var(--sans); color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); padding: 1px 8px; border-radius: 20px; }
+  .sect { padding: 8px 16px 6px; font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+  .scroll { overflow-y: auto; }
+  .dev { margin: 0 10px 6px; padding: 10px 12px; border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
+  .dev:hover { background: var(--inset); }
+  .dev.selected { background: var(--inset); border-color: var(--border); }
+  .dev .row1 { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--green); } .dot.warn { background: var(--amber); }
+  .dev .name { font-weight: 600; }
+  .dev .role { margin-left: auto; font: 500 11px var(--sans); color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-soft); padding: 1px 7px; border-radius: 5px; white-space: nowrap; }
+  .dev .obs { margin: 5px 0 0 16px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dev .actions { display: none; margin: 8px 0 0 16px; }
+  .dev.selected .actions, .dev:hover .actions { display: block; }
+  .btn { font: 600 12px var(--sans); border-radius: 7px; padding: 5px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .docrow { display: flex; align-items: center; gap: 10px; margin: 0 10px 2px; padding: 7px 10px; border-radius: 7px; cursor: pointer; border: 1px solid transparent; }
+  .docrow:hover { background: var(--inset); }
+  .docrow.open { background: var(--inset); border-color: var(--border); }
+  .docrow .dn { font-size: 12.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .docrow .dm { margin-left: auto; font-size: 11px; color: var(--faint); flex: none; }
+  .left .foot { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border-soft); font-size: 11.5px; color: var(--faint); }
+
+  /* center: work surface (docs + renders) */
+  .center { flex: 1; display: flex; flex-direction: column; min-width: 400px; }
+  .tabbar { display: flex; align-items: flex-end; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--border-soft); background: var(--panel-2); }
+  .ctab { display: flex; align-items: center; gap: 8px; background: none; border: 1px solid transparent; border-bottom: none; font: 600 12.5px var(--sans); color: var(--muted); padding: 7px 10px 8px; border-radius: 8px 8px 0 0; cursor: pointer; max-width: 260px; }
+  .ctab:hover { color: var(--text); background: var(--inset); }
+  .ctab.active { color: var(--text); background: var(--bg); border-color: var(--border-soft); }
+  .ctab .x { color: var(--faint); font-size: 13px; padding: 0 2px; }
+  .ctab .kind { font: 600 10px var(--mono); color: var(--faint); border: 1px solid var(--border); padding: 0 5px; border-radius: 4px; flex: none; }
+  .ctab .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .workpane { flex: 1; overflow-y: auto; padding: 26px 34px; max-width: 720px; }
+  .workpane .fn { font: 12px var(--mono); color: var(--faint); margin-bottom: 6px; }
+  .workpane h1 { font-size: 20px; font-weight: 680; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .workpane .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+  .workpane svg.chain { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--border-soft); border-radius: 10px; margin: 6px 0 12px; }
+  .workpane h2 { font-size: 12px; font-weight: 650; margin: 16px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border-soft); }
+  .workpane ul { margin: 0; padding-left: 20px; }
+  .workpane li { margin-bottom: 7px; font-size: 13.5px; color: #cfd6e0; }
+  .workpane code { font: 12.5px var(--mono); color: #bcd3ff; }
+  .verified { font: 600 11px var(--sans); color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); padding: 1px 7px; border-radius: 20px; white-space: nowrap; }
+  .unverified { font: 600 11px var(--sans); color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); padding: 1px 7px; border-radius: 20px; white-space: nowrap; }
+  .statusstrip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px; border-top: 1px solid var(--border-soft);
+    font: 11.5px var(--mono); color: var(--muted);
+    background: var(--panel-2);
+  }
+  .statusstrip .dot { width: 7px; height: 7px; }
+  .statusstrip button { margin-left: auto; }
+
+  /* right: the agent */
+  .agent { width: 372px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+  .atabs { display: flex; align-items: flex-end; gap: 2px; padding: 10px 10px 0; border-bottom: 1px solid var(--border-soft); }
+  .atab { background: none; border: 1px solid transparent; border-bottom: none; font: 600 12px var(--sans); color: var(--muted); padding: 6px 9px 7px; border-radius: 7px 7px 0 0; cursor: pointer; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .atab:hover { color: var(--text); }
+  .atab.active { color: var(--text); background: var(--panel-2); border-color: var(--border-soft); }
+  .anew { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 3px 8px 7px; }
+  .anew:hover { color: var(--text); }
+  .allsess { padding: 6px 14px; border-bottom: 1px solid var(--border-soft); font-size: 12px; color: var(--faint); }
+  .allsess summary { cursor: pointer; }
+  .allsess summary:hover { color: var(--text); }
+  .allsess .s { display: flex; padding: 5px 0 0 12px; color: var(--muted); cursor: pointer; }
+  .allsess .s:hover { color: var(--text); }
+  .allsess .s .t { margin-left: auto; color: var(--faint); font-size: 11px; }
+  .amsgs { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .msg .bubble { border-radius: 12px; padding: 9px 12px; font-size: 12.5px; }
+  .msg.user .bubble { background: var(--accent); color: #fff; border-radius: 12px 12px 3px 12px; margin-left: 28px; }
+  .msg.agent .who { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .msg.agent .bubble { background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 3px 12px 12px 12px; }
+  .msg.agent .bubble p { margin: 0 0 7px; }
+  .msg.agent .bubble p:last-child { margin-bottom: 0; }
+  .msg code { font: 11.5px var(--mono); color: #bcd3ff; }
+  .acontrols { display: flex; align-items: center; gap: 5px; padding: 8px 12px 0; flex-wrap: wrap; }
+  .sel { display: flex; align-items: center; gap: 5px; background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 7px; font: 600 11px var(--sans); color: var(--muted); padding: 4px 8px; cursor: pointer; }
+  .sel:hover { color: var(--text); }
+  .sel b { color: var(--text); font-weight: 650; }
+  .acontrols .sp { flex: 1; }
+  .ctx { display: flex; align-items: center; gap: 5px; font: 11px var(--mono); color: var(--faint); }
+  .acomposer { padding: 8px 12px 12px; }
+  .acomposer .box { display: flex; gap: 7px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 7px 7px 7px 12px; align-items: center; }
+  .acomposer .box:focus-within { border-color: var(--accent); }
+  .acomposer input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text); font: 12.5px var(--sans); }
+  .acomposer input::placeholder { color: var(--faint); }
+  .attach { display: flex; align-items: center; gap: 5px; background: none; border: 1px dashed var(--border); border-radius: 7px; font: 600 11px var(--sans); color: var(--faint); padding: 4px 8px; cursor: not-allowed; opacity: .75; }
+  .attach .soon { font: 700 9px var(--sans); text-transform: uppercase; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  .minibtn { font: 600 11.5px var(--sans); background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); padding: 3px 10px; cursor: pointer; }
+  .minibtn:hover { color: var(--text); border-color: var(--accent); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2b3546; border-radius: 6px; border: 2px solid var(--panel); }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="left">
+    <div class="brand">routeros-muse <span class="mode">full</span></div>
+    <div class="scroll">
+      <div class="sect">Devices</div>
+      <div class="dev selected">
+        <div class="row1"><span class="dot ok"></span><span class="name">demo-office-gw</span><span class="role">gateway</span></div>
+        <div class="obs">2h ago · 7.25 · fw review handoff open</div>
+        <div class="actions"><button class="btn primary">Start chat</button></div>
+      </div>
+      <div class="dev">
+        <div class="row1"><span class="dot ok"></span><span class="name">demo-shop-ap</span><span class="role">access point</span></div>
+        <div class="obs">1d ago · 7.25 · 14 clients, CCQ 91%</div>
+        <div class="actions"><button class="btn primary">Start chat</button></div>
+      </div>
+      <div class="dev">
+        <div class="row1"><span class="dot warn"></span><span class="name">demo-cabin-link</span><span class="role">wireless link</span></div>
+        <div class="obs">3d ago · 7.24.2 · signal −58 dBm, 1 drift</div>
+        <div class="actions"><button class="btn primary">Start chat</button></div>
+      </div>
+      <div class="sect">Workspace</div>
+      <div class="docrow open"><span class="dn">001-fw-review-handoff</span><span class="dm">1 open</span></div>
+      <div class="docrow"><span class="dn">fw-shadow.svg</span><span class="dm">report</span></div>
+      <div class="docrow"><span class="dn">drift.md</span><span class="dm">1 open</span></div>
+      <div class="docrow"><span class="dn">decisions.md</span><span class="dm">12</span></div>
+      <div class="docrow"><span class="dn">inbox/ (2)</span><span class="dm">new</span></div>
+    </div>
+    <div class="foot">demo-office · canonical · 3 devices (CDB)</div>
+  </aside>
+
+  <main class="center">
+    <div class="tabbar">
+      <div class="ctab active"><span class="kind">DOC</span><span class="t">001-fw-review-handoff</span><span class="x">×</span></div>
+      <div class="ctab"><span class="kind">SVG</span><span class="t">fw-shadow.svg</span><span class="x">×</span></div>
+    </div>
+    <div class="workpane">
+      <div class="fn">operations/001-fw-review-handoff.md</div>
+      <h1>Firewall shadow review</h1>
+      <div class="meta"><span>owner: vm-session</span><span>·</span><span>DoD: twin proof, then box read</span></div>
+      <svg class="chain" viewBox="0 0 560 130" role="img" aria-label="filter chain diagram">
+        <line x1="24" y1="52" x2="536" y2="52" stroke="#2c3a52" stroke-width="2"/>
+        <g font-family="ui-monospace,monospace" font-size="11" text-anchor="middle">
+          <rect x="34" y="32" width="70" height="40" rx="8" fill="#16202f" stroke="#4d8dff"/>
+          <text x="69" y="57" fill="#e9edf3">rule 9</text>
+          <rect x="160" y="32" width="70" height="40" rx="8" fill="#16202f" stroke="#3a465c"/>
+          <text x="195" y="57" fill="#9aa6b5">rule 17</text>
+          <rect x="286" y="32" width="70" height="40" rx="8" fill="#16202f" stroke="#3a465c"/>
+          <text x="321" y="57" fill="#9aa6b5">rule 23</text>
+          <rect x="412" y="32" width="70" height="40" rx="8" fill="#16202f" stroke="#3a465c"/>
+          <text x="447" y="57" fill="#9aa6b5">…</text>
+          <text x="195" y="100" fill="#d29922">shadowed</text>
+          <text x="321" y="100" fill="#d29922">shadowed</text>
+        </g>
+      </svg>
+      <h2>Claims</h2>
+      <ul>
+        <li><span class="verified">twin-proven</span> Rule 17 unreachable — shadowed by rule 9.</li>
+        <li><span class="verified">twin-proven</span> Rule 23 unreachable — shadowed by rule 9.</li>
+        <li><span class="unverified">unverified (design)</span> Removing both needs no order change elsewhere.</li>
+      </ul>
+      <h2>Evidence</h2>
+      <ul>
+        <li><code>centrs retrieve --quickchr twin1 /ip/firewall/filter</code> → 42 rules, 2 unreachable (exit 0 · 11s)</li>
+        <li><code>reports/fw-shadow.svg</code> drawn from the twin read</li>
+      </ul>
+    </div>
+    <div class="statusstrip"><span class="dot ok"></span><span>demo-office-gw · up 12d · cpu 4% · mem 61% · via centrs · 8s ago</span><button class="minibtn">Refresh</button></div>
+  </main>
+
+  <aside class="agent">
+    <div class="atabs">
+      <div class="atab active">fw shadow review</div>
+      <div class="atab">shop survey</div>
+      <button class="anew" title="New chat">+</button>
+    </div>
+    <details class="allsess">
+      <summary>All sessions (3)</summary>
+      <div class="s"><span>fw shadow review</span><span class="t">now</span></div>
+      <div class="s"><span>shop survey</span><span class="t">1d</span></div>
+      <div class="s"><span>cabin link check</span><span class="t">3d</span></div>
+    </details>
+    <div class="amsgs">
+      <div class="msg user"><div class="bubble">Twin proved the shadows. Draft the removal for the box.</div></div>
+      <div class="msg agent">
+        <div class="who">muse · local · demo-office-gw</div>
+        <div class="bubble">
+          <p>Both shadows reproduced on twin1, so they're <span class="verified">twin-proven</span>. The draft removal is <code>numbers=17,23</code> — write-shaped, so I'll run it on the twin first and only propose the box change after.</p>
+          <p>Want me to run the twin removal now?</p>
+        </div>
+      </div>
+    </div>
+    <div class="acontrols">
+      <button class="sel"><b>Spark 1.3</b> ▾</button>
+      <button class="sel">Max ▾</button>
+      <button class="sel">Ask first ▾</button>
+      <span class="sp"></span>
+      <span class="ctx" title="Context used: 34%">
+        <svg width="18" height="18" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="#222c3a" stroke-width="2.5"/><circle cx="10" cy="10" r="8" fill="none" stroke="#4d8dff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="50.3" stroke-dashoffset="33.2" transform="rotate(-90 10 10)"/></svg>34%</span>
+      <button class="attach" disabled title="Attachments — planned, not in Stage 1">Attach <span class="soon">soon</span></button>
+    </div>
+    <div class="acomposer">
+      <div class="box">
+        <input placeholder="Ask about demo-office-gw…" aria-label="Chat input">
+        <button class="btn primary">Send</button>
+      </div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

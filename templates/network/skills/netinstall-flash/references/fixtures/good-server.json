@@ -1,0 +1,1 @@
+{"apply_default_configuration": false, "device_mode_change": true, "extra_packages": ["wireless"], "install_once": false, "interface": "ether9-netinstall", "interface_slave": false, "keep_old_configuration": false, "kind": "server", "mode_file": "device-mode.rsc", "name": "good-server-entry", "remove_branding": true, "synthetic": true, "version": "7.25"}

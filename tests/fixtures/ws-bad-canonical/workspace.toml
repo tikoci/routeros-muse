@@ -1,0 +1,9 @@
+[home]
+type = "private-git"
+repo = "https://example.invalid/you/net.git"
+canonical = false
+
+[pins]
+quickchr = "0.5.2"
+centrs = "0.1.9-next"
+rosetta = "0.11.3"

@@ -1,0 +1,1 @@
+{"apply_default_configuration": false, "extra_packages": [], "interface": "ether7-netinstall", "interface_slave": true, "keep_old_configuration": false, "kind": "server", "mode_file": "", "name": "bad-slave", "synthetic": true, "version": "7.25"}

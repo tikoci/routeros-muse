@@ -1,0 +1,21 @@
+{
+  "synthetic": true,
+  "note": "SYNTHETIC fixture for the site-plan-multi-ap self-test. Schematic grid coords, fictional rooms, never a real site.",
+  "site": "example-2floor-site",
+  "floors": [
+    {"name": "ground", "rooms": [
+      {"id": "living", "label": "living 6x4m", "x": 60, "y": 60, "w": 420, "h": 300},
+      {"id": "office", "label": "office 4x4m", "x": 500, "y": 60, "w": 380, "h": 300}
+    ]},
+    {"name": "upper", "rooms": [
+      {"id": "bed-n", "label": "bed-n 5x4m", "x": 60, "y": 60, "w": 420, "h": 300},
+      {"id": "bed-s", "label": "bed-s 5x4m", "x": 500, "y": 60, "w": 380, "h": 300}
+    ]}
+  ],
+  "aps": [
+    {"device": "fx-ap-living", "model_cite": "cAP RBcAP2nD 2x2.4 af/at (rosetta DB v0.11.3)", "floor": "ground", "room": "living", "x": 270, "y": 210, "band": "2.4", "channel": 6, "tx": "default", "ssids": ["HomeNet"]},
+    {"device": "fx-ap-office", "model_cite": "cAP RBcAP2nD 2x2.4 af/at (rosetta DB v0.11.3)", "floor": "ground", "room": "office", "x": 690, "y": 210, "band": "2.4", "channel": 6, "tx": "default", "ssids": ["HomeNet"]},
+    {"device": "fx-ap-upper", "model_cite": "wAP LR2 kit 2x2.4 passive-PoE (rosetta DB v0.11.3)", "floor": "upper", "room": "bed-n", "x": 270, "y": 210, "band": "2.4", "channel": 11, "tx": "default", "ssids": ["HomeNet"]}
+  ],
+  "adjacency": [["fx-ap-living", "fx-ap-office"]]
+}

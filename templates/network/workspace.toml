@@ -1,0 +1,31 @@
+# Sample owner setup (N=1). Copy, fill in, commit.
+# Field reference: workspace-schema.md. This file DEFINES the setup,
+# including where it syncs from/to — see [upstreams].
+
+[home]
+type = "private-git"            # private-git | router-container | router-disk | single-copy
+repo = "https://github.com/YOU/YOUR-NETWORK.git"
+canonical = true                # this copy is the truth; other copies carry age manifests
+
+[pins]
+# Verified-against record: versions this setup was built and checked
+# with. Resolution itself comes from the routeros-muse package.json
+# (D26); when the running bundle differs, the bootstrap stops and
+# asks for a refresh or a re-verify-and-bump. Channel pins track the
+# @next dist-tag (preview: the chat tools must come from @next, never
+# release). Resolved via the registry at bootstrap; see
+# workspace-schema.md.
+quickchr = "next"
+centrs = "next"
+rosetta = "unpinned-todo"
+
+[backup]
+location = "TODO-owner-choice"  # mechanism is the owner's choice; the requirement is not
+cadence = "TODO"
+restore_tested = "never"        # an untested backup is not a backup
+
+[upstreams]
+# Where this setup syncs from/to, one direction per entry. Secondaries
+# carry age manifests and are never merged back.
+git_remote = "origin (push/pull, main only)"
+router_pull = "observations/ via pull recipe (pull only, never push back)"

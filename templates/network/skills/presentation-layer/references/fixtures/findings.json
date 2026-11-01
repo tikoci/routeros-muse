@@ -1,0 +1,25 @@
+{
+  "synthetic": true,
+  "note": "SYNTHETIC findings fixture for the presentation-layer self-test. Fictional site, no real network.",
+  "site": "example-status-site",
+  "matrix_date": "2026-10-30",
+  "devices": [
+    {"device": "fx-main", "role": "router", "status": "up", "note": "uplink ok"},
+    {"device": "fx-ap-east", "role": "ap", "status": "up", "note": "32 clients"},
+    {"device": "fx-ap-west", "role": "ap", "status": "degraded", "note": "interference suspected"}
+  ],
+  "links": [
+    {"from": "fx-main", "to": "fx-ap-east", "budget": "good"},
+    {"from": "fx-main", "to": "fx-ap-west", "budget": "thin"}
+  ],
+  "alerts": [
+    {"severity": "warn", "text": "west AP retry rate elevated"}
+  ],
+  "webfig": {
+    "router": "router.invalid",
+    "pages": [
+      {"label": "wireless status", "fragment": "#/wireless"},
+      {"label": "interface list", "fragment": "#/interfaces"}
+    ]
+  }
+}

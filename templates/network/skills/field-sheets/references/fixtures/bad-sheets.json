@@ -1,0 +1,1 @@
+{"locations": [{"aiming": "No aiming.", "devices": [{"label": "fx-bad unit", "ports": []}], "device": "fx-bad", "steps": [{"expected": "Something happens.", "task": "Do the thing without a stop condition."}]}], "revision": "fx-bad-01", "synthetic": true}

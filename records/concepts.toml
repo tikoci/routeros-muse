@@ -1,0 +1,265 @@
+# System concepts absorbed from the Drive design docs (Oct 23-25).
+# The private-workspace + review ideas the first absorption pass flattened.
+# Status: adopted (we practice it) / proposed (template input) / retired.
+# Contract: records/README.md (strict subset: [[concept]], one-line strings/arrays).
+
+[[concept]]
+id = "K1"
+title = "Workspace-first, bridge as recipe"
+status = "adopted"
+statement = "The product is a prepared directory plus conventions plus skills; bridge/container/tunnel are deployment options for when circumstances require them, never universal prerequisites."
+source = "concept review and recommendations.md §1"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K2"
+title = "Starter layout"
+status = "proposed"
+statement = "START-HERE plus workspace.toml plus inventory/observations/operations/checks/skills/reports/inbox, extended with whiteboard/; instantiate only what is useful."
+source = "concept review §2, §11"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K3"
+title = "Record contracts"
+status = "proposed"
+statement = "Intent and observation are different records; observations carry device/source/time/completeness; stable IDs survive address changes; decisions outlive chat; views cite data plus time; secrets stay references; one writer per record class."
+source = "concept review §2"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K4"
+title = "The pull"
+status = "adopted"
+statement = "One command captures each router: export minus secrets, volatile-stripped JSON, manifest with sha256/time/serial; serial mismatch refuses; container env values redacted (export prints them clear, log repeats them)."
+source = "claude-code-homework-before-build.md §6 (built as Work/pull/)"
+informs = ["T7", "T16"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K5"
+title = "The checker"
+status = "adopted"
+statement = "One command validates plan files and addressing, verifies captures against manifests, reports size; runs first every session after the capability probe."
+source = "homework §6 (built as Work/pull/checker.ts)"
+informs = ["T15"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K6"
+title = "Partial-result vocabulary"
+status = "proposed"
+statement = "ok/partial/refused/running; last good files kept; freshness splits content_changed_at vs last_observed_at vs last_attempted_at so healthy data never looks unobserved."
+source = "homework §6; concept review §11"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K7"
+title = "decisions plus backlog with IDs"
+status = "adopted"
+statement = "Decisions carry id/date/status/title/decision/why/waiting_on; backlog carries id/priority/status/title/evidence/next. Explained twice means it belongs in decisions. records/ is this pattern."
+source = "homework §§6,9; concept review §11"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K8"
+title = "Drift as a list"
+status = "proposed"
+statement = "Plan TOML (human/agent-written) vs captures (pull-written): disagreement goes on a drift list or the router gets fixed; never rewrite the plan to match unless that is the decision."
+source = "homework §6; concept review §3"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K9"
+title = "Slot vs label"
+status = "proposed"
+statement = "Device ID names the job (site-location-role); label is what is on the unit; serial binds hardware to slot at unbox (sticker photo)."
+source = "homework §6; source - claude code feedback.md §4"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K10"
+title = "N=1 zero ceremony"
+status = "proposed"
+statement = "Template works with one router.toml plus one observations folder; grows into sites and slots only when a second box appears."
+source = "homework §6"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K11"
+title = "/system/note WIP flag"
+status = "proposed"
+statement = "Set before multi-step work, cleared after; empty means well; shown at SSH login; cross-vendor coordination convention, explicitly not a lock."
+source = "homework §6; feedback §5"
+informs = ["T8", "T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K12"
+title = "One canonical location"
+status = "proposed"
+statement = "Pick one canonical home; other copies carry manifests stating their age; never demo two-way sync."
+source = "homework §7"
+informs = ["D2", "T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K13"
+title = "policy.toml generates vendor forms"
+status = "proposed"
+statement = "Safety lives in one allow/ask/deny policy with separate unbox vs look-after classes; each harness form (Claude/Codex/Muse/bridge) is generated from it."
+source = "feedback §5; source - build triage.md"
+informs = ["T8", "T9"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K14"
+title = "Operator file (git-ignored)"
+status = "proposed"
+statement = "Record who is at the keyboard: architect means lab; owner means read-before-write, plain words, prefer twin; unknown means ask before any write."
+source = "feedback §5"
+informs = ["T8", "T15"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K15"
+title = "Pre-issue layer vs committed issues"
+status = "proposed"
+statement = "Workspace holds unshaped work with no formality tax; promotion to issue needs an owner plus a definition of done; board tracks work while the ledger (commands plus outputs plus habitat) is the evidence."
+source = "issues-tracking-starting-point.md; build triage"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K16"
+title = "Trilogy tracked, not forked"
+status = "adopted"
+statement = "No monorepo, no forks: pinned deps plus small upstream PRs, pin bumped in routeros-muse; twin-proof stays a recipe calling quickchr plus centrs."
+source = "build triage"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K17"
+title = "Agent accounts encode access"
+status = "proposed"
+statement = "Local reader (no write/reboot/sniff/sensitive) plus admin plus human break-glass; humans via RADIUS; the agent path must never depend on a service it may be asked to fix."
+source = "feedback §6"
+informs = ["T8", "T9"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K18"
+title = "Unbox vs look-after"
+status = "proposed"
+statement = "Provisioning (wholesale, destructive-by-design, human hands) and management (incremental, remote, read-first) are different products with separate entry skills and approval policies; name the import path for existing networks too."
+source = "feedback §3"
+informs = ["T13", "T15"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K19"
+title = "Card for experience, staged script for assurance"
+status = "proposed"
+statement = "Approval card on the phone carries the experience; staged /system/script under human login carries enforcement; run action restricted to muse-plan-* names with run-count 0; reachability, authority, evidence stay independent."
+source = "homework §2; concept review §6"
+informs = ["T6", "T12"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K20"
+title = "Look-after chain and cadences"
+status = "proposed"
+statement = "Scheduled run reads, compares, notifies on change only; separate collection/investigation/notification cadences; hysteresis plus dedup plus announce recovery; a failed check never renders green."
+source = "homework §3; concept review §11"
+informs = ["T12"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K21"
+title = "Deterministic incident, bisection twin"
+status = "adopted"
+statement = "UM fails at db-path 2-plus dirs below mount on 7.24.5, 7.25 and 7.26beta3 (orca-verified on CHR); twin value is bisection across depth/version/disk; template plants the fault honestly; default-group trap is the reviewer beat; export omits UM and smb."
+source = "homework §5; feedback §8; notes/twin2-bisection.md"
+informs = ["T1", "T7"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K22"
+title = "Entry skill plus capability probe"
+status = "proposed"
+statement = "Short entry skill with a probe that prints OS/tools/pinned-versions/reach; recipes state trigger/prereqs/access/envs/outputs/verification/recovery/limits and load on demand."
+source = "concept review §4"
+informs = ["T8", "T15"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K23"
+title = "Claim discipline"
+status = "adopted"
+statement = "Lab pass is not permission and approval is not correctness; every twin result states its limits (no radios, x86 package gaps); observed vs inferred links marked separately."
+source = "concept review §6; feedback §7"
+informs = ["T1", "T6"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K24"
+title = "Build-first slice"
+status = "adopted"
+statement = "Template plus entry skill plus minimum schemas plus one runnable fault scenario through the existing trilogy; defer universal transport, custom crypto, generalized rollback, full twins, photo onboarding."
+source = "concept review §8"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K25"
+title = "Human-artifact-agent loops"
+status = "proposed"
+statement = "Whiteboards (draft to accepted, decision-linked), map corrections (saved/applied/published states), field sheets (expected result plus stop conditions): pages emit structured feedback without permission to change the network."
+source = "concept review §10"
+informs = ["T13"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K26"
+title = "Deployment split"
+status = "proposed"
+statement = "Editing source never proves the deployed copy updated: track deployment separately, read back the served artifact, put reload/restart semantics in the recipe."
+source = "concept review §§10,12"
+informs = ["T8"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K27"
+title = "Privacy rule shape"
+status = "proposed"
+statement = "Either scrub lab identifiers before anything public, or write down that the private network never appears while the own lab may minus credentials; decide once."
+source = "homework §10"
+informs = ["D1"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K28"
+title = "Day-0 probes with pass signals"
+status = "proposed"
+statement = "P0-P9 ordered so each gates later design; every result lands in a habitat-tagged evidence ledger."
+source = "homework §12"
+informs = ["T15"]
+updated = "2026-10-27"
+
+[[concept]]
+id = "K29"
+title = "Design in the VM, execute on the local PC"
+status = "proposed"
+statement = "The muse-app/VM session designs in the shared workspace (plan, proposals, decisions) with claims labelled unverified; a local muse session on the owner PC executes with LAN, twins, and centrs. The handoff artifact is a workspace file; bunx routeros-muse bootstraps the local side and optionally serves a minimal ACP web UI over the same workspace."
+source = "developer pivot 2026-10-31 (D10)"
+informs = ["T29", "T30", "T31", "T15"]
+updated = "2026-10-31"

@@ -1,0 +1,1 @@
+{"apply_default_configuration": true, "extra_packages": [], "interface": "ether9-netinstall", "interface_slave": false, "keep_old_configuration": true, "kind": "server", "mode_file": "", "name": "bad-contradictory", "synthetic": true, "version": ""}

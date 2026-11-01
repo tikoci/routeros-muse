@@ -1,0 +1,13 @@
+# Device record — example shape (copy per device, fill from the sticker + first pull)
+# The device ID names the JOB; the label is what is on the UNIT;
+# the serial binds hardware to device at unbox (K9). N=1: one file
+# like this is the whole inventory (K10 zero ceremony).
+device = "site-cabinet-uplink"        # <site>-<location>-<role>
+label_model = "OWNER-FILL"            # sticker: model (e.g. L009UiGS)
+label_serial = "OWNER-FILL"           # sticker: serial (hardware) or system-id:<id> (CHR)
+label_mac = "OWNER-FILL"              # sticker: MAC (netinstall targeting)
+bound_at = "OWNER-FILL"               # YYYY-MM-DD of the binding act
+bound_by = "OWNER-FILL"               # sticker-photo | console-read | first-pull
+password_ref = "private/<device>.txt" # POINTER only — the secret lives git-ignored, harness-denied
+rendered_baseline = "OWNER-FILL"      # YYYY-MM-DD the baseline render was applied, or "pending"
+first_pull = "OWNER-FILL"             # capture dir (out/<device>/<ts>/), or "pending"

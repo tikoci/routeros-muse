@@ -1,0 +1,298 @@
+# Developer decisions: open questions and recorded rulings.
+# Contract: records/README.md (strict subset: [[decision]], one-line strings).
+
+[[decision]]
+id = "D1"
+title = "Privacy line for public repo"
+status = "decided"
+detail = "Scrub lab identifiers from promoted notes, or is own-lab-minus-credentials fine to publish. Blocks T14."
+decided = "2026-10-28"
+outcome = "Stage-as-if-soon in a clean home minus /Work cruft with a scrub pass at staging; low-sensitivity (models/MACs/private-IPs/sw-keys) may travel, high-sensitivity (people names/location/public-IPs/creds/secrets/clues) never; no legacy/undone-concept garbage; pair-review before GitHub. See notes/d1-d2-decision.md."
+
+[[decision]]
+id = "D2"
+title = "Canonical workspace home"
+status = "decided"
+detail = "Overlay scheme wins; default private git plus router-disk variant with per-directory ownership; T21 matrix first. Blocks T12 and T13."
+decided = "2026-10-28"
+outcome = "Overlay frame ratified: default private git (AI-native; Free unlimited private repos verified), alternatives are the muse-app file-provider list as starting places (list TBD, T24), Drive excluded (FUSE/Linux plus Habitat A); workspace.toml defines the owner setup incl upstream sync locations. See notes/d1-d2-decision.md."
+
+[[decision]]
+id = "D3"
+title = "centrs-as-app scope"
+status = "decided"
+detail = "Timeboxed read-slice or the main architecture bet. Blocks C12 scoping."
+decided = "2026-10-28"
+outcome = "Main bet as skills plus schemes plus golden path; demo needs container on disk; centrs gaps as separate aligned track."
+
+[[decision]]
+id = "D4"
+title = "Retire PRD snapshot as authority"
+status = "decided"
+detail = "The Oct-26 review snapshot was a one-off workflow aid, not doctrine."
+decided = "2026-10-27"
+outcome = "NEEDS.md plus notes plus records carry state; never cite the snapshot."
+
+[[decision]]
+id = "D5"
+title = "Track state in structured records"
+status = "decided"
+detail = "Markdown prose does not track; TOML records do, so agents can latch onto structure."
+decided = "2026-10-27"
+outcome = "records/*.toml is the tracker; .md is prose; query via records/Makefile."
+
+[[decision]]
+id = "D6"
+title = "Quality and tool alignment over demo"
+status = "decided"
+detail = "Demo re-jiggers later; enbeep audio is resolved enough and non-critical."
+decided = "2026-10-27"
+outcome = "Main work is aligning quickchr/centrs/rosetta for Muse and the muse-app demo."
+
+[[decision]]
+id = "D7"
+title = "Developer, not owner"
+status = "decided"
+detail = "The human building this system is the developer; the router owner/operator is the end user."
+decided = "2026-10-27"
+outcome = "Docs address the build-time human as developer; product approval flows name the router owner."
+
+[[decision]]
+id = "D8"
+title = "Credential scheme (CDB) rulings"
+status = "decided"
+detail = "T9 proposal Q1-Q6: encryption posture, CDB password home, account shape, show redaction, C9, MCP allowlist."
+decided = "2026-10-28"
+outcome = "Local dev unencrypted default; encrypt in-app/shared/router-fs; single robot account; OAuth escalation scoped in centrs prompt; show-redaction filed #551; C9 upstream. See notes/t9-decision.md."
+
+[[decision]]
+id = "D9"
+title = "Dropped-five skills confirmation"
+status = "decided"
+detail = "Backlog Q5: confirm issues-board-ops, retrieval-path-bakeoff, visual-evidence-grounding, mcp-wrapper-smoke-transcript, sso-safe-oauth-handoff stay dropped. Recommendation: confirm dropped (bakeoff/smoke/visual absorbed into #28/#41/#48/#16/#18; issues-board + sso need-unproven; Q2 graduation rule covers revival)."
+decided = "2026-10-31"
+outcome = "Confirmed dropped by developer 2026-10-31. Rationale: richer 55-skill set is the baseline to refine by curation/editing through use; dropped five stay out until a grounding run demands one under the Q2 graduation rule."
+
+[[decision]]
+id = "D10"
+title = "Repo-shape gate is desktop-to-local handoff, not skill polish"
+status = "decided"
+detail = "Developer ruling 2026-10-31: T13/T25 content review does not gate landing/testing in the local repo (no GitHub yet); testing in use flushes out triggers and missing skills better than pre-review nits. The shape gate is the muse-app/VM to local muse handoff plus a streamlined bunx bootstrap; skill refinement continues iteratively after local landing."
+decided = "2026-10-31"
+outcome = "Local repo landing proceeds; skills refine by use and curation. New priority track T29-T31 designs the VM-to-local handoff and routeros-muse bunx entry before the repo shape is frozen. GitHub promotion still needs the D1 scrub and pair review."
+
+[[decision]]
+id = "D11"
+title = "Mode A then Mode B, unscoped routeros-muse name"
+status = "decided"
+detail = "T29 rulings 1-2: (1) launch sequence, (2) npm package name. Install consent settled separately in D13; handoff location settled separately in D12."
+decided = "2026-10-31"
+outcome = "Settled: Mode A (bunx bootstrap ending in local muse CLI) ships first; Mode B (Bun server plus ACP minimal UI) follows only as a spike-gated second stage, never blocking Mode A or T14. Package name is unscoped routeros-muse: registry returned 404 on 2026-10-31 (unclaimed), 13 chars, valid under npm unscoped naming (lowercase, hyphen, no leading dot/underscore), and bunx resolves unscoped public packages by default. Scoped fallback @tikoci/routeros-muse is also unclaimed if ever needed."
+
+[[decision]]
+id = "D12"
+title = "Handoff artifact lives in operations"
+status = "decided"
+detail = "T29 ruling 3: where the muse-app/VM to local PC handoff file lives. Developer accepted the recommendation 2026-10-31 on agent-first grounds; the only hard requirements are a seamless handoff and a dirt-simple bunx routeros-muse path to a coding agent working RouterOS directly after twin tests, from muse-app or from the bunx entry alike."
+decided = "2026-10-31"
+outcome = "Handoff is operations/<id>-handoff.md, a shaped proposal variant (owner plus definition of done, every VM claim labelled unverified). No handoff/ directory at N=1; the bootstrap and any agent find pending work by globbing operations/*-handoff.md plus inbox/. Graduate to a dedicated dir only when volume proves the need."
+
+[[decision]]
+id = "D13"
+title = "Bootstrap install consent: one-yes user-level, print-only system, --yolo passthrough"
+status = "decided"
+detail = "T29 install-consent sub-point under ruling 2. Developer 2026-10-31: hybrid is mostly right, plus a --yolo flag that passes through prompts since that is fine in a sandbox. Noted per-OS shape: macOS/Windows package managers (brew, winget-class) often need no sudo; Linux system packages do, so there the command is suggested. Open sub-point: whether the agent or the npm bootstrap owns OS-specific installs."
+decided = "2026-10-31"
+outcome = "Default: one yes authorizes echoed user-level installs (pinned quickchr/centrs/rosetta, guided muse install); system-level installs are print-only exact commands, never silent sudo. Declining any step falls back to printed commands plus a resume line. Clarified in D14: --yolo belongs to the muse launch, not to sudo/elevation."
+
+[[decision]]
+id = "D14"
+title = "Human installs Bun plus muse first; Mac first; Mode B doctor primes the machine"
+status = "decided"
+detail = "Developer refinement 2026-10-31: repo instructions point the human at Bun official install (like other tikoci tools) plus muse install/auth, then bunx routeros-muse kickstarts and may install itself globally. Platform concern is Mac then Windows (Windows needs a T3 box set up before CI); Linux defers to the coding agent reading a shared-directory setup list. --yolo was about the muse call, not sudo. Mode B thought: a doctor surfaces missing tools and prompts the agent to fix/prime; brew is not strictly required but recommended Mac tooling primes future network work."
+decided = "2026-10-31"
+outcome = "Settled: human-first entry (Bun per Bun instructions, muse, then bunx routeros-muse; global self-install optional after kickstart). Mac path first, Windows second once a Windows+T3 box exists, Linux agent-guided from a shared-directory setup list. --yolo forwards to the local muse agent launch only. Mode B includes a doctor: missing/recommended tools surfaced for the agent to fix; brew optional-but-recommended on Mac. Still open: the shared-directory setup list shape and which agent it launches under --yolo semantics per harness."
+
+[[decision]]
+id = "D15"
+title = "Doctor spec: packaged base plus workspace additions, three tiers, skill cross-refs"
+status = "decided"
+detail = "T29 setup-list shape. Developer 2026-10-31 confirmed the hybrid and added: a helpful tier (or similar metadata) beyond required/recommended, plus cross-references to skills."
+decided = "2026-10-31"
+outcome = "Machine-readable doctor spec ships with routeros-muse (Mac first); a workspace may add local entries without forking the base. Each entry carries tier (required blocks a capability mode, recommended primes the mainstream workflow, helpful boosts a specific task), OS, a detect check, an install hint, why it matters, and skills cross-references naming the skills that need or benefit from it. The bootstrap checks it, the agent works from it, and the Mode B doctor renders the same file."
+
+[[decision]]
+id = "D16"
+title = "Stage 1 scope: Mode A stepping stone to a Mode B split-panel demo"
+status = "decided"
+detail = "Scope contract item 5, as modified by the developer 2026-10-31: this is a demo. Mode A is the first step, but Mode B is the interest: CLI is a loose way to work, and the agent surfacing docs in web-based split panels is the goal. Panel composition remains open in the interview; implementation still starts on a separate explicit go."
+decided = "2026-10-31"
+outcome = "Stage 1 lane (once authorized): T14 local package slot, then Mode A gate (bunx check to capability report to handoff pickup to muse launch/print, --yolo forwarded, Mac-first doctor spec), then Mode B demo (loopback Bun server, ACP spike first, split panels over the same workspace, doctor rendered). Done means a browser demo where a VM handoff is visible as a doc, acted on by the local agent after a twin proof, with evidence back in view. Deferred to own stages: Windows entries/CI, Linux installer code, publishing, multi-agent/general harness features, any inbound access."
+
+[[decision]]
+id = "D17"
+title = "Mode B must render agent-made non-Markdown artifacts from the shared directory"
+status = "decided"
+detail = "Developer 2026-10-31: it is critical the agent has a path to render something for the human that is not Markdown. Example: the agent works on a map, stores it in the shared directory, and Mode B renders it; same for data visualizations and other HTML things. Existing grounding: presentation-layer already renders self-contained HTML plus SVG plus PNG offline, and topology routes to deterministic DOT-to-SVG, never generated pixels as a topology claim."
+decided = "2026-10-31"
+outcome = "Mode B includes an agent artifact path: agent writes a renderable file into the shared workspace, references it from chat or the handoff, and Mode B displays it to the human. Markdown-only delivery fails the demo. Open sub-items: panel placement of the render surface and the script/safety contract for HTML artifacts."
+
+[[decision]]
+id = "D18"
+title = "Mode B layout: devices left, chat center, render/status right"
+status = "decided"
+detail = "Panel composition. Developer 2026-10-31: the tabbed-right recommendation is right and T3 Code is the model, except chat sessions do not own the left pane (at most a minor list within it). Showing known routers/devices on the left is more critical, with a basic way to start a chat about that device."
+decided = "2026-10-31"
+outcome = "Mode B layout: left = known routers/devices (from router.toml/inventory plus latest observation summaries) with a per-device start-chat action that seeds the conversation with that slot context; sessions, if listed at all, are subordinate in the left pane. Center = ACP chat with local muse about the selected context. Right = tabbed Render (agent artifacts, expandable) and Status (doctor, drift, capability mode). Open sub-item: HTML artifact script/safety contract."
+
+[[decision]]
+id = "D19"
+title = "Two-tier trusted rendering, admin-friendly first, backend render services"
+status = "decided"
+detail = "HTML script/safety plus Mode B audience. Developer 2026-10-31 confirmed two tiers and stressed: the audience is a RouterOS admin not familiar with AI coding tools; rendering gaps that break seamlessness while staying safe drive refinement of the controls. Key point: the Mode B agent must have a clear direct path to render non-text in the UI. Static covers most cases; beyond that, see what is needed, perhaps routeros-muse backend services for common rendering tasks so it is a common thing done. T3 Code polish is the bar (applied to devices plus shared directory, with centrs/quickchr/rosetta surfaced); AI slop is not acceptable, and Mode B specifics should come back as a few concepts for developer review."
+decided = "2026-10-31"
+outcome = "Static self-contained artifacts by default; interactive only as inline script in a sandboxed frame (no same-origin, no external refs). The local agent is trusted, but artifact content can carry untrusted data so the sandbox tiers remain. Backend provides named render services for common jobs (topology, map, chart, report) so rendering is a paved path, not hand-rolled per chat. Admin-friendly seamlessness outranks exposing machinery; polish is gated by developer-reviewed UI concepts before Mode B build specifics."
+
+[[decision]]
+id = "D20"
+title = "Contract accepted with amendments: install muse, contextual doctor tiers, session reset"
+status = "decided"
+detail = "Final acceptance of the T29 contract (D11-D19) on 2026-10-31, with three amendments: ideally install muse if possible; the doctor required/recommended line is a grey zone that depends on skills, with esoteric skills surfacing a tool as required or highly recommended to avoid a much harder agent path; multi-agent stays out, but Mode B may offer start-new/reset of the current session and show context when useful."
+decided = "2026-10-31"
+outcome = "Accepted as amended. Bootstrap attempts the muse install (official user-level path, echoed, after the one-yes) before falling back to print-and-stop. Doctor tiers are contextual: a base tier plus per-skill escalation via the skills cross-refs, so an esoteric skill can surface its tool as required-for-this-skill or highly recommended when invoked. Mode B keeps one agent but offers start-new/reset session and a context display. Non-goals unchanged. Implementation still requires a separate explicit go; spawn health is checked before that go."
+
+[[decision]]
+id = "D21"
+title = "Topology rendering splits by context: graphviz on CLI/Linux, mermaid on web"
+status = "decided"
+detail = "Side note from the T32 approval read 2026-11-01: mermaid ships JS so it is available in the browser, while graphviz is easier on a Linux CLI. The renderer follows the context instead of one global choice."
+decided = "2026-11-01"
+outcome = "Web UI renders topology via mermaid (JS, no binary); CLI/Linux paths keep graphviz (DOT) where it is the easier dependency. T33 render services expose both behind the job name; artifacts carry source plus time either way."
+
+[[decision]]
+id = "D22"
+title = "Mode B chat transport is MSP (muse serve), not ACP"
+status = "decided"
+detail = "T31 hello-world spike 2026-11-01: muse 1.4.14 exposes no ACP surface, so the T29 ACP assumption is retired; every T29/T31 ACP mention now means MSP."
+decided = "2026-11-01"
+outcome = "Bun server spawns muse serve (durable, stdio JSONL) and drives initialize/initialized/session-start/turn-start/view-page; attachments ride image parts (verified, no fallback); alert injection rides workspace files per the T32 display-state principle, not turn-steer. Evidence: notes/t31-spike.md."
+
+[[decision]]
+id = "D23"
+title = "Centrs device is the source of truth; slot links via cdb"
+status = "decided"
+detail = "Developer ruling 2026-11-01: centrs device owns reachability and access level (ro/rw); the workspace slot is additive and links to it; the system must work with quickchr/centrs and no workspace."
+decided = "2026-11-01"
+outcome = "Slot carries cdb naming the centrs device; CDB ships with the workspace and we point centrs at it; centrs-side metadata may help the link; no-workspace mode is a requirement. Reconfirmed 2026-11-01: workspace device.cdb file (not global-CDB reference) is the T38 build target."
+
+[[decision]]
+id = "D24"
+title = "First-pass auth ties web login to the CDB password"
+status = "decided"
+detail = "Developer strawman 2026-11-01: require CDB encryption and reuse its password for web login with a session token; Meta model login gates chat with a login affordance when OAuth is absent."
+decided = "2026-11-01"
+outcome = "Whole app behind CDB-password unlock for the first pass; chat disabled plus login button without Meta OAuth; decouple later if needed; spike refines before build. Reconfirmed 2026-11-01: whole-app gate (not device-ops-only) is the T39 build target; T42 active-probe correction still applies. Amended 2026-11-01: an unencrypted/passwordless CDB implies no auth but only behind an explicit bypass flag (name TBD in T39 design; dev/automation escape hatch); the default flow steers toward creating a workspace at the default location and forces encryption there by directing the user to encrypt the workspace CDB with centrs. Applies in both modes: no-workspace finding the default open CDB, and workspace mode with an open device.cdb."
+
+[[decision]]
+id = "D25"
+title = "Rename router.toml [slot] to [device] before the T14 move?"
+status = "decided"
+detail = "T38 pre-move proposal 2026-11-01: rename the topology unit from slot to device so the file, UI, and centrs vocabulary agree (D23 already calls the CDB record the device; UI cards now say centrs device). Scope if approved: template/router.toml [slot] plus header comments, template/AGENTS.md observations/<slot>/, template/conventions.md, proto readSlots (slot/slots keys) plus UI strings plus tests plus smoke fixture. Templates-plural audit (same pass): proto takes a workspace path and hardcodes no template location, so the T14 move needs no code change. Backward compat question inside: support [slot] as a deprecated alias or cut over cleanly."
+decided = "2026-11-01"
+outcome = "Rename to [device]/[[device]] with a clean prototype cutover before promotion; migrate fixtures/scaffold/template together; keep cdb as the explicit centrs-record link. No deprecated alias. T90 executes."
+
+[[decision]]
+id = "D26"
+title = "package.json is the source of truth for tool versions, agent shells included"
+status = "decided"
+detail = "Developer ruling 2026-11-01: whatever version package.json pins for centrs/quickchr (next, release, old, alpha) is what runs everywhere — the UI/CLI server and the agent terminal alike. No overlearning: no separate resolution, no channel cleverness at the agent layer. Motivation: the agent inherits the server PATH today (MspClient.spawn passes process.env through), so a stale system-wide build would silently serve both sides and produce the odd message seen in dogfooding."
+decided = "2026-11-01"
+outcome = "Serve/bootstrap fronts PATH with the package.json-pinned builds so server-spawned and agent-spawned shells resolve identically. Workspace [pins] reconciliation deferred per developer (come back to the pins; likely pins become the per-setup verified-against record while package.json drives resolution). The one observed centrs error is dropped, not chased."
+
+[[decision]]
+id = "D27"
+title = "Composer/controls always visible, or chat-pane-owned per concept?"
+status = "decided"
+detail = "Sweep finding 2026-11-01: opening any center tab hides the composer, model/effort/access selectors, stats ring, and Stop (all nested in pane-chat, as the T32 concept B draws them). Options: (a) keep concept-faithful nesting; (b) lift composer plus statusbar out of the panes so chat/steer/stop/stats stay available on every tab. Leaning (b): steal-while-running is a headline promise. T53 executes the ruling."
+decided = "2026-11-01"
+outcome = "Keep composer plus run status, Stop and model/effort/access controls visible across all center tabs (option b); label current chat/targets when a doc or device is open. T53 executes."
+
+[[decision]]
+id = "D28"
+title = "Second-tier linters wait for the git-repo stage; gates stay minimal-useful"
+status = "decided"
+detail = "Developer ruling 2026-11-01: cspell/secretlint/markdownlint are not wanted in the proto package. They belong above the node code at the git-enabled local repo stage (part of the eventual track): markdownlint applies more to skills content, secretlint needs design thought first. Keep the rich tikoci static checks where they earn their keep (biome+tsc here); some tikoci projects overdo it, so strike the balance and never run a ceremonial gate."
+decided = "2026-11-01"
+outcome = "Proto gate stays biome plus tsc plus suite plus smoke. Revisit the wider set at repo landing (T14), with secretlint scoped deliberately."
+
+[[decision]]
+id = "D29"
+title = "t3code parity means MSP-interaction niceties, not mimicry"
+status = "decided"
+detail = "Developer ruling 2026-11-01: capturing t3code niceties is what separates this UI from AI slop, and the bar is specifically how t3code handles MSP interactions (send/stop lifecycle, optimistic state, approvals/questions flow, errors, context honesty) — not pixel mimicry and not its platform surfaces (multi-thread queue/fanout/side-chat, notifications, usage banners)."
+decided = "2026-11-01"
+outcome = "MSP-interaction gaps from the chat review tracked as build tasks (T56-T61); renderer chrome folds into T41; approval/question patterns feed T50; find bundle plus bigger surfaces wait for the T62 re-sweep after T39+T40."
+
+[[decision]]
+id = "D30"
+title = "Harness/provider/centrs split and the routeros-ai extraction rule"
+status = "decided"
+detail = "Agent recommendation 2026-11-01, approved by the developer with the outcome wording below: where centrs, the harness, and provider adapters each own, and when shared harness code gets extracted."
+decided = "2026-11-01"
+outcome = "Centrs owns RouterOS semantics, validation, device resolution, CDB lifecycle, and its existing CLI/library/MCP adapters. Routeros-muse owns workspace runtime, unlock state, process environment, UI, and conversation orchestration. Provider-specific protocol handling stays localized. Extract shared harness code when a second working integration demonstrates what is actually shared; do not build a generalized provider framework in advance."
+
+[[decision]]
+id = "D32"
+title = "Pre-auth workspace/CDB creation: allow unauthenticated init mutations?"
+status = "decided"
+detail = "T40 ships text-wired missing-overlay guidance (exact init command) rather than a one-click init button, to avoid a public mutating route; --allow-open-cdb gives the clickable path via the picker. Question for the developer: may an unauthenticated browser trigger workspace/CDB creation (scaffold plus devices init) on the local box, or do all mutations stay behind unlock/bypass? T67 executes the ruling."
+decided = "2026-11-01"
+outcome = "Allow narrowly scoped loopback first-run creation: only a known new workspace/bound missing CDB, no clobber or arbitrary writes, bounded rollback. Existing CDBs still require unlock/bypass; chat/device access stays gated. Encrypted setup pairs with C14; until then init states the manual-encryption need. T67 executes; LAN/hosted is a separate later review."
+
+[[decision]]
+id = "D31"
+title = "Local-harness trust model: unlock gate, not a security boundary"
+status = "decided"
+detail = "Developer scoping 2026-11-01: routeros-muse is a trusted local harness (CLI-invoked, loopback-first), and the CDB password is a simple workspace-unlock gate proving possession of the database secret — not user identity, attribution, or revocation."
+decided = "2026-11-01"
+outcome = "No OAuth/passkeys/Keychain/OS-credential work blocks the prototype; no multi-user authorization model; agent-with-shell is trusted-operator scope (env/redirection confinement out of scope); compat encryption (SHA-1/RC4, no auth tag) accepted as the gate with internet-facing use explicitly out of scope. Revisit when a container/hosted/desktop-node mode is real."
+
+[[decision]]
+id = "D33"
+title = "Prompt stash in the current milestone: build or defer?"
+status = "decided"
+detail = "T77 build-or-drop call was only task-local; promoted to a developer decision by T80. T57 ordinary draft persistence is independently useful."
+decided = "2026-11-01"
+outcome = "Defer stash from the current milestone; retain T77 for later. Deliver failed-send restore (T56) and a single persistent draft (T57) first."
+
+[[decision]]
+id = "D34"
+title = "Repo landing sequence: move, local-git coherence, sweep, then public GitHub"
+status = "decided"
+detail = "Developer direction 2026-11-01 (Claude orchestrating). Fresh curated repo at ~/Projects/tikoci/routeros-muse, not git init in Work/. Supersedes the pair-review-before-GitHub timing in D1 only as to order; D1 sensitivity tiers unchanged."
+decided = "2026-11-01"
+outcome = "T14 moves first into local git (package at repo root, templates/ as the init source, records/ carried, notes/triage/srv/coord/pull-out stay in Work/ as archive). GitHub (public OK) waits until README/docs read well and the basic path works (chat, controls, devices/instructions/package-pinned tools reach the agent), then a final local sweep plus real test turns. Developer pulls the trigger; not a deadline."
+
+[[decision]]
+id = "D35"
+title = "Owner-facing CLI: start|serve, init, code, doctor"
+status = "decided"
+detail = "Developer delegated CLI detail to Claude 2026-11-01. Small on purpose: this is the end-user surface; agents use centrs/quickchr/rosetta CLI/MCP directly."
+decided = "2026-11-01"
+outcome = "npm name @tikoci/routeros-muse, bin routeros-muse. Bare = start. start [dir] (alias serve): resolve workspace (cwd, else browser picker/init), serve, open browser; --port --host --no-open --yolo. init [dir] [--template minimal|network]: cwd default (picker keeps ~/Networks). code [dir] [muse args]: exec muse in the workspace with bundle PATH plus instructions, unknown args pass through (-c, --yolo, resume); start --tui aliases it. doctor [dir]: old Mode A checks, print-only. devices list/stats removed (duplicates centrs). No twin lifecycle command. Existing names (registry.toml under XDG_DATA_HOME) kept. T93 executes."
+
+[[decision]]
+id = "D36"
+title = "Twins reframed: quickchr is grounding, not replication"
+status = "decided"
+detail = "Developer 2026-11-01: full twin concept is right but wrong time; an identical replica is not simple in many real cases."
+decided = "2026-11-01"
+outcome = "quickchr ships as skill plus agent instructions for grounding claims/config/scripts on a disposable CHR (marketing: a twin, just not an identical one). No twin-management UI workflow or CLI lifecycle now; existing Twins tab stays as status. Owner-opened CHR terminal is a candidate (T95), off the critical path."
+
+[[decision]]
+id = "D37"
+title = "Coord room retired in favor of T3 Code coordination"
+status = "decided"
+detail = "Developer 2026-11-01: T3 Code already does multi-agent coordination; Habitat A likely relegated to quickchr testing."
+decided = "2026-11-01"
+outcome = "No coord list/post obligation going forward; the new repo AGENTS.md omits it. Work/coord stays as archive. Cross-session status lives in records plus T3 threads."

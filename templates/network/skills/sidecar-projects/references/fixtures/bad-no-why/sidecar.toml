@@ -1,0 +1,7 @@
+name = "bad-no-why"
+problem = "Some owner problem."
+rejected_alternative = "Victron stuff"
+records_link = "inventory/sidecars/bad-no-why.md"
+integration_surface = "none"
+status = "spike"
+synthetic = true

@@ -1,0 +1,211 @@
+# routeros-muse packaged doctor spec (T30 prototype, D15/D20).
+# Mac first; windows/linux entries are real detects with print-only
+# hints, stub-grade until their turn (D14). A workspace may add
+# doctor.local.toml with more [[tool]] entries; same id+os overrides
+# the base entry, new ids append. Never a fork.
+#
+# Fields: id, os (mac|windows|linux), tier
+# (required|recommended|helpful), detect (shell check, exit 0 =
+# present), hint (install suggestion, never run for system-level),
+# why (one line, shown verbatim), skills (xrefs that benefit),
+# required_for (skills that escalate this tool to required-for-this-skill).
+
+[[tool]]
+id = "muse"
+os = "mac"
+tier = "required"
+detect = "command -v muse"
+hint = "curl -fsSL https://dev.meta.ai/install.sh | bash"
+why = "the local coding agent Mode A launches; without it the bootstrap has nowhere to hand off"
+skills = []
+required_for = []
+
+[[tool]]
+id = "muse"
+os = "linux"
+tier = "required"
+detect = "command -v muse"
+hint = "curl -fsSL https://dev.meta.ai/install.sh | bash"
+why = "the local coding agent Mode A launches; without it the bootstrap has nowhere to hand off"
+skills = []
+required_for = []
+
+[[tool]]
+id = "muse"
+os = "windows"
+tier = "required"
+detect = "where muse"
+hint = "irm https://dev.meta.ai/install.ps1 | iex"
+why = "the local coding agent Mode A launches; without it the bootstrap has nowhere to hand off"
+skills = []
+required_for = []
+
+[[tool]]
+id = "bun"
+os = "mac"
+tier = "required"
+detect = "command -v bun"
+hint = "install Bun following Bun's own instructions (same start as the other tikoci tools)"
+why = "the one prerequisite: the trilogy and this bootstrap run on Bun"
+skills = []
+required_for = []
+
+[[tool]]
+id = "bun"
+os = "linux"
+tier = "required"
+detect = "command -v bun"
+hint = "install Bun following Bun's own instructions (same start as the other tikoci tools)"
+why = "the one prerequisite: the trilogy and this bootstrap run on Bun"
+skills = []
+required_for = []
+
+[[tool]]
+id = "bun"
+os = "windows"
+tier = "required"
+detect = "where bun"
+hint = "install Bun following Bun's own instructions (same start as the other tikoci tools)"
+why = "the one prerequisite: the trilogy and this bootstrap run on Bun"
+skills = []
+required_for = []
+
+[[tool]]
+id = "git"
+os = "mac"
+tier = "recommended"
+detect = "command -v git"
+hint = "brew install git (or the Xcode command line tools)"
+why = "git homes clone and pull through git; synced-folder homes do not need it"
+skills = ["home-private-git"]
+required_for = ["home-private-git"]
+
+[[tool]]
+id = "git"
+os = "linux"
+tier = "recommended"
+detect = "command -v git"
+hint = "distro git package (print-only; ask the agent)"
+why = "git homes clone and pull through git; synced-folder homes do not need it"
+skills = ["home-private-git"]
+required_for = ["home-private-git"]
+
+[[tool]]
+id = "git"
+os = "windows"
+tier = "recommended"
+detect = "where git"
+hint = "winget-class Git installer (print-only stub)"
+why = "git homes clone and pull through git; synced-folder homes do not need it"
+skills = ["home-private-git"]
+required_for = ["home-private-git"]
+
+[[tool]]
+id = "brew"
+os = "mac"
+tier = "recommended"
+detect = "command -v brew"
+hint = "install Homebrew per its own instructions (optional but recommended)"
+why = "recommended Mac tooling primes future network work (qemu, socat, graphviz)"
+skills = ["twin-ops", "truthful-topology-graphviz"]
+required_for = []
+
+[[tool]]
+id = "qemu"
+os = "mac"
+tier = "recommended"
+detect = "command -v qemu-system-x86_64"
+hint = "brew install qemu"
+why = "twin VMs need QEMU; without it this machine is real-box-only"
+skills = ["twin-ops"]
+required_for = ["twin-ops"]
+
+[[tool]]
+id = "qemu"
+os = "linux"
+tier = "recommended"
+detect = "command -v qemu-system-x86_64"
+hint = "distro qemu package (print-only; ask the agent)"
+why = "twin VMs need QEMU; without it this machine is real-box-only"
+skills = ["twin-ops"]
+required_for = ["twin-ops"]
+
+[[tool]]
+id = "socat"
+os = "mac"
+tier = "recommended"
+detect = "command -v socat"
+hint = "brew install socat"
+why = "quickchr uses socat for machine plumbing"
+skills = ["twin-ops"]
+required_for = ["twin-ops"]
+
+[[tool]]
+id = "socat"
+os = "linux"
+tier = "recommended"
+detect = "command -v socat"
+hint = "distro socat package (print-only; ask the agent)"
+why = "quickchr uses socat for machine plumbing"
+skills = ["twin-ops"]
+required_for = ["twin-ops"]
+
+[[tool]]
+id = "ssh"
+os = "mac"
+tier = "recommended"
+detect = "command -v ssh"
+hint = "ships with macOS; if missing, the Xcode command line tools"
+why = "SSH reads and key bootstrap ride on an ssh client"
+skills = ["first-contact", "agent-access-bootstrap"]
+required_for = ["first-contact", "agent-access-bootstrap"]
+
+[[tool]]
+id = "ssh"
+os = "linux"
+tier = "recommended"
+detect = "command -v ssh"
+hint = "distro openssh client (print-only; ask the agent)"
+why = "SSH reads and key bootstrap ride on an ssh client"
+skills = ["first-contact", "agent-access-bootstrap"]
+required_for = ["first-contact", "agent-access-bootstrap"]
+
+[[tool]]
+id = "gh"
+os = "mac"
+tier = "helpful"
+detect = "command -v gh"
+hint = "brew install gh"
+why = "smoother git-home setup (repo create, auth check); git alone suffices"
+skills = ["home-private-git"]
+required_for = []
+
+[[tool]]
+id = "gh"
+os = "linux"
+tier = "helpful"
+detect = "command -v gh"
+hint = "distro gh package (print-only; ask the agent)"
+why = "smoother git-home setup (repo create, auth check); git alone suffices"
+skills = ["home-private-git"]
+required_for = []
+
+[[tool]]
+id = "graphviz"
+os = "mac"
+tier = "helpful"
+detect = "command -v dot"
+hint = "brew install graphviz"
+why = "deterministic DOT-to-SVG topology rendering, never generated pixels"
+skills = ["truthful-topology-graphviz", "presentation-layer"]
+required_for = ["truthful-topology-graphviz"]
+
+[[tool]]
+id = "graphviz"
+os = "linux"
+tier = "helpful"
+detect = "command -v dot"
+hint = "distro graphviz package (print-only; ask the agent)"
+why = "deterministic DOT-to-SVG topology rendering, never generated pixels"
+skills = ["truthful-topology-graphviz", "presentation-layer"]
+required_for = ["truthful-topology-graphviz"]

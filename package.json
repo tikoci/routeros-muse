@@ -1,0 +1,35 @@
+{
+	"name": "@tikoci/routeros-muse",
+	"version": "0.1.0-dev.0",
+	"description": "A RouterOS network workspace plus web UI that puts an agent beside your network, built on quickchr/centrs/rosetta.",
+	"type": "module",
+	"private": true,
+	"bin": {
+		"routeros-muse": "./src/index.ts"
+	},
+	"files": [
+		"src",
+		"templates",
+		"doctor.toml",
+		"README.md"
+	],
+	"scripts": {
+		"start": "bun src/index.ts",
+		"test": "bun test",
+		"lint": "bun run lint:biome && bun run lint:typecheck",
+		"lint:biome": "biome check .",
+		"lint:typecheck": "tsc --noEmit",
+		"lint:fix": "biome check --write ."
+	},
+	"dependencies": {
+		"@tikoci/centrs": "next",
+		"@tikoci/quickchr": "next",
+		"@tikoci/rosetta": "next"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.4",
+		"@types/bun": "^1.4.4",
+		"playwright": "1.64.1",
+		"typescript": "^7.0.2"
+	}
+}

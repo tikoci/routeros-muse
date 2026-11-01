@@ -1,0 +1,25 @@
+{
+  "target": "_sample",
+  "serial": "SAMPLE-NO-HARDWARE",
+  "capturedAt": "2026-10-28T00:00:00Z",
+  "tools": {
+    "centrs": "sample",
+    "quickchr": "sample"
+  },
+  "files": [
+    {
+      "path": "export.rsc",
+      "sha256": "0083d9a21fea14d2bf23ed0af7efeeb9cd2273b4591a06e81097c283b3ddc367",
+      "bytes": 201
+    },
+    {
+      "path": "resource.json",
+      "sha256": "92454e5c720d39cd552e249f330c1f313a42ff1eac7ffb5f24bbf023347ce049",
+      "bytes": 119
+    }
+  ],
+  "status": "ok",
+  "notes": [
+    "synthetic self-test fixture; no hardware involved"
+  ]
+}

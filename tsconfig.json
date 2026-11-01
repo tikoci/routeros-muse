@@ -1,0 +1,25 @@
+{
+	// Mirrors the tikoci house bar (centrs tsconfig): tsc --noEmit only.
+	"compilerOptions": {
+		// DOM: tools/ui-smoke.ts drives a real browser (page.evaluate
+		// callbacks touch document/window); src/ stays DOM-free.
+		"lib": ["ESNext", "DOM"],
+		"target": "ESNext",
+		"module": "Preserve",
+		"moduleDetection": "force",
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"types": ["bun"]
+	},
+	"include": ["src/**/*.ts", "tests/**/*.ts", "tools/**/*.ts"]
+}

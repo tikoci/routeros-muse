@@ -1,0 +1,952 @@
+# Research + build tasks with dependencies.
+# Contract: records/README.md (strict subset: [[task]], one-line strings/arrays).
+
+[[task]]
+id = "T1"
+title = "Twin3 7.25 version-axis repeat"
+status = "done"
+detail = "Repeat the C2 cell (2nd disk, depth 2) on 7.25 stable; closes the UM version axis. About 45 min on orca."
+evidence = "notes/t1-twin3.md (FAIL reproduced on 7.25; parent-verified live state)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T2"
+title = "Run rosetta CLI probe handoff"
+status = "done"
+detail = "Execute notes/rosetta-cli-prompt.md in the rosetta checkout; feeds R1/R3/R4."
+evidence = "notes/t2-rosetta-cli.md (critic-verified; R1/R3/R4 follow-through open)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T3"
+title = "Recover centrs triage report-back"
+status = "done"
+detail = "Recovered from git forensics: C3/C4/C5 landed (#543/#544/#545), C2/C6 active on branches, C1 untouched."
+evidence = "centrs git log/branches 2026-10-26/27; needs.toml updated same step"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-27"
+
+[[task]]
+id = "T4"
+title = "quickchr exec CRLF: doc or flag"
+status = "done"
+detail = "Tiny fix or doc line for Q1."
+evidence = "quickchr #211/#212 doc line (Q1 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T5"
+title = "Map arm32 failure surface (S4)"
+status = "done"
+detail = "Probe centrs/rosetta on 32-bit ARM paths; feeds C12 scoping once D3 is decided."
+evidence = "notes/t5-arm32.md (F1-F19 map; S4 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T6"
+title = "Verify staged-script-run on twin (S3)"
+status = "done"
+detail = "Full cycle verified on twin1: positional run works (numbers= rejected), readback exact to 24KB, cleanup verified, twin pristine."
+evidence = "notes/t6-staged-run.md"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-27"
+
+[[task]]
+id = "T7"
+title = "Record /export per-version omissions"
+status = "done"
+detail = "UM missing on 7.26beta3 and other state gaps; build the per-version list."
+evidence = "notes/t7-export-gaps.md (7.26beta3 + 7.25 rows; twin2/twin3 #error lines)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T8"
+title = "Write negotiation recipe/skill (S1)"
+status = "done"
+detail = "Probe-select-CDB-escalate checklist consumable by agents and enbeep TX."
+evidence = "notes/t8-recipe.md (critic-verified; S1 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T9"
+title = "Design CDB + credential handoff (S2)"
+status = "done"
+detail = "Durable scheme proposal; output goes to the developer for decision."
+evidence = "notes/t9-cdb.md (proposal delivered; S2 closed together)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T10"
+title = "Tool x constraint conformance matrix"
+status = "done"
+detail = "quickchr 3/8, centrs 3/8, rosetta 7/8. Blockers are architecture calls (lab-side device contact, T9 vault design), not tool patches; no new needs items."
+evidence = "notes/t10-matrix.md (read-only subagent survey)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-27"
+
+[[task]]
+id = "T11"
+title = "enbeep publish (NS-1)"
+status = "needed"
+detail = "Commit working tree first, then push + Actions + Pages. Queued, non-critical; after tool work."
+evidence = "enbeep NEXT_STEPS.md NS-1"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[task]]
+id = "T12"
+title = "Look-after loop slice"
+status = "needed"
+detail = "Scheduled run, compare, notify-on-change with honest failure rendering."
+evidence = "notes/backlog.md queued"
+blocked_by = ["D2", "T9"]
+agent = ""
+updated = "2026-10-27"
+
+[[task]]
+id = "T13"
+title = "Workspace template v1"
+status = "done"
+detail = "Build from records/concepts.toml (K1-K3,K6,K8-K10,K12,K15,K18,K24,K25): intent/observation/decision/check/report records with contracts; N=1 zero ceremony. Developer 2026-10-31: content review does not gate local landing; refine by testing in use."
+evidence = "template/ (v1 built) plus notes/t13-template.md; AGENTS.md plus work/ added 2026-10-31 per developer feedback"
+blocked_by = ["D2", "T21"]
+agent = "habitat-c"
+updated = "2026-10-31"
+
+[[task]]
+id = "T14"
+title = "Work/ repo skeleton"
+status = "active"
+detail = "Local git skeleton of the promotable subset; repo shape template/ plus tools/ plus docs plus dev TBD, no-CLI confirmed (agent-plus-skills runtime, tools/ holds pull/checker), owner/builder surfaces strictly split. D10: local landing no longer waits on skill polish; shape must leave room for the T29-T31 bunx bootstrap and server."
+evidence = "notes/backlog.md queued; repo sketch agreed 2026-10-28; D10 gate ruling 2026-10-31; T40 child: scaffold-vs-template drift must reconcile at move (no backup/upstreams, missing dirs, home type, router sample); T80 review: D25 rename is proposed rather than a move gate; reconcile generated scaffold with full template, keep D10/Mode-A landing independent of Mode-B polish; no new authorization to promote or publish. D34 2026-11-01: move first into local git; claimed by claude-orch, implementation staffed to muse."
+blocked_by = ["D1"]
+agent = "claude-orch"
+updated = "2026-11-01"
+
+[[task]]
+id = "T15"
+title = "Entry skill + capability probe"
+status = "needed"
+detail = "Probe half LANDED in T30 (prereq/trilogy/auth/workspace/probe/handoff steps); entry-skill half (orienting fresh sessions) still open."
+evidence = "proto/routeros-muse/ plus notes/t30-proof.md (probe); entry skill unwritten"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T16"
+title = "Start daily twin1 pull-diff series"
+status = "done"
+detail = "Day-1 pull ok (5 files, checker clean) plus systemd user timer pull-twin1.timer daily 06:30 persistent; linger is on."
+evidence = "pull run 2026-10-27; ~/.config/systemd/user/pull-twin1.{service,timer}"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-27"
+
+[[task]]
+id = "T17"
+title = "Bigdude netinstall window"
+status = "blocked"
+detail = "Non-critical; backup exists. Externally blocked: developer schedules."
+evidence = "notes/backlog.md snapshot"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[task]]
+id = "T18"
+title = "SAM spike (Habitat A)"
+status = "blocked"
+detail = "Where SAM 3.1 runs plus CPU cost; gates sticker onboarding. Externally blocked: Habitat A compute."
+evidence = "notes/backlog.md snapshot"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[task]]
+id = "T19"
+title = "muse-app result-return recipes"
+status = "blocked"
+detail = "How results and notifications reach the phone from scheduled runs. Externally blocked: Habitat A and phone-side access."
+evidence = "notes/backlog.md snapshot"
+blocked_by = []
+agent = ""
+updated = "2026-10-27"
+
+[[task]]
+id = "T20"
+title = "Rosetta curation probe"
+status = "done"
+detail = "Product and device tables as structured source; next queued rosetta item after T2."
+evidence = "notes/t20-curation.md (critic-verified; cols fix applied)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T21"
+title = "Workspace-home matrix (D2 research)"
+status = "done"
+detail = "Homes by toolchain matrix with pros/cons, default-git free-tier check, router-disk fork, per-dir ownership, Drive anti-skill."
+evidence = "notes/t21-matrix.md (critic-verified)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T22"
+title = "Centrs golden-path alignment"
+status = "done"
+detail = "Surface centrs gaps for container plus dashboard path and align with centrs plans as separate track."
+evidence = "notes/t22-centrs-align.md (critic-verified; draft only, nothing filed)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T23"
+title = "Centrs follow-through wave (post-prerelease)"
+status = "needed"
+detail = "Prerelease condition is now satisfied by the package bundle (centrs 0.1.9-next.24); re-triage the remaining need list against current upstream, verify fixes in the consumer and resume follow-through. No longer blocked on the old prerelease/PR status."
+evidence = "T80 2026-11-01: installed trilogy versions read from package metadata; GitHub read confirms #541 and #547 merged. Original brief: notes/centrs-followup-prompt.md. C7 old #547 association was incorrect (that PR fixes C2)."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T24"
+title = "Git-default stock workflow plus owner-repo setup"
+status = "active"
+detail = "Portable lifecycle workflow (buying/setup/config/troubleshoot/reports) with thin GitHub issues/PR projection; informs D2 and feeds the T13 workflow chapter."
+evidence = "strawman plus 5 home-skill drafts plus t24-t13-feed plus d1-d2-decision note (D1/D2 decided; provider-list follow-up open)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T25"
+title = "Skill-scheme conversion plus repo QA gate"
+status = "done"
+detail = "Convert template/skills to routeros-skills scheme (SKILL.md frontmatter plus references/) and build the repo-root QA layer: validator plus lint gate exceeding check-skills (numbered playbook steps, every code/script tested, claims grounded). Developer 2026-10-31: scheme landed; ongoing curation/editing through use, not a landing gate."
+evidence = "SKILL.md shape plus v2 metadata gates; gate 55/55 green 2026-10-31; see notes/t25-skills.md plus notes/t28-meta-proof.md"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-31"
+
+[[task]]
+id = "T26"
+title = "/app playbook plus tested Node references"
+status = "active"
+detail = "Playbook for a Linux container with a runtime (Node) hosting dashboard/admin/monitoring tools, with test scripts proving the playbook on a twin; lands as references/ under the converted container skill."
+evidence = "notes/t26-app-proof.md (/app runs on CHR with use-https=no; node serves t26-ok; quirks logged)"
+blocked_by = ["T25"]
+agent = "habitat-c"
+updated = "2026-10-28"
+
+[[task]]
+id = "T27"
+title = "routeros-skills curation review for our use case"
+status = "needed"
+detail = "Review routeros-skills content for our use case (bloat, generic-vs-playbook fit, quickchr/centrs overlap); curations land upstream as issues/PRs, tracked here like T22."
+evidence = "scheme reviewed 2026-10-28; content curation open"
+blocked_by = []
+agent = ""
+updated = "2026-10-29"
+
+[[task]]
+id = "T28"
+title = "Skills backlog strawman plus metadata finalization"
+status = "done"
+detail = "Draft the scenario-to-skill backlog from trawled material (honest strawman: collected vs proven marked) and derive the topics taxonomy plus frontmatter fields from it."
+evidence = "notes/skills-backlog.md v3 (57 items; #4 incident-response + #6 change-apply + #9 vpn-setup + #10 usermanager-ops + #14 first-contact + #20 twin-ops + #25 state-pull + #27 work-flag-note + #30 evidence-ledger + #26 agent-access-bootstrap + #29 failure-layer-attribution + #28 explain-validate-run + #31 pre-publish-scrub + #32 capture-drift-hygiene + #33 adversarial-review + #34 cmr-fleet-guard + #35 bth-file-exchange + #36 mailbox-envelope-exchange + #37 deployment-readback-verification + #38 service-path-fleet-check + #39 load-bearing-router-bench-prep + #40 network-workspace-bootstrap + #41 connector-onboarding-verify + #42 remote-agent-profile-hardening + #43 first-run-lan-pairing-onboarding + #44 decision-board-lifecycle + #45 truthful-topology-graphviz + #46 anonymized-pattern-extraction + #48 friction-reproduction-report + #5 backup-restore-upgrade + #8 firewall-apply + #11 hotspot-ops + #13 monitoring-alerting + #2 import-existing-network + #17 webfig-handoff + #1 unbox-provision + #7 wireless-vlan-setup + #16 map-reports + #49 device-selection + #54 harness-capability-inventory + #50 vendor-conversion + #55 presentation-layer + #51 maps-outdoor + #52 site-plan-multi-ap + #56 container-render-surface promoted, gate 51/51 green; twin proofs notes/t28-vpn-proof.md + notes/t28-acl-proof.md + notes/t28-evr-proof.md + notes/t28-cf-proof.md + notes/t28-bur-proof.md + notes/t28-hsmon-proof.md + notes/t28-adopt-proof.md; checker clean bigdude+twin1; coord 19/19 re-run; twin-ops CMR carryover sourced; centrs code re-verified at a13729c; dot 16.1.0 on orca; wave-1 fan-out proofs notes/t28-unbox-proof.md + notes/t28-wifivlan-proof.md + notes/t28-devsel-proof.md + notes/t28-harness-proof.md + notes/t28-maprep-proof.md; wave-2 inline (fan-out down: workflow x2 + subagent all API 400) proofs notes/t28-vendor-proof.md + notes/t28-present-proof.md + notes/t28-mapsout-proof.md + notes/t28-siteplan-proof.md + notes/t28-render-proof.md; 7.26beta3 supout mid-drill recorded; wave-3 inline (#12 netinstall-flash + #18 field-sheets + #47 acoustic-beep-calibration + #57 sidecar-projects promoted, gate 55/55 green, 12 with passing reference tests) proofs notes/t28-netinst-proof.md + notes/t28-field-proof.md + notes/t28-acoust-proof.md + notes/t28-sidecar-proof.md; bigdude /tool/netinstall rows read (package-flow live); twin1 stopped clean; backlog done except #3 T12-owned + #15 upstream-blocked; metadata finalized 2026-10-31 (topics vocab v2: 115 terms, 110 used + 5 reserved, 8 dropped, 2 added; twin-ops += twin topic; requires omit-when-empty normalized x13; NOT-added trio decided with evidence; Q1/Q2 closed, Q3/Q4 routed, Q5 filed as D9 open; proof notes/t28-meta-proof.md; gate 55/55)"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-31"
+
+[[task]]
+id = "T29"
+title = "Design muse-app VM to local muse handoff"
+status = "done"
+detail = "Design first (K29/D10): the VM session designs in the shared workspace with unverified labels; the local PC session executes via centrs/quickchr. Define handoff artifact, capability modes, sync home (git vs folder-sync), and what the VM may never claim. Output is a design note the developer rules on before T30/T31 build."
+evidence = "notes/t29-handoff-bootstrap-design.md Final accepted 2026-10-31 (D11-D20); coord 20261101-0020-C plus acceptance post"
+blocked_by = []
+agent = "habitat-c"
+updated = "2026-10-31"
+
+[[task]]
+id = "T30"
+title = "routeros-muse bunx bootstrap prototype"
+status = "done"
+detail = "Kickstart after the human installs Bun (per Bun instructions, like other tikoci tools) plus muse: bunx routeros-muse checks prereqs, helps pin quickchr/centrs/rosetta, may install itself globally, clones or opens the shared workspace, attempts muse install if missing (echoed, after the one-yes; fallback print-and-stop), runs the T15 capability probe, and prints or launches the next muse step. Consent per D13/D14: one-yes echoed user-level installs, print-only system-level; --yolo forwards to the muse launch only. Mac first, Windows after a Windows+T3 box exists, Linux agent-guided from a shared-directory setup list (shape pending)."
+evidence = "notes/t30-proof.md: proto/routeros-muse/ (6 steps, doctor.toml, 25/25 tests); live runs full-mode ok + unpinned-block + clone + router + yolo; install/auth/exec paths pending other machines"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T31"
+title = "Bun server plus ACP bridge to local muse"
+status = "done"
+detail = "Local server over the shared workspace implementing the approved T32 contract (notes/t32-handoff-ui-spec.md): preview-slot tabs, alerts/past/twins/settings right, picker modal, tail bar; center ACP chat with local muse; centrs/quickchr live seams; render services per T33. T3-grade polish, no slop; loopback by default; folder-sync and git homes both work because it only sees files."
+evidence = "DONE 2026-11-01: serve entrypoint plus MSP bridge (D22) plus v10 UI live-wired, echo-verified end to end (49/49 green); --host flag plus LAN URL print for remote use; follow-ups: meta-provider demo run, CDB host flow, mode-pill wiring"
+blocked_by = ["T30", "T32"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T32"
+title = "Mode B UI concepts for developer review"
+status = "done"
+detail = "Build a few Mode B UI concepts (devices-left layout per D18, render/status right per D17/D19) at T3 polish for developer review before T31 build specifics are frozen. Concepts are review artifacts, not the server; AI slop fails review."
+evidence = "APPROVED 2026-11-01: B v10 HTML is the look-and-feel + design contract; build contract in notes/t32-handoff-ui-spec.md; agent-manages-display-via-topology recorded; brand-icon follow-up filed as T35"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T33"
+title = "Backend common render services for Mode B agents"
+status = "done"
+detail = "Named routeros-muse backend services for common rendering jobs (topology, map, chart, report HTML/PNG) so the Mode B agent renders non-text through a paved path and drops artifacts into the shared directory for middle-tab rendering. Services carry source plus time and stay offline/self-contained per D19 tiers."
+evidence = "DONE 2026-11-01: src/render/jobs.ts (topology web+cli per D21, report real; map/chart contracts plus honest stubs); artifacts under reports/render with job.json; POST /api/render plus GET /api/artifact; 9 render tests green"
+blocked_by = ["T31"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T34"
+title = "Spawn health gate before any fan-out lane"
+status = "done"
+detail = "Root-caused 2026-10-31: the rea MCP server (settings since 2026-10-30 14:50) exposes 207 tools with input schemas up to depth 31 vs the provider child cap of 10, so child launches materializing MCP tools fail API 400. Fix is a session without rea (settings or per-run override) plus a re-probe; product-side, Muse should defer/prune over-deep MCP schemas for children. Stage 1 proceeds inline meanwhile."
+evidence = "notes/spawn-check-2026-10-31.md (root cause rea depth-31 schemas; fresh-process one-word plus file-read children pass after mcpServers emptied; this cached session needs relaunch)"
+blocked_by = []
+agent = ""
+updated = "2026-10-31"
+
+[[task]]
+id = "T35"
+title = "Production brand icons for Mode B UI"
+status = "done"
+detail = "Replace the placeholder tik glyph and mismatched plusmark in the Mode B brand row with the real MikroTik SVG (tikoci vscode project carries it, possibly as a font) plus the Meta mark, all three sized to match; current o-plus reads globe-like."
+evidence = "DONE 2026-11-01: served UI brand row inlines MT_Symbol (vscode-tikbook media/svg/mikrotik) plus Meta mark at matched 15px, plusmark dropped; anchored in serve tests; concept file stays frozen v10"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T36"
+title = "Mode B footnotes-plus: truthful chat controls"
+status = "done"
+detail = "Wire model/effort/access selectors to MSP model/list plus setters with boundary semantics; compute context percent from used/window tokens; subtle session-size signal; review other surfacable ACP metadata."
+evidence = "DONE 2026-11-01: computed context percent, model/effort/access selectors with boundary chips, msgs plus tokens plus pressure surfacing; catalog-seed fixture (fresh homes lack catalog and live contextUsage); 54/54 green"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T37"
+title = "Structured transcript plus open-in-tab"
+status = "done"
+detail = "Render toolCall/diff/subagent items as cards (raw text fallback); doc/data-type cards open in middle tabs."
+evidence = "DONE 2026-11-01: transcriptItems mapper (history plus live SSE share it), tool/subagent/generic cards, output/diff open in pane-output via item/readOutput, schema-shaped deltas; shapes grounded on real session reads (no API cost); 66/66 green; subagent child drill-down deferred as follow-up"
+blocked_by = ["T36"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T38"
+title = "Template to centrs alignment plus device link"
+status = "done"
+detail = "Slot links to centrs device via cdb key per D23; no-workspace quickchr/centrs-only mode; twins optional; pre-move template pass toward templates plural."
+evidence = "DONE 2026-11-01: slot cdb key parsed/surfaced, stats cdb-first with --cdb-file device.cdb (host break-glass); serve --no-workspace (CDB inventory, __default__ filtered, file routes refuse); twins on-demand via LIVE-layer listener; template cdb docs plus *.cdb gitignore; D25 filed ([slot]→[device] rename); suite 73/73, smoke 18/18, shots eyeballed"
+blocked_by = ["T37"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T39"
+title = "First-pass auth: CDB password plus OAuth-gated chat"
+status = "done"
+detail = "Spike then build: CDB-password web login with encryption required plus session token; Meta OAuth state gates chat with login affordance. Follows D24 strawman. Corner cases per D24 amendment: an open CDB implies no auth only behind the explicit bypass flag (name TBD in design); the default flow steers toward creating a workspace at the default location (T40) and forces encryption there via centrs."
+evidence = "DONE 2026-11-01: whole-app CDB gate (lock/guidance overlays, session cookie, --allow-open-cdb) plus OAuth-gated chat (disposable-turn probe, passive authRequired flip, banner+Recheck, 403 on send); design notes/t39-auth-design.md; spike: no centrs CLI encrypt path (C14/#558 commented), auth in XDG_CONFIG_HOME (museConfigHome opt); suite 86/86, smoke 37/37; gate run under TMPDIR redirect (/tmp quota-full, box hygiene owed); one unreproduced console-500 flake in 8 smoke runs (URL uncaptured, stress-clean, SMOKE-500 logger kept); known gap filed as T64 (unlock admits the browser but does not propagate the CDB password to UI/agent centrs calls)"
+blocked_by = ["T38"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T40"
+title = "Module split plus CLI parity plus workspace registry"
+status = "done"
+detail = "UI-agnostic workspace and fleet modules with thin serve routes; CLI wraps centrs ops (password prompt or CENTRS passthrough); XDG workspaces registry plus default location plus picker outside a workspace, so the no-workspace default flow steers toward creating one."
+evidence = "DONE 2026-11-01 (child implementation, parent-reviewed + 1 review fix): D1 lib/fleet+lib/workspace split (server 1707->1342 lines, routes byte-identical, T64 tests unmodified); D2 devices list/stats CLI (fail-closed binding, passthrough-or-TTY-prompt unlock, reads-only/T48 boundary; review fix: list rejects --cdb-file); D3 XDG registry + ~/Networks default + picker UI (open-in-place restart command, minimal scaffold with rollback, missing-overlay init command); boot registration with temp-dataHome isolation in all tests; suite 155/155, smoke 47/47 (parent re-ran gate under TMPDIR=/dev/shm, eyeballed 12-picker/11-missing); live CLI+serve runs observed; follow-ups D32/T67 (pre-auth init), T52-nit, T14-drift"
+blocked_by = ["T39", "T64"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T41"
+title = "Renderer: T3 patterns plus template-declared JS"
+status = "needed"
+detail = "Port T3 transcript-UX patterns into the vanilla stack per T42 findings; template-declared JS/CSS needs manifest (markdown, mermaid, monaco first)."
+evidence = "T42 landed (notes/t42-t3-ux.md schemes); chat-window behavior inventory in notes/t41-chat-inventory.md (GAP6 reply chrome plus GAP7 work-group grouping fold into this task); T62 row-system inputs in notes/t62-resweep.md (15-kind union, grouping, stable identity; last-ready claim NOT verified, do not build on it); T80 review: D17 artifact viewer and offline topology dependency now explicit in T83; keep transcript work distinct from actual artifact display."
+blocked_by = ["T42", "T37"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T44"
+title = "Transcript cards span the column (visual repair)"
+status = "done"
+detail = "Card align-self loses the specificity fight with .msg.agent; cards huddle in a narrow band. Fix the selector, re-smoke, re-eyeball."
+evidence = "DONE 2026-11-01: .msg.agent.tcard selector, smoke 14/14 (span-the-column plus pre-wrap checks), suite 66/66, shots re-eyeballed; AGENTS.md now bars handoff without a visual check on non-trivial work; follow-up: transcript pre-wrap fix after a stale-shot report"
+blocked_by = ["T37"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T43"
+title = "Browser smoke harness plus T37 UI confirmation"
+status = "done"
+detail = "Reusable playwright smoke (load plus console plus flows plus cards) and use it to confirm the T37 UI in a real browser."
+evidence = "DONE 2026-11-01: tools/ui-smoke.ts plus make smoke (12 checks green), window.__smoke hook, T37 cards/tabs eyeballed in chromium shots; observation for T41: echo reminderChild rows render failed pills honestly, consider quieting system rows"
+blocked_by = ["T37"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T42"
+title = "T3code research sweep for UX plus ACP patterns"
+status = "done"
+detail = "Subagent sweep of pingdotgg/t3code (MIT): transcript-UX patterns, ACP and Muse-session handling, vendoring candidates with disclosure list. Feeds T41."
+evidence = "DONE 2026-11-01: UX track in notes/t42-t3-ux.md, ACP track in notes/t42-t3-acp.md; key finds: t3 provider-muse is MSP not ACP, no MSP auth signal so T39 needs an active probe, setModel takes providerId too"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T45"
+title = "Agent stall: SSE heartbeat plus idleTimeout plus reconnect banner"
+status = "done"
+detail = "Bun reaps the idle SSE stream at 10s (observed warning) so turn/completed can be lost and Stop sticks forever; UI also shows nothing while reconnecting. Fix: heartbeat comments, raised idleTimeout covering the slow routes, reconnect chip."
+evidence = "DONE 2026-11-01: 15s SSE heartbeat (comment frames), idleTimeout 120 covering the 60s doctor run, reconnect chip on stream drop; heartbeat suite test, stream proven alive 30s with pings; suite 74/74, smoke 18/18, no visual regression. Transport half only; approval/question surface is T50"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T46"
+title = "UI polish slice: bubbles, dots, friendly MSP names (user batch)"
+status = "done"
+detail = "User batch 2026-11-01: rounded bubbles with no status-pill cutoff; tool/reasoning rows as outline-only bubbles so agent replies stand out; blue dot on the active row only, drop done pills; friendly MSP kind names with raw kind as tiny grey mono caption. Plus rigor-sweep nits: alert-card title/body crowding; no-workspace composer copy."
+evidence = "DONE 2026-11-01: rounded bubbles, outline-only card bodies (all tcards, not just tool/reasoning), dot-on-active plus done-pills-dropped with failed/running kept, friendly MSP names with raw-kind captions, alert title-over-body, no-ws composer copy; sweep extras: picker Escape, ServeOpts.cdbFile knob, empty-registry foot fix, waitForFunction 3-arg; suite 81/81, smoke 31/31, both-mode shots eyeballed"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T47"
+title = "Device health plus access mode: reachability and RO/RW display"
+status = "needed"
+detail = "Device cards check reachability via centrs (human and agent both see it, including the no-password case) and show RO/RW mode. Needs a spike first: which centrs surface owns reachability plus access level per D23."
+evidence = "user report 2026-11-01"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T48"
+title = "Set-credentials modal writing to the CDB"
+status = "done"
+detail = "Devices without a password get a clear set-credentials affordance opening a modal (user/password plus ssh-key path and other centrs schemes); on login failure the modal shows CDB device details for context. Sequenced after T64: writing an encrypted CDB needs its propagated unlock. Display stays redaction-aware (no cleartext passwords in returned device details, mutation envelopes, or logs; explicitly temporary) while C13 is open. Single-writer caution until C15 lands (#581): re-read before write, report conflicts, never blind-overwrite."
+evidence = "DONE 2026-11-01 (child implementation, parent-reviewed): fleet write helpers (redacted projection, snapshot conflict check, missing-to-add, blind-write refused, empty-means-unchanged per C9); thin GET/POST credentials routes (409 conflict with redacted current, session unlock); modal with context plus last-error, amber/subtle affordances, conflict re-base retry, no stale cards; argv-only record password documented (D31) with upstream C16/#582 filed; suite 164/164, smoke 53/53 (parent re-ran gate under TMPDIR=/dev/shm, eyeballed 14/15); README add-flow narrowed; follow-up T68"
+blocked_by = ["T39", "T64"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T49"
+title = "Session context: device targeting plus harness orientation"
+status = "needed"
+detail = "Two halves of the agent knowing its context and our interface. (1) Targeting: the +Device pill selects a device for the chat but adds nothing to the session info the agent sees; attach the selected device plus metadata to the session. (2) Orientation: re-align the template skills with the MSP client so the template inherits harness knowledge (transcript cards, targeting, @next tool channel), and/or an instruction prompt stating the agent context and interface."
+evidence = "user report 2026-11-01, explicitly future work; orientation half added per developer direction same day; T80 review: milestone priority: the posted chat payload contains text/images only, so current target pills are visual state; complete targeting before @-trigger polish (T61)."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T50"
+title = "Approval/question surface plus meta wire-shape repro"
+status = "needed"
+detail = "Main session runs approvalMode onRequest but onStream drops every non-turn/item notification, so an agent approval request or user question waits forever with no UI. Repro against live meta, capture the wire shapes, then build the surface. Companion to the T45 SSE half of the stall."
+evidence = "user report 2026-11-01; T45 fixes the transport half only; t3code approval/question patterns inventoried in notes/t41-chat-inventory.md (GAP2-3) for the surface design; T62 inputs in notes/t62-resweep.md (kinds/options/questions/dedupe/feedback; no transport work needed)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T51"
+title = "Tool version alignment: package.json builds front PATH for server plus agent"
+status = "done"
+detail = "Per D26: package.json pins the tool versions and serve/bootstrap fronts PATH with those builds, so the UI/CLI subprocesses and the agent terminal resolve the identical centrs/quickchr (agent inherits server env today via MspClient.spawn). Reconcile with workspace [pins] in the same pass (likely pins become the per-setup verified-against record)."
+evidence = "DONE 2026-11-01: package.json pins trilogy @next (centrs 0.1.9-next.24, quickchr 0.5.4, rosetta 0.12.0); tools.ts PATH fronting threaded through bootstrap/probe/launch/serve/MSP-spawn/auth; [pins] is the verified-against record (alignPin deleted, refresh-or-bump stops); /api/status reports bundle source+versions; template schema+toml reconciled; suite 110/110, smoke green, shots eyeballed; live bootstrap exact/unpinned/mismatch/channel runs all observed"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T52"
+title = "Settings/pastchat honesty: remove or wire dead demo controls"
+status = "needed"
+detail = "Rigor sweep found shipped demo data contradicting the never-demo-data rule: settings Topologies rows plus dead Switch/New-topology buttons, dead Reconnect button, static Device registry row, two unwired checkboxes, static Access row; pastchat pane demo placeholders. Remove until built for real (registry/picker is T40) or wire to live state; neutral placeholders elsewhere."
+evidence = "rigor sweep 2026-11-01 with screenshots in /tmp (reproducible via tour); live rows (model/ctx/session/ws/prov) stay; T40-child nit: no-workspace recents empty-state renders flush-left; T80 review: full capability pill is also static demo state (not set by live loadStatus); include it in the honesty pass. Settings placeholders confirmed in current real-browser tour."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T53"
+title = "Composer/controls visibility across center tabs"
+status = "needed"
+detail = "Center tabs hide the composer, model/effort/access controls, stats ring, and Stop: steering or stopping while viewing a device/doc is impossible without switching back to Main. Concept-faithful (T32 concept B nests them in pane-chat) but wrong-feeling in use. Executes the D27 ruling."
+evidence = "rigor sweep 2026-11-01; awaits D27"
+blocked_by = ["D27"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T54"
+title = "Rigor pass: house lint gates plus full sweep plus gate docs"
+status = "done"
+detail = "Answer the robustness check-in with machinery, not claims."
+evidence = "DONE 2026-11-01: biome+tsc at the centrs strict bar wired as make lint/gate (217 errors to zero; tabs to match house); real finds fixed (dead DoctorResult alerts branch with regression test, unused var, dead probe fn, loose JobResult); full two-mode browser sweep filed F1-F6 (F2 fixed, F5->T52, F1->D27/T53, nits->T46); AGENTS.md gates hardened. Suite 80/80, smoke 18/18."
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T55"
+title = "MSP-UI plumbing: skill loading plus agent-driven UI actions"
+status = "needed"
+detail = "Two unexamined seams. (1) Skill/instruction loading into the MSP muse scheme: how workspace skills, template knowledge, and orientation prompts reach the agent, since the workspace stuff needs to land there. (2) UI tool calls: how the agent renders into tabs, selects a device, or shows/adds notifications and alerts. The UI concept shows all of these; the plumbing was never traced and may need new MSP surface, server relays, or both."
+evidence = "developer direction 2026-11-01; shares the live-meta repro need with T50 (wire shapes), distinct questions"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T56"
+title = "Failed-send draft restore (t3code GAP1)"
+status = "needed"
+detail = "Failed chat sends currently destroy the typed prompt (composer clears before ack). Restore prompt plus images plus target pills into the composer on send failure, t3code restore semantics; smoke-gated like every UI slice."
+evidence = "t3code chat review GAP1 (notes/t41-chat-inventory.md); T62 restore rules in notes/t62-resweep.md (restore-if-empty, no interrupted toast, uploads must not strand). T71 review 2026-11-01: send-failure setRunning(false) also kills an active Stopping ticker and can clear a still-live turn; scope the failure path to the failed send (part of this task's send-failure UI)."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T57"
+title = "Composer draft persistence (t3code GAP4)"
+status = "needed"
+detail = "Persist the composed prompt (text plus target pills) to localStorage so reload and navigation never lose it; restore on boot; smoke-gated like every UI slice."
+evidence = "t3code chat review GAP4 (notes/t41-chat-inventory.md)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T58"
+title = "Prompt history recall (t3code GAP8)"
+status = "needed"
+detail = "Up/Down at caret edge recalls the user's own typed prompts (deduped, newest-first); disabled with attachments or a nonempty draft; t3code recall semantics minus review-block sanitization; smoke-gated."
+evidence = "t3code chat review GAP8 (notes/t41-chat-inventory.md)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T59"
+title = "Send length gate (t3code GAP9)"
+status = "needed"
+detail = "Block over-long sends in the composer with an exact over-count instead of risking provider rejection; cap value TBD in the slice (provider-shaped); smoke-gated."
+evidence = "t3code chat review GAP9 (notes/t41-chat-inventory.md)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T60"
+title = "Wire Make-current resume (t3code GAP10)"
+status = "needed"
+detail = "The past-chat tab already renders a Make-current button with no handler; wire it to resume that session as the main chat (MSP resume support as needed); smoke-gated."
+evidence = "t3code chat review GAP10 (notes/t41-chat-inventory.md); T62 resume mechanics in notes/t62-resweep.md (shared lock, model-first-read, continuation payload)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T61"
+title = "@device-to-target composer trigger (t3code GAP11)"
+status = "needed"
+detail = "Scoped @ trigger in the composer offering centrs devices and inserting target pills; the one mention trigger worth building instead of the full t3code mention system; smoke-gated."
+evidence = "t3code chat review GAP11 (notes/t41-chat-inventory.md); T80 review: depends on the T49 target-to-agent contract so new pills carry actual context, not only DOM state."
+blocked_by = ["T49"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T62"
+title = "Chat UI re-sweep vs t3code after auth/split land"
+status = "done"
+detail = "Second t3code sweep once T39 auth plus T40 module split land: GAP5 find bundle, GAP12-13 deferred surfaces (queue/steer, notifications, minimap, stash), the 7 coverage-gap areas in notes/t41-chat-inventory.md, and any t3code head movement since 6328c847. Include the T48 modal surface (landed after this record). Files follow-up tasks; builds nothing itself."
+evidence = "DONE 2026-11-01 (research child, read-only): head 1d626d02 (15 commits, no finding overturned); 11 proposals filed T69-T79 (T77 blocked on dev call, T79 waits T55); inputs for T50/T56/T60/T41; full study notes/t62-resweep.md"
+blocked_by = ["T39", "T40"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T63"
+title = "Auth hardening follow-ups (rate limit, Secure flag, sessions)"
+status = "needed"
+detail = "T39 first pass ships honest-but-minimal: in-memory sessions (restart re-logins), no rate limiting beyond a fixed wrong-password delay, no Secure cookie (http LAN). Harden once real use demands: login rate limiting, Secure/contextual cookies, durable sessions, logout-everywhere."
+evidence = "deferred in T39 design (notes/t39-auth-design.md); loopback-first threat model keeps it minimal for now"
+blocked_by = ["T39"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T64"
+title = "Workspace unlock context: propagated CDB auth plus fail-closed binding"
+status = "done"
+detail = "One server-owned in-memory unlock context per workspace (absolute CDB path plus password) supplied to UI centrs subprocesses and the MSP child env via one explicit per-worker environment (no global process.env mutation; tool-path half is T51, consumed not rebuilt). Workspace mode binds its absolute device.cdb path even when missing (routes to setup/steering); global-CDB use is an explicit selection only, consistent everywhere; no ambient fallback. Auth helpers: detection strips inherited CENTRS_CDB_PASSWORD, missing/open/encrypted/unavailable stay distinct, verify requires encrypted. Template gitignore covers device.cdb.bak.* plus init temp siblings. CDB-to-UI mapping preserves (target,user). Redaction guard is explicitly temporary pending C13: no cleartext passwords in returned device details, mutation envelopes, chat, or logs. Lock chooses and documents one behavior (browser-access-only close vs agent stop plus unlock-context drop); never imply credentials were revoked from an already-running child. Acceptance: boot with no ambient CENTRS_CDB_PASSWORD, unlock an encrypted fixture, then reach it through both UI devices/stats and an agent-run centrs command; both sides run the package-selected tool versions via T51, never ambient globals; an echo chat roundtrip alone does not pass."
+evidence = "DONE 2026-11-01 (child implementation, parent-reviewed): session-bound unlock ctx (workerEnv CDB file/password) for UI calls plus MSP worker (owner key, new owner stops previous); fail-closed workspace binding plus missing state/routing; detect strips ambient password; verify refuses password-not-needed; lock is worker-stop plus context drop; (target,user) preserved; temporary C13 projection guard; gitignore star; smoke harness batch-await fix (T39 flake deterministic under load); suite 122/122, smoke 39/39 (parent re-ran gate, eyeballed 11-missing/10-bypass); mutation checks both legs; follow-ups filed T65/T66; T80 review: implementation/env-inheritance gate confirmed; exact agent-command acceptance is still pending under T86: test stub logs CDB env but never executes centrs. New takeover bug separately T81; do not cite 164/56 as proof of real Meta/twin acceptance."
+blocked_by = ["T39", "T51"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T65"
+title = "Front the have(muse) gates on the package env"
+status = "needed"
+detail = "ensureMsp plus the boot OAuth-probe gate plus /api/status check have(muse) ambient while MspClient.spawn resolves through the fronted PATH: a stub/shadowed muse passes one and fails the other, and it blocks hermetic muse-less chat tests (T64 acceptance gates on ambient muse for this reason). Pass the server tools env to the muse gates so gate and spawn answer for the same PATH; keep the status display honest."
+evidence = "surfaced by T64 implementation 2026-11-01 (child report; T51 wart)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T66"
+title = "Lock affordance: UI lock button plus state"
+status = "needed"
+detail = "/api/auth/lock exists (T64 worker-stop semantics) but ui.html offers no lock button: add an honest lock affordance (settings auth row and/or header) that POSTs lock, returns to the lock/guidance overlay, and reflects worker-stop (no revocation claims). Smoke-gated like every UI slice."
+evidence = "surfaced by T64 implementation 2026-11-01 (child report)"
+blocked_by = ["T64"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T67"
+title = "One-click init-cdb on the missing overlay"
+status = "needed"
+detail = "If D32 allows pre-auth init mutations: add a one-click create/init affordance to the missing-CDB overlay (scaffold-or-init at the bound path, rollback on failure, encryption steering after). Executes the D32 ruling; smoke-gated like every UI slice."
+evidence = "surfaced by T40 implementation 2026-11-01 (child report; text-wired seam exists)"
+blocked_by = ["T40", "D32"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T68"
+title = "Credentials modal follow-ups: profiles, multi-user, clearing"
+status = "needed"
+detail = "End-to-end (target,user) identity: inventory keys, tab/selection/target-pill identity, password-presence probes, and distinguishing record selection from changing its user. Ambiguity must fail explicitly, never select an arbitrary record. Show side is product-fixable now via devices show --match user= (verified ok); retrieve/stats side has no product remedy (--user is a login override, --where fails, retrieve rejects --match) and waits on upstream C17. Credential GET uses --match; POST keeps its snapshot check. Profile-sentinel switching and password clearing remain separate sub-items; clearing waits on C9. Probe supported centrs surfaces first."
+evidence = "surfaced by T48 implementation 2026-11-01 (child report); T80 review: real centrs accepts two users on one target; both inventory rows share id and show(target) fails identity/ambiguous (notes/t80-credentials-probe.ts). Independent verification 2026-11-01: show --match user= verified; retrieve-side disambiguation is an upstream gap (C17/#583), centrs remediation text self-contradictory."
+blocked_by = ["T48"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T69"
+title = "In-flight send guard (t3code P1)"
+status = "done"
+detail = "Double-send with attachments double-POSTs (pendingImages clears only after ack; text-only is already safe via input-clear plus Send hiding): capture plus clear the image payload in the atomic dispatch prefix like the text clear, so click/Enter double-dispatch is impossible. No blanket in-flight flag: it would drop legitimate mid-run sends (placeholder-advertised); T60 shares a lock later for programmatic resume. Smoke-gated."
+evidence = "DONE 2026-11-01 (inline): capture+clear image payload in atomic dispatch prefix (text-only was already safe via input-clear plus Send hiding; no blanket flag — preserves mid-run sends); __smoke.pushImage seam; 3 smoke checks with fail-first observed (posts=2, delta=2); suite 164/164, smoke 56/56 (gate under TMPDIR=/dev/shm, 2-chat eyeballed)"
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T70"
+title = "Mid-run send intent honesty (t3code P2)"
+status = "needed"
+detail = "Probe mid-run turnStart semantics first, then label mid-run Send as Steer with a tooltip naming MSP behavior (t3code resolveComposerDispatchMode + morphing action). Queue surface stays deferred; intent builds."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P2; head 1d626d02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T71"
+title = "Stop lifecycle: Stopping state plus run-pinned Force stop (t3code P3)"
+status = "done"
+detail = "Stop claims stopped even when the POST fails: show a Stopping ticker until turn/completed or timeout, then Force stop via the T64 stopWorker mechanism (t3code ThreadActivityBanners). Smoke-gated like every UI slice."
+evidence = "DONE 2026-11-01: runGeneration/lastTurnId tracking (bumps on send/spawn/stopWorker/effective-force); pinned + 10s-capped /api/chat/stop with correlation IDs; /api/chat/stop-force with stale-generation refusal, changed-mid-force guard, interrupt(5s)/EOF(5s)/TERM(5s)/KILL(5s) escalation, reset via stopWorker; UI Stopping ticker + Force button, no unconditional clear, turnId/epoch late-completion correlation (turnId verified on echo wire). Fail-first hermetic 6 (incl EOF-resistant SIGTERM kill + re-init, stale refusal, hang cap). Parent accepted all 7 judgment calls (interrupt-keeps-worker, no-bump-on-noop, slow-fake legs, 200+ok:false outcomes, mid-force guard, cross-tab settle, +2 tests); gate green (biome+tsc zero, suite 181/0, smoke green, 7 new checks), shots 18-21 eyeballed. Send-failure-clear wart routed to T56."
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T72"
+title = "Credentials modal hardening per secret-input patterns (t3code P4)"
+status = "done"
+detail = "Six fixes from t3code SecretRequestCard/LinkRequestCard: password-manager-safe secret field, Enter submit, double-submit guard, busy-blocks-close, clear-on-success/retain-on-failure, failure whitelist so typed secrets never echo — plus an audit that typed values never echo anywhere. Smoke-gated."
+evidence = "DONE 2026-11-01: text+disc manager-safe secret field, native form Enter-submit, sync double-submit guard + disabled buttons, busy-blocks-close on all 4 paths (picker Esc unaffected), immediate clear-on-success, exact-match failure whitelist (enumerated complete vs routes; dynamic centrsWhy generic + console.warn), 409 re-base keeps all typed inputs, --help-grounded ssh hint, typed-never-echo audit (4 DOM pins + T48 suite + console/server-log greps). T82 note byte-identical, no focus/server changes. Parent added open-mid-save + stale-GET continuation guards. Fail-first smoke RED per leg. Gate green (biome 42 files + tsc zero, suite 181/0, smoke 107/107 incl T89 exact-set +409), shots 14/22/23 eyeballed. Ran TMPDIR=/tmp subdir: /dev/shm hit usrquota (6.2G other-task detritus, not mine to delete)."
+blocked_by = ["T48"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T73"
+title = "System-error banner (t3code P5)"
+status = "needed"
+detail = "Send/stream failures (and the T39 oauth-required 403) render as agent voice: add a dismissible system-error banner instead (t3code ThreadErrorBanner). Coordinate with T56 send-failure UI. Smoke-gated."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P5; head 1d626d02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T74"
+title = "Local-only find bar (t3code P6, GAP5)"
+status = "needed"
+detail = "mod+f bar with DOM search plus highlight plus Enter-nav plus count (t3code threadFind); explicitly no server search — bounded single transcript. Smoke-gated like every UI slice."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P6; head 1d626d02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T75"
+title = "Focus open/close/return contract for picker/modal/menus (t3code P7)"
+status = "needed"
+detail = "Picker/modal/menus move no focus and strand it on close (lock screen already fine): focus-in on open, return-to-trigger on close, Esc everywhere missing (t3code picker/menu patterns). Smoke-gated."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P7; head 1d626d02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T76"
+title = "Screen-reader run-state announcements (t3code P8)"
+status = "needed"
+detail = "One live region announcing Working/Approval/Input/Done/Failed/Stopped, updated in setRunning/onStream (t3code threadActivityAnnouncement). Smoke-gated."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P8; head 1d626d02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T77"
+title = "Prompt stash, park/restore draft (t3code P9)"
+status = "blocked"
+detail = "DEFERRED per D33 (2026-11-01): out of this milestone, retained for later. If revived: park/restore with T57 storage shape, durable-write-then-clear, append-never-overwrite restore (t3code promptStash); needs T57 first."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P9; head 1d626d02); T80 promoted the call to D33, ruled defer."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T78"
+title = "Selector menus: keyboard nav plus disabled reasons (t3code P10)"
+status = "needed"
+detail = "Selector menus are mouse-only with a flat catalog: arrow/Enter/Esc keyboard nav for all three selectors (t3code ModelPickerContent); disabled reasons need a server catalog marking. Smoke-gated."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P10; head 1d626d02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T79"
+title = "Context Compact action (t3code P11)"
+status = "needed"
+detail = "Meter popover gains a Compact affordance once the MSP surface is confirmed (t3code ContextWindowMeter plus /compact pipeline). Blocked on the T55 MSP-surface answer."
+evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P11; head 1d626d02)"
+blocked_by = ["T55"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T80"
+title = "Post-chain audit and open-decision recommendations"
+status = "done"
+detail = "Developer-requested review of the chain through T69: compare claims with current implementation and fresh verification, reconcile missed follow-ups and tracker dependencies, and advise on open decisions with pros/cons. Review only; proposed developer rulings remain open."
+evidence = "DONE 2026-11-01: notes/t80-review.md plus four reproducible isolated probe scripts and sanitized logs. Parent make gate exits 0 (Biome/tsc, 164 tests, 56 smoke checks), real-browser full workspace/no-workspace tour console/page errors=0, screenshots inspected. Reproduced semantic TOML corruption T84, missing artifact viewer T83, stale password overwrite T82, owner takeover failure T81; expanded T68/T71/T72 and filed T85-T89 for omitted delivery/acceptance/QA follow-through. T23 unblocked and C6 reconciled from current upstream; D25/D27/D32/D33 ruled 2026-11-01 per Codex recommendation (developer agreed). make check passes; coord handoff posted. No product fixes assumed. Advisory sequence (inert to plan ordering; T86 deps carry the milestone order): T84, T81, T71, T50, T55, T49, T83, T56, T86; parallel: T23, T52, T57, T65, T66, T68, T72."
+blocked_by = []
+agent = "codex-review"
+updated = "2026-11-01"
+
+[[task]]
+id = "T81"
+title = "Bind main-session initialization to the MSP worker owner/generation"
+status = "done"
+detail = "New unlock tokens must never reuse the previous worker's mainPromise/session ID. Serialize takeover and discard stale async continuations; cover sequential owner change and concurrent initialization/lock. First send from the new owner must work without a retry. Local session lifecycle, within D31 single-operator scope."
+evidence = "DONE 2026-11-01: mainOwner + mainSettled binding; reservations survive takeovers, stale starters adopt the live generation (recurse only when nothing live to adopt); round-1 always-recurse wedge caught by child probe + parent repro (both 12s-timeout, ~350 spawns) and reworked. Fail-first hermetic trio (sequential first-try 200, exact-overlap converges ~150ms with spawns<=4 + sequential 200/200, lock-race clean 500 + next-waiter 200); parent gate green (biome+tsc zero, suite 173/0, smoke green, console clean), T81 file 5x zero-variance, shots spot-checked. Overlap pair settles deterministic 200+500 (route-level read race, D31 out-of-scope) pinned in test."
+blocked_by = ["T64"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T82"
+title = "Detect stale password edits without exposing the secret"
+status = "done"
+detail = "The modal baseline is a redacted projection containing only hasPassword: saved-password A to B leaves it identical, so an older modal can overwrite B with C without a conflict even sequentially. Final stale-secret protection needs a supported secret-safe revision/precondition contract from centrs, plus synchronized transaction replacement (C15/#581); do not hash/persist CDB internals in the consumer. Narrow interim claims and require explicit review of this limitation."
+evidence = "DONE 2026-11-01 (INTERIM ONLY): static modal limitation note (all 8 compared fields, password-value invisibility + non-atomicity with concrete consequences, #581 pointer) approved in explicit parent review, no reword; server comment precision only, write path byte-identical, 409 handler intact for T72; INTERIM(T82/C15) known-gap pin + disclosure pin (flip when #581 lands); parent gate green (biome+tsc zero, suite 175/0, smoke green), creds-modal shot eyeballed. Durable secret-safe revision contract remains open as C15; no competing CDB machinery built."
+blocked_by = []
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T83"
+title = "Render workspace artifacts in Mode B under the approved offline sandbox contract"
+status = "needed"
+detail = "D17/D19 are still unfulfilled in the real UI: renderDoc puts HTML into textContent, no iframe/render surface exists, and generic HTML/SVG/PNG files are absent from the picker tree. Add an explicit artifact opener/viewer, static-default and opt-in inline-script sandbox tiers (no same-origin or external refs), with agent-visible instructions. Replace the topology HTML CDN dependency with packaged/offline delivery per T41/D21. Acceptance is a real visual report/topology opened through the browser, offline and console-clean; an HTTP 200 or source-text assertion does not pass."
+evidence = "T80 real-browser file opener: sourceShown=true, renderedHeadingCount=0, frameCount=0 (notes/t80-surface-probe.ts; out/t80-review/artifact-source.png). ui.html renderDoc/loadTree; jobs.ts mermaidPage loads jsdelivr externally. T33 APIs/files exist; rendering in the product does not."
+blocked_by = ["T33"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T84"
+title = "Prevent semantic data loss in the TOML editor"
+status = "done"
+detail = "An unchanged save must preserve the parsed TOML values/types, including [[device]] arrays, nested tables, string values that resemble booleans/numbers, and ordinary arrays. Current flattening stringifies arrays into a headerless top-level device = <json> string (wireToml skips the (top) header) and silently removes inventory from readDevices despite valid syntax. Fail closed/read-only for unsupported shapes until lossless round-trip is supported; syntax-only validation is insufficient. Test through the real browser save path."
+evidence = "DONE 2026-11-01: row-level readonly (top/nested/type-flip) + merged (top) + writable flag; Save disabled with banner/note, Discard works; editor-marked saves 409 on top-level key/kind drift, row key/kind drift in tables, or unreadable/unparseable original (review deepened both); fail-first suite 6 + smoke leg 6 through the real browser save path; parent gate green (biome+tsc zero, suite 170/0, smoke green, console clean), shots 16/17 eyeballed. Pre-existing stale-state-on-failed-load wart split to T92."
+blocked_by = ["T40"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T85"
+title = "Offer start-new/reset for the single main session"
+status = "needed"
+detail = "D20 promises a fresh-session action but no UI/route exists. Provide a one-agent reset/new action using the corrected lifecycle, keep prior transcript available, and preserve unsent drafts with an explicit policy; do not require locking/restarting the app to start fresh."
+evidence = "T80 source audit: sessionStart is only called by ensureMain; no reset/new route or action. D20 outcome; coordinate T60 resume, T57 drafts, T71 stop."
+blocked_by = ["T81", "T71"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T86"
+title = "Prove the full Mode B workflow with a real agent and a twin"
+status = "needed"
+detail = "Run the D16 milestone end to end: shared handoff visible -> real Meta session loads intended skills/context -> selected device reaches agent -> approval/question round trip -> read/proposed change on a disposable twin with readback -> rendered evidence in the app -> stop/lock lifecycle. Include T64 exact acceptance: no ambient CDB password, unlock encrypted fixture, UI read and an actual agent-shell centrs command using the package build and bound CDB. Existing T64 worker shim only records env; it never executes centrs. Wire shapes come from live captures. No bigdude writes."
+evidence = "T80 audit of tests/serve.test.ts stubMuseBin + unlock-propagation test: real centrs for UI, shell stub for MSP env; no real Meta tool invocation or twin demo established by 164/56 gate. This is a milestone acceptance task, not a demand to redo every unit test. T84 added as dep: the demo must not corrupt router.toml."
+blocked_by = ["T50", "T55", "T49", "T83", "T71", "T56", "T84"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T87"
+title = "Validate Mode A on the intended first platform and remaining consent paths"
+status = "blocked"
+detail = "Mac-first per D14: run real bootstrap/install/auth/launch/decline/resume with the packaged trilogy and workspace handoff. Preserve Windows as a later explicit-machine task. Orca/Linux proofs do not establish Mac/Windows support. External: access to an appropriate test machine and setup scenario."
+evidence = "T30 evidence and notes/t30-proof.md explicitly leave other-machine install/auth/exec paths pending; no separate acceptance task existed before T80."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T88"
+title = "Track the unfinished map/chart render services"
+status = "needed"
+detail = "T33 delivered topology/report plus honest not-built map/chart responses; the latter still need explicit delivery tracking. Keep these after the core artifact viewer. Select the first concrete map/chart use case and file the rendering/data design decision before implementation; no blanket charting platform."
+evidence = "T80 scope reconciliation: render/jobs.ts runMap/runChart return ok:false; README lists them only as follow-ups. T33 done means delivered service foundation and topology/report, not four working named jobs."
+blocked_by = ["T83"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T89"
+title = "Make browser-smoke expected-error exceptions route-specific"
+status = "done"
+detail = "The smoke harness currently ignores every console error containing 400 or 401. Limit exceptions to the precise intentional wrong-password and fake-output-ref requests; unexpected auth/client failures elsewhere must fail. Add meaningful coverage in T81/T83/T84 rather than growing assertion counts without user-behavior checks."
+evidence = "DONE 2026-11-01: exact failed-response set match (method+path+status, order-insensitive), console errors restricted to Chrome failed-resource shape with derived per-status reconciliation, pageerrors split to own zero check, positives keyed off responses. Tightened filter caught a real third deliberate 400 the spec missed (T40 picker bad-scaffold POST /api/workspaces); spec amended to 3 entries, no padding. Parent gate green (biome+tsc zero, suite 173/0, smoke green), own negative control RED-with-route-details then GREEN after revert, shots swept. T81/T84 coverage stands; T83 later phase."
+blocked_by = ["T43"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T90"
+title = "Rename [slot] to [device] (D25 cutover)"
+status = "done"
+detail = "Clean prototype cutover per D25 (no deprecated alias): template/router.toml [slot] plus header comments, template/AGENTS.md observations paths, template/conventions.md, proto readSlots keys plus scaffold output plus UI strings plus tests plus smoke fixture. Migrate scratch workspaces with it. Not a T14 move gate (D10); must land before promotion. Smoke-gated."
+evidence = "DONE 2026-11-01: Slot->Device/readDevices/cdbRowsToDevices, device/devices keys only (no alias), template+tests+smoke+scaffold migrated (55 files); parent-verified zero router-slot refs (preview-tab openSlot, DSP time-slot, history/evidence untouched by design), own TMPDIR=/dev/shm make gate green (biome+tsc zero, suite 164/0, smoke green, console clean), shots eyeballed (device strings, counts correct). Residual pull/ prototype-CLI skew split to T91."
+blocked_by = ["D25"]
+agent = "stage1"
+updated = "2026-11-01"
+
+[[task]]
+id = "T91"
+title = "Align pull/ prototype CLIs with the D25 device vocabulary"
+status = "needed"
+detail = "T90 renamed template docs to --device/observations/<device>/ but pull/checker.ts still implements --slot and pull/pull.ts still documents [--name <slot>]. Rename the prototype CLI flags/usage/comments to device (or document the split if prototypes are frozen); pull/*.ts never reads router.toml so nothing breaks either way."
+evidence = "T90 review 2026-11-01: pull/checker.ts:4,117,126 --slot; pull/pull.ts:15 [--name <slot>]; template/checks/README.md now documents --device."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T92"
+title = "TOML editor: clear stale state when a file fails to load"
+status = "needed"
+detail = "renderToml returns early on !j.ok with the previous file's tomlState intact: a Save click then rewrites the previous file (comment-stripped, semantically guarded) while the header names the failed file. Clear tomlState and disable Save on load failure; keep the unavailable note."
+evidence = "T84 review 2026-11-01: ui.html renderToml early return; pre-existing, semantically safe via the T84 409 guard."
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T93"
+title = "CLI reshape per D35 (start|serve, init, code, doctor)"
+status = "needed"
+detail = "Implement D35 on the moved repo: shared workspace resolution (cwd, TTY prompt for code, browser picker for start), browser open, init into cwd from templates/, code passthrough to muse, doctor print-only, drop devices subcommand and its tests, README leads with start."
+evidence = "D35 2026-11-01"
+blocked_by = ["T14"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T94"
+title = "Test suites leak tmpdirs: clean up after every run"
+status = "needed"
+detail = "8247 stale suite/smoke/probe dirs (6.2G) filled the /dev/shm user quota and broke the TMPDIR=/dev/shm gate convention; cleared 2026-11-01 by the orchestrator. Every mkdtemp in tests/ and tools/ui-smoke.ts gets an afterAll/finally rm; add a gate check that a run leaves no new prefixed dirs."
+evidence = "repair-wave T72 environment flag 2026-11-01; prefixes t31-serve-*, t40-*, ui-smoke-*, t48-*, t84-* dominated"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T95"
+title = "Candidate: owner-opened terminal into a quickchr CHR from the UI"
+status = "needed"
+detail = "Per D36: cheaper than a twin workflow and more useful near term. Candidate only, off the demo critical path; scope after T86."
+evidence = "developer 2026-11-01"
+blocked_by = ["T86"]
+agent = ""
+updated = "2026-11-01"

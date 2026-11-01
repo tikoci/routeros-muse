@@ -1,0 +1,33 @@
+{
+  "synthetic": true,
+  "note": "SYNTHETIC worked example for the vendor-conversion self-test. Fictional site, fictional devices, documentation IPs (TEST-NET-2) only. Not a real network.",
+  "site": "example-3ap-site",
+  "captured_by": "agent-walkthrough",
+  "old_vendor": "ubnt",
+  "controller": {
+    "type": "self-hosted controller",
+    "version": "8.x (owner-stated, unverified)"
+  },
+  "devices": [
+    {"role": "gateway", "vendor_model": "vendor-gateway-1", "mgmt": "198.51.100.1", "notes": "PPPoE uplink (owner-stated, unverified)"},
+    {"role": "switch", "vendor_model": "vendor-switch-8", "mgmt": "198.51.100.2", "poe": "8x af (owner-stated, unverified)"},
+    {"role": "ap", "name": "ap-living", "vendor_model": "vendor-ap-wifi6", "mgmt": "198.51.100.11", "state": "adopted"},
+    {"role": "ap", "name": "ap-office", "vendor_model": "vendor-ap-wifi6", "mgmt": "198.51.100.12", "state": "adopted"},
+    {"role": "ap", "name": "ap-garage", "vendor_model": "vendor-ap-wifi5", "mgmt": "198.51.100.13", "state": "adopted"}
+  ],
+  "ssids": [
+    {"name": "HomeNet", "auth": "wpa2-psk", "vlan": null},
+    {"name": "GuestNet", "auth": "open+captive", "vlan": null, "client_isolation": true}
+  ],
+  "subnets": [
+    {"cidr": "198.51.100.0/24", "use": "lan", "dhcp": "gateway", "dns": "gateway"}
+  ],
+  "absences": [
+    "no guest VLAN (guest isolation is AP-feature only)",
+    "no documented firewall rules",
+    "no backups observed"
+  ],
+  "complaints": [
+    "garage AP drops under load (owner-stated, unverified)"
+  ]
+}

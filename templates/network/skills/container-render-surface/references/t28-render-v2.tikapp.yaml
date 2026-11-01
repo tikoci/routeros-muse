@@ -1,0 +1,17 @@
+name: t28-render
+services:
+  web:
+    image: node:alpine
+    command: 'node /app.js'
+    ports:
+      - '8081:80/tcp'
+    configs:
+      - source: app-js
+        target: /app.js
+configs:
+  app-js:
+    content: |
+      var http=require('http');
+      var v='t28-render-v2';
+      var note='quick-check: all systems nominal (v2, post-sync)';
+      http.createServer((q,s)=>{var u=q.url;var b;if(u==='/note.txt'){b=note+'\\n';s.setHeader('Content-Type','text/plain')}else{b='<html><head><title>'+v+'</title></head><body><h1>'+v+'</h1><p>up</p><p><a href=/note.txt>note</a></p></body></html>';s.setHeader('Content-Type','text/html')}s.end(b)}).listen(80)

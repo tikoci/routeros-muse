@@ -1,0 +1,11 @@
+# Synthetic fixture shaped like the heltec-victron parable (backlog #57).
+# No real project data: the unpublished victron-heltec tree was excluded
+# from the corpus mirror and is not drawn on here.
+name = "solar-monitor"
+problem = "Owner needs panel/battery state; the shelf product is overkill and mismatched."
+rejected_alternative = "Full Victron stack rejected: 5x the cost for telemetry the owner will not read, and its shunt does not fit the existing busbar."
+records_link = "inventory/sidecars/solar-monitor.md"
+integration_surface = "files"
+integration_detail = "Daily readings CSV copied into records; LoRa gateway future optional."
+status = "active"
+synthetic = true

@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concept B (v10) — Ops deck, stats popover + target controls</title>
+<style>
+  :root {
+    --bg: #0b0e13; --panel: #11161e; --panel-2: #0d1219; --inset: #161d28;
+    --border: #222c3a; --border-soft: #1a2230;
+    --text: #e9edf3; --muted: #9aa6b5; --faint: #636e7e;
+    --accent: #4d8dff; --accent-dim: rgba(77, 141, 255, 0.13);
+    --green: #3fb950; --green-dim: rgba(63, 185, 80, 0.12);
+    --amber: #d29922; --amber-dim: rgba(210, 153, 34, 0.12);
+    --red: #f85149; --red-dim: rgba(248, 81, 73, 0.12);
+    --code-bg: #070a0f; --code-fg: #bcd3ff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  html[data-theme="light"] {
+    --bg: #f3f5f8; --panel: #ffffff; --panel-2: #edf0f4; --inset: #e6ebf1;
+    --border: #d3dbe4; --border-soft: #e2e8ef;
+    --text: #10151c; --muted: #4d5a6b; --faint: #8a95a5;
+    --accent: #2f6df6; --accent-dim: rgba(47, 109, 246, 0.1);
+    --green: #1a7f37; --green-dim: rgba(26, 127, 55, 0.1);
+    --amber: #9a6700; --amber-dim: rgba(154, 103, 0, 0.1);
+    --red: #cf222e; --red-dim: rgba(207, 34, 46, 0.08);
+    --code-bg: #10151c; --code-fg: #bcd3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  .app { display: flex; height: 100vh; min-width: 1180px; }
+
+  .left { width: 344px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; font-size: 14px; font-weight: 650; }
+  .brand .mode { font: 600 11px var(--sans); color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); padding: 1px 8px; border-radius: 20px; }
+  html[data-theme="light"] .brand .mode { border-color: rgba(26,127,55,.4); }
+  .sect { padding: 8px 16px 6px; font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+  .sect.split { display: flex; align-items: center; justify-content: space-between; padding-right: 10px; }
+  .scroll { overflow-y: auto; }
+  .dev { margin: 0 10px 8px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer; background: var(--panel-2); }
+  .dev:hover { border-color: var(--border); }
+  .dev.selected { border-color: var(--accent); }
+  .dev.targeted { border-color: var(--green); }
+  .dev .row1 { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--green); } .dot.warn { background: var(--amber); }
+  .dev .name { font-weight: 650; }
+  .dev .role { margin-left: auto; font: 500 11px var(--sans); color: var(--muted); }
+  .dev .live { margin: 6px 0 0 16px; font: 11.5px var(--mono); color: var(--muted); }
+  .dev .live b { color: var(--text); font-weight: 600; }
+  .dev .chat { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 16px; }
+  .dev .inchat { font-size: 11px; color: var(--green); font-weight: 600; }
+  .btn { font: 600 12px var(--sans); border-radius: 7px; padding: 5px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.stop { background: var(--red-dim); border-color: var(--red); color: var(--red); display: flex; align-items: center; gap: 7px; }
+  .btn.stop .sq { width: 9px; height: 9px; border-radius: 2px; background: var(--red); }
+  .docrow { display: flex; align-items: center; gap: 9px; margin: 0 10px 2px; padding: 6px 10px; border-radius: 7px; cursor: pointer; }
+  .docrow:hover { background: var(--inset); }
+  .docrow .grow { flex: 1; min-width: 0; }
+  .docrow .dn { font-size: 12.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .docrow .file { font: 10.5px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .docrow .dm { margin-left: auto; font-size: 11px; color: var(--faint); flex: none; }
+  .kchip { font: 700 9px var(--mono); padding: 1px 5px; border-radius: 4px; flex: none; letter-spacing: 0.04em; }
+  .kchip.toml { color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); }
+  .kchip.md { color: var(--accent); background: var(--accent-dim); border: 1px solid rgba(77,141,255,.35); }
+  .kchip.dir { color: var(--muted); background: var(--inset); border: 1px solid var(--border-soft); }
+  .left .foot { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border-soft); font-size: 11.5px; color: var(--faint); }
+
+  .center { flex: 1; display: flex; flex-direction: column; min-width: 440px; }
+  .tabbar { display: flex; align-items: stretch; gap: 0; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+  .ctab { display: flex; align-items: center; gap: 8px; background: none; border: none; border-right: 1px solid var(--border-soft); font: 600 12.5px var(--sans); color: var(--muted); padding: 9px 14px; cursor: pointer; max-width: 260px; min-width: 0; flex-shrink: 1; border-radius: 0; overflow: hidden; }
+  .ctab.main { flex-shrink: 0; }
+  .ctab.working .t { font-style: italic; }
+  .ctab.working.pinned .t { font-style: normal; }
+  .pinbtn { background: none; border: none; cursor: pointer; color: var(--faint); padding: 0 2px; display: flex; }
+  .pinbtn:hover { color: var(--text); }
+  .ctab.working.pinned .pinbtn { color: var(--accent); }
+  .ctab:hover { color: var(--text); background: var(--inset); }
+  .ctab.active { color: var(--text); background: var(--bg); box-shadow: inset 0 2px 0 var(--accent); }
+  .ctab .x { color: var(--faint); font-size: 13px; padding: 0 2px; }
+  .ctab .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ctab.main { background: var(--accent); color: #fff; font-weight: 700; }
+  .ctab.main:hover { background: var(--accent); color: #fff; filter: brightness(1.07); }
+  .ctab.main.active { box-shadow: none; }
+  .ctab.main svg { flex: none; }
+  .ctab.main .run { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex: none; animation: pulse 1.2s infinite; }
+  .ctab.main .devchip { font: 700 10.5px var(--sans); background: rgba(255,255,255,.2); border-radius: 4px; padding: 0 6px; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .rdot, .mstat .mdot, .stream .caret { animation: none; } }
+
+  .ctab .n { font: 700 10.5px var(--sans); color: var(--faint); background: var(--inset); border: 1px solid var(--border-soft); border-radius: 10px; padding: 0 7px; flex: none; }
+
+
+  .cpane { display: none; flex: 1; flex-direction: column; min-height: 0; }
+  .cpane.active { display: flex; }
+  .msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 84%; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .bubble { background: var(--accent); color: #fff; border-radius: 12px 12px 3px 12px; padding: 9px 13px; }
+  .msg.agent { align-self: flex-start; }
+  .msg.agent .who { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  .msg.agent .who .dot { background: var(--accent); }
+  .msg.agent .body { background: var(--panel); border: 1px solid var(--border-soft); border-radius: 3px 12px 12px 12px; padding: 10px 14px; }
+  .msg .body p { margin: 0 0 8px; }
+  .msg .body p:last-child { margin-bottom: 0; }
+  .compact { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 11.5px; padding: 2px 4px; }
+  .compact::before, .compact::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+
+  .dcard { background: var(--inset); border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 14px; align-self: stretch; }
+  .dcard .dh { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; color: var(--faint); text-transform: uppercase; margin-bottom: 7px; }
+  .dcard .dh .ok { color: var(--green); }
+  .dcard .dr { display: flex; gap: 10px; font: 12px var(--mono); color: var(--muted); padding: 2px 0; }
+  .dcard .dr .k { width: 118px; flex: none; color: var(--faint); }
+  .dcard .dr b { color: var(--text); font-weight: 600; }
+  .dcard .df { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--faint); display: flex; gap: 8px; }
+  .dcard.slim .dr { display: block; }
+  .dcard.slim .dr .k { display: inline; width: auto; margin-right: 10px; }
+  .dcard.pending { border-style: dashed; border-color: var(--amber); padding: 12px 16px; }
+  .dcard.pending .dh { color: var(--amber); }
+  .dcard .prow { display: flex; gap: 8px; margin-top: 9px; }
+  .twin { border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; background: var(--panel); }
+  .twin .trow1 { display: flex; align-items: center; gap: 10px; }
+  .twin .cfg { font: 11px var(--mono); color: var(--faint); margin: 6px 0 0 18px; }
+  .twin:hover { border-color: var(--border); }
+  .twin .name { font: 600 13px var(--mono); }
+  .twin .meta { font-size: 11.5px; color: var(--muted); }
+  .twin .st { font: 600 11px var(--sans); padding: 1px 8px; border-radius: 12px; }
+  .twin .st.run { color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); }
+  .twin .st.off { color: var(--faint); background: var(--inset); border: 1px solid var(--border-soft); }
+  .twin .sp { flex: 1; }
+  .dcard.slim { font-size: 12px; }
+
+  .runcard { margin: 8px 0 2px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .runcard .cmd { padding: 9px 12px; font: 12px var(--mono); color: var(--code-fg); background: var(--code-bg); }
+  .runcard .verdict { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; flex-wrap: wrap; }
+  .pill { font: 600 11px var(--sans); padding: 1px 8px; border-radius: 20px; white-space: nowrap; }
+  .pill.ok { color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.3); }
+  .pill.warn { color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.3); }
+  .runcard .row { display: flex; gap: 8px; padding: 0 12px 10px; }
+  .stream { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .stream .caret { width: 8px; height: 15px; background: var(--accent); border-radius: 2px; animation: pulse 1s infinite; }
+
+  .targets { display: flex; align-items: center; gap: 7px; padding: 10px 20px 0; font-size: 12px; color: var(--faint); }
+  .tpill { display: flex; align-items: center; gap: 7px; background: var(--green-dim); border: 1px solid rgba(63,185,80,.4); color: var(--text); border-radius: 16px; padding: 2px 6px 2px 10px; font: 600 11.5px var(--sans); }
+  .tpill button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 0 3px; border-radius: 4px; }
+  .tpill button:hover { color: var(--text); }
+  .tadd { background: none; border: 1px dashed var(--border); border-radius: 16px; color: var(--muted); font: 600 11.5px var(--sans); padding: 2px 10px; cursor: pointer; }
+  .tadd:hover { color: var(--text); border-color: var(--accent); }
+
+  .statusbar { display: flex; align-items: center; gap: 6px; padding: 7px 20px 9px; background: var(--panel-2); border-top: 1px solid var(--border-soft); position: relative; }
+  .statpop { display: none; position: absolute; right: 12px; bottom: calc(100% + 8px); width: 264px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; z-index: 40; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .statpop.open { display: block; }
+  .statpop h4 { margin: 0 0 8px; font-size: 12.5px; }
+  .statpop .arow .k { width: 76px; }
+  .runstat, .ctx { cursor: pointer; }
+  .sel { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border-soft); border-radius: 7px; font: 600 11.5px var(--sans); color: var(--muted); padding: 4px 9px; cursor: pointer; }
+  .sel:hover { color: var(--text); border-color: var(--border); }
+  .sel b { color: var(--text); font-weight: 650; }
+  .sel .car { color: var(--faint); font-size: 10px; }
+  .statusbar .sp { flex: 1; }
+  .ctx { display: flex; align-items: center; gap: 6px; font: 11.5px var(--mono); color: var(--faint); }
+
+  .unx { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 12px; padding: 0 2px; border-radius: 4px; }
+  .unx:hover { color: var(--red); }
+  .gone { font-size: 11px; color: var(--faint); }
+  .runstat { display: flex; align-items: center; gap: 6px; font: 11.5px var(--mono); color: var(--muted); margin-right: 8px; }
+  .rdot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.2s infinite; }
+  .mstat { width: 14px; display: flex; justify-content: center; align-items: center; }
+  .mstat .mdot { width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: pulse 1.2s infinite; }
+  .ctab.main:not(.active) .mstat .mdot { background: var(--green); }
+  .unread { font: 700 10.5px var(--sans); background: rgba(255,255,255,.2); border-radius: 10px; padding: 0 8px; }
+  .ctab.main:not(.active) { background: var(--panel-2); color: var(--muted); }
+  .ctab.main:not(.active):hover { background: var(--inset); color: var(--text); }
+  .ctab.main:not(.active) .unread { background: var(--amber-dim); color: var(--amber); }
+  .tailbar { display: none; margin: 8px 20px 0; padding: 5px; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; cursor: pointer; }
+  .tailbar:hover { color: var(--text); border-color: var(--accent); }
+  .marks { display: flex; align-items: center; gap: 8px; color: var(--text); }
+  .plusmark { color: var(--faint); font-size: 14px; }
+  .morelink { display: block; width: calc(100% - 20px); margin: 2px 10px 6px; background: none; border: none; cursor: pointer; color: var(--faint); font: 600 11.5px var(--sans); text-align: left; padding: 4px 10px; border-radius: 6px; }
+  .morelink:hover { color: var(--text); background: var(--inset); }
+  #wslist .docrow:nth-child(n+5) { display: none; }
+  .left.expanded #wslist .docrow { display: flex; }
+  .left.expanded .devsect { display: none; }
+  .wsempty { margin: 4px 10px; padding: 16px 10px; text-align: center; color: var(--faint); font-size: 12px; }
+  .wsempty p { margin: 0 0 10px; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .overlay.open { display: flex; }
+  .modal { width: 580px; max-width: calc(100vw - 60px); max-height: 72vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .modal .mhead { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-soft); font-weight: 650; font-size: 14px; }
+  .modal .mhead .x { margin-left: auto; background: none; border: none; cursor: pointer; color: var(--faint); font-size: 16px; padding: 0 4px; }
+  .modal .mhead .x:hover { color: var(--text); }
+  .mtabs { display: flex; gap: 4px; padding: 10px 16px 0; }
+  .mtab { background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font: 600 12.5px var(--sans); color: var(--faint); padding: 6px 10px; }
+  .mtab.on { color: var(--text); border-bottom-color: var(--accent); }
+  .mbody { padding: 12px 16px; overflow-y: auto; }
+  .mview { display: none; }
+  .mview.on { display: block; }
+  .mfoot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border-soft); }
+  .titem { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; }
+  .titem:hover { background: var(--inset); }
+  .titem.sel { background: var(--accent-dim); }
+  .titem.d1 { padding-left: 28px; }
+  .titem .fname { font-weight: 550; }
+  .titem .fmeta { margin-left: auto; font-size: 11px; color: var(--faint); }
+  .tdir { display: flex; align-items: center; gap: 9px; padding: 6px 10px; font-size: 12.5px; font-weight: 650; color: var(--muted); }
+  .abub { border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; background: var(--panel-2); }
+  .abub .ah { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13px; margin-bottom: 4px; }
+  .abub .ah button { margin-left: auto; }
+  .abub p { margin: 0; font-size: 12px; color: var(--muted); }
+  .upzone { border: 1px dashed var(--border); border-radius: 10px; padding: 22px 14px; text-align: center; color: var(--muted); font-size: 12.5px; }
+  .upzone input { margin-top: 10px; }
+  .alert { display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: var(--green-dim); border-bottom: 1px solid rgba(63,185,80,.3); font-size: 12.5px; flex: none; }
+  .alert .adot { width: 18px; height: 18px; flex: none; border-radius: 50%; background: var(--green); color: #fff; font: 700 11px/18px var(--sans); text-align: center; }
+  html[data-theme="light"] .alert .adot { color: #fff; }
+  .alert .sp { flex: 1; }
+  .alert .alink { background: none; border: none; cursor: pointer; font: 600 12px var(--sans); color: var(--muted); padding: 3px 6px; }
+  .alert .alink:hover { color: var(--text); }
+  .alert.warn { background: var(--amber-dim); border-bottom-color: rgba(210,153,34,.35); }
+  .alert.warn .adot { background: var(--amber); }
+  .composer { padding: 8px 20px 16px; }
+  .composer .box { display: flex; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px; align-items: flex-end; }
+  .composer textarea { flex: 1; background: none; border: none; outline: none; color: var(--text); font: 13px/1.45 var(--sans); resize: none; min-height: 48px; max-height: 132px; padding: 4px 2px; }
+  .composer textarea::placeholder { color: var(--faint); }
+  .composer .box .btn.stop { align-self: flex-end; }
+
+
+  .pastwrap { flex: 1; overflow-y: auto; padding: 22px 28px; max-width: 680px; }
+  .pastwrap h1 { font-size: 16px; font-weight: 650; margin: 0 0 4px; }
+  .pastwrap .lede { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; max-width: 560px; }
+  .lockchip { font: 600 10.5px var(--sans); color: var(--faint); border: 1px solid var(--border); border-radius: 5px; padding: 0 6px; flex: none; }
+  .lockbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); margin-bottom: 6px; }
+  #pane-pastchat .pastwrap { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  #pane-pastchat .msg.user { align-self: flex-end; }
+  #pane-pastchat .msg.agent { align-self: flex-start; max-width: 92%; }
+  #pane-pastchat h1 { margin-bottom: 0; }
+
+  .tomlwrap { flex: 1; overflow-y: auto; padding: 22px 28px; max-width: 680px; }
+  .tomlwrap .fn { font: 12px var(--mono); color: var(--faint); margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .tomlwrap h1 { font-size: 16px; font-weight: 650; margin: 0 0 14px; }
+  .tsec { border: 1px solid var(--border-soft); border-radius: 10px; background: var(--panel); margin-bottom: 12px; overflow: hidden; }
+  .tsec .sh { padding: 8px 14px; background: var(--panel-2); font: 700 11px var(--mono); color: var(--muted); border-bottom: 1px solid var(--border-soft); }
+  .trow { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--border-soft); align-items: center; }
+  .trow:last-child { border-bottom: none; }
+  .trow label { font: 12px var(--mono); color: var(--faint); }
+  .trow input, .trow textarea { background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font: 12.5px var(--sans); padding: 6px 9px; outline: none; width: 100%; resize: vertical; }
+  .trow input:focus, .trow textarea:focus { border-color: var(--accent); }
+  .trow input.mono { font-family: var(--mono); font-size: 12px; }
+  .tomlfoot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .tomlfoot .note { font-size: 11.5px; color: var(--faint); margin-left: 4px; }
+
+  .right { width: 330px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+  .rpane { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .rview { display: none; }
+  .rview.active { display: block; }
+  .rsect { font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 8px; }
+  .rblock { margin-bottom: 18px; }
+  .agenthead { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13px; margin-bottom: 8px; }
+  .agenthead .conn { font: 600 11px var(--sans); color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); padding: 1px 8px; border-radius: 12px; }
+  .agenthead .sp { flex: 1; }
+  .pending { font: 600 10.5px var(--sans); color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); border-radius: 10px; padding: 0 7px; margin-left: auto; }
+  .arow { display: flex; font-size: 12.5px; padding: 3px 2px; }
+  .arow .k { width: 88px; flex: none; color: var(--faint); }
+  .arow .v { font-family: var(--mono); font-size: 12px; }
+  .rbtn { width: 100%; margin-top: 9px; }
+  .action { border: 1px solid rgba(210,153,34,.4); background: var(--amber-dim); border-radius: 9px; padding: 9px 12px; font-size: 12.5px; margin-bottom: 8px; }
+  .action b { font-weight: 650; }
+  .action a { color: var(--accent); }
+  .action .src { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .chatstat { display: flex; font-size: 12.5px; padding: 3px 2px; color: var(--muted); }
+  .chatstat b { color: var(--text); font-weight: 600; margin-right: 6px; }
+  .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 7px 10px; }
+  .stat .k { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .v { font: 600 13px var(--mono); margin-top: 1px; }
+  .stat .v small { font: 11px var(--sans); color: var(--muted); font-weight: 400; }
+  .ifrow { display: flex; font: 11.5px var(--mono); color: var(--muted); padding: 3px 2px; border-bottom: 1px solid var(--border-soft); }
+  .ifrow:last-child { border-bottom: none; }
+  .ifrow .t { margin-left: auto; }
+  .ifrow b { color: var(--text); font-weight: 600; }
+  .via { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); margin-top: 8px; }
+  .via button { margin-left: auto; }
+  .minibtn { font: 600 11.5px var(--sans); background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); padding: 3px 10px; cursor: pointer; }
+  .minibtn:hover { color: var(--text); border-color: var(--accent); }
+  .throttle { background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .throttle label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .throttle .t { margin-top: 6px; font-size: 11.5px; color: var(--faint); }
+  #qcresult a { color: var(--accent); }
+  .rbar { display: flex; border-top: 1px solid var(--border-soft); background: var(--panel-2); }
+  .rbar button { flex: 1; background: none; border: none; border-top: 2px solid transparent; cursor: pointer; color: var(--faint); padding: 9px 4px 8px; display: flex; align-items: center; justify-content: center; gap: 6px; font: 600 11px var(--sans); position: relative; }
+  .rbar button:hover { color: var(--text); }
+  .rbar button.active { color: var(--text); border-top-color: var(--accent); }
+  .rbar button.hasalerts { color: var(--amber); }
+  .rbar button.collapse { flex: 0 0 44px; }
+  .rbar .bdot { position: absolute; top: 7px; margin-left: 22px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+  .rbar .n { font: 700 10px var(--sans); color: var(--faint); background: var(--inset); border: 1px solid var(--border-soft); border-radius: 10px; padding: 0 6px; }
+  .minidev { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; font-size: 12.5px; cursor: pointer; }
+  .minidev:hover { background: var(--inset); }
+  .minidev.sel { background: var(--inset); }
+  .minidev .live { margin-left: auto; font: 11px var(--mono); color: var(--faint); }
+  .minidev .inchat { font-size: 10.5px; color: var(--green); font-weight: 700; }
+  .minidev .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .minidev .pt .t { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .minidev .pt .e { font-size: 11px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .minidev .age { font-size: 11px; color: var(--faint); flex: none; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 4px; }
+  .seg button { flex: 1; background: none; border: none; cursor: pointer; font: 600 12px var(--sans); color: var(--muted); padding: 7px 4px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .setrow { display: flex; align-items: center; gap: 9px; padding: 7px 2px; font-size: 12.5px; border-bottom: 1px solid var(--border-soft); }
+  .setrow:last-child { border-bottom: none; }
+  .setrow code { font: 11px var(--mono); color: var(--muted); margin-left: auto; }
+  .setrow label { display: flex; gap: 9px; align-items: center; cursor: pointer; }
+  .setnote { font-size: 11.5px; color: var(--faint); margin-top: 8px; }
+  .crail { width: 42px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: none; flex-direction: column; align-items: center; padding: 10px 0; gap: 6px; }
+  .crail.show { display: flex; }
+  .crail button { width: 30px; height: 30px; border-radius: 8px; background: none; border: 1px solid transparent; cursor: pointer; color: var(--muted); font-size: 15px; display: flex; align-items: center; justify-content: center; }
+  .crail button:hover { background: var(--inset); color: var(--text); }
+  .crail button.hasalerts { color: var(--amber); }
+  .crail .sp { flex: 1; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2b3546; border-radius: 6px; border: 2px solid var(--panel); }
+  html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c3ccd6; border-color: var(--panel); }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="left">
+    <div class="brand"><span class="marks" title="RouterOS Muse"><svg width="18" height="18" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7" r="2" fill="currentColor"/></svg><span class="plusmark">⊕</span><svg width="20" height="14" viewBox="0 0 24 18"><path d="M18.6 6.6c-2 0-3.6 2.5-4.9 4.4-.5.8-1.1 1.7-1.7 2.4-.6-.7-1.2-1.6-1.7-2.4-1.3-1.9-2.9-4.4-4.9-4.4-2.7 0-4.4 2.2-4.4 4.9s1.7 4.9 4.4 4.9c2 0 3.6-2.5 4.9-4.4.5-.8 1.1-1.7 1.7-2.4.6.7 1.2 1.6 1.7 2.4 1.3 1.9 2.9 4.4 4.9 4.4 2.7 0 4.4-2.2 4.4-4.9s-1.7-4.9-4.4-4.9z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><span class="mode">full</span></div>
+    <div class="scroll">
+      <div class="devsect">
+      <div class="sect split"><span>Devices · live via centrs</span><button class="minibtn" title="Add a device to the CDB (flow TBD)">Add Device</button></div>
+      <div class="dev targeted" data-goto="pane-device" data-key="dev-gw" data-title="demo-office-gw" title="In this chat — click for the stats tab">
+        <div class="row1"><span class="dot ok"></span><span class="name">demo-office-gw</span><span class="role">gateway · 7.25</span></div>
+        <div class="live">up <b>12d</b> · cpu <b>4%</b> · mem <b>61%</b></div>
+        <div class="chat"><span class="inchat">in this chat <button class="unx" data-undev="gw" title="Remove from this chat">×</button></span></div>
+      </div>
+      <div class="dev targeted" data-goto="pane-device" data-key="dev-ap" data-title="demo-shop-ap" title="In this chat — click for the stats tab">
+        <div class="row1"><span class="dot ok"></span><span class="name">demo-shop-ap</span><span class="role">ap · 7.25</span></div>
+        <div class="live"><b>14</b> clients · CCQ <b>91%</b> · up <b>31d</b></div>
+        <div class="chat"><span class="inchat">in this chat <button class="unx" data-undev="ap" title="Remove from this chat">×</button></span></div>
+      </div>
+      <div class="dev selected" data-goto="pane-device" data-key="dev-cabin" data-title="demo-cabin-link" title="Selected — preview queued in the main chat; click for the stats tab">
+        <div class="row1"><span class="dot warn"></span><span class="name">demo-cabin-link</span><span class="role">link · 7.24.2</span></div>
+        <div class="live">signal <b>−58 dBm</b> · CCQ <b>94%</b> · 1 drift</div>
+        <div class="chat"><span class="inchat" style="color:var(--amber)">preview in chat ↓</span></div>
+      </div>
+      </div>
+      <div class="sect split"><span>Workspace · recent</span><button class="minibtn" id="wsadd" title="Open a file…">Add File</button></div>
+      <div id="wslist">
+      <div class="docrow" data-goto="pane-doc" data-key="doc-handoff" data-title="Firewall review handoff" data-file="handoff"><span class="kchip md">MD</span><div class="grow"><div class="dn">Firewall review handoff</div><div class="file">001-fw-review-handoff.md</div></div><span class="dm">handoff</span></div>
+      <div class="docrow" data-goto="pane-toml" data-file="router"><span class="kchip toml">TOML</span><div class="grow"><div class="dn">Office gateway</div><div class="file">router.toml</div></div><span class="dm">router</span></div>
+      <div class="docrow" data-goto="pane-doc" data-key="doc-setup" data-title="Network setup" data-file="setup"><span class="kchip toml">TOML</span><div class="grow"><div class="dn">Network setup</div><div class="file">workspace.toml</div></div><span class="dm">setup</span></div>
+      <div class="docrow" data-goto="pane-doc" data-key="doc-drift" data-title="Drift log" data-file="drift"><span class="kchip md">MD</span><div class="grow"><div class="dn">Drift log</div><div class="file">drift.md</div></div><span class="dm">1 open</span></div>
+      <div class="docrow" data-goto="pane-doc" data-key="doc-inbox" data-title="Inbox" data-file="inbox"><span class="kchip dir">DIR</span><div class="grow"><div class="dn">Inbox</div><div class="file">inbox/ · unshaped</div></div><span class="dm">2 new</span></div>
+      </div>
+      <button class="morelink" id="wsmore">Show more ↓</button>
+      <div class="wsempty" id="wsempty" style="display:none"><p>No recent files.</p><button class="btn" id="wsopen">Open file</button></div>
+    </div>
+    <div class="foot">3 devices (CDB) · demo-office · canonical</div>
+  </aside>
+
+  <main class="center">
+    <div class="tabbar">
+      <div class="ctab main active" data-pane="pane-chat" title="The main chat — pinned, always here">
+        <span class="mstat" id="mainstat"><span class="mdot"></span></span><span class="t">RouterOS Muse</span><span class="unread" id="mainunread" style="display:none">Unread ↓</span>
+      </div>
+      <div class="ctab working" data-pane="pane-doc" data-key="doc-handoff" title="Preview slot — the next selection replaces this unless pinned"><button class="pinbtn" title="Pin — keep this tab when opening something else"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1a3.2 3.2 0 0 1 3.2 3.2c0 2.4-3.2 6.3-3.2 6.3S2.8 6.6 2.8 4.2A3.2 3.2 0 0 1 6 1z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="4.2" r="1.1" fill="currentColor"/></svg></button><span class="t">Firewall review handoff</span><span class="x" title="Close">×</span></div>
+
+    </div>
+
+    <div class="cpane active" id="pane-chat">
+      <div class="alert warn" id="agentalert">
+        <span class="adot">!</span>
+        <span><b>cabin-link drifted</b> — tx-power reads 17, plan promises 20.</span>
+        <span class="sp"></span>
+        <button class="minibtn" data-rgoto="rview-alerts">Open alerts</button>
+        <button class="alink" id="alertdismiss" title="Dismiss until the next agent alert">Dismiss</button>
+      </div>
+      <div class="msgs">
+        <div class="compact">Compacted 2h ago · earlier history kept under Past →</div>
+        <div class="dcard">
+          <div class="dh">Device context · injected for the agent <span class="ok">· reachable ✓</span></div>
+          <div class="dr"><span class="k">demo-office-gw</span><span>up <b>12d</b> · 7.25 · cpu <b>4%</b> · mem <b>61%</b></span></div>
+          <div class="dr"><span class="k">interfaces</span><span><b>9</b> up · ether1-gateway <b>142/38 Mbps</b> · wlan-shop <b>14</b> clients</span></div>
+          <div class="dr"><span class="k">recent errors</span><span><b>none</b> in 24h</span></div>
+          <div class="dr"><span class="k">fw connections</span><span><b>1,204</b> tracked</span></div>
+          <div class="dr"><span class="k">workspace</span><span>role <b>gateway</b> · expects fw <b>42</b> rules · drift <b>0</b> (fills CDB blanks)</span></div>
+          <div class="df"><span>via centrs · native-api · checked just now</span><span>·</span><span>tested before the agent saw it — a failure would show here instead</span></div>
+        </div>
+        <div class="dcard slim">
+          <div class="dh">Device context · injected <span class="ok">· reachable ✓</span></div>
+          <div class="dr"><span class="k">demo-shop-ap</span><span><b>14</b> clients · CCQ <b>91%</b> · up <b>31d</b> · via centrs · 2m ago</span></div>
+        </div>
+        <div class="dcard pending">
+          <div class="dh">Device context · preview — not in chat yet</div>
+          <div class="dr"><span class="k">demo-cabin-link</span><span>signal <b>−58 dBm</b> · CCQ <b>94%</b> · 7.24.2 · <b>1 drift</b> · via centrs · just now</span></div>
+          <div class="prow"><button class="btn primary">Add to chat</button><button class="btn">Not now</button></div>
+          <div class="df"><span>selected in Devices — Add marks clear intent; prompting without adding still sends the data, flagged unclear</span></div>
+        </div>
+        <div class="msg user"><div class="bubble">Twin proved the shadows. Draft the removal for the box.</div></div>
+        <div class="msg agent">
+          <div class="who"><span class="dot"></span><span>muse · local · running</span></div>
+          <div class="body">
+            <p>Drafted against the twin read. This is write-shaped, so it stays a draft until you confirm:</p>
+            <div class="runcard">
+              <div class="cmd">/ip/firewall/filter/remove numbers=17,23</div>
+              <div class="verdict"><span class="pill ok">explain: pass (offline)</span><span class="pill warn">write-shaped · needs confirmation</span></div>
+              <div class="row"><button class="btn primary">Run on twin1 first</button><button class="btn">Edit</button></div>
+            </div>
+            <div class="stream"><span class="caret"></span><span>checking rule 9's intent on the box (read-only)…</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="tailbar" id="tailbar" title="Back to the latest — resume following the agent"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Jump to latest — agent still running</div>
+      <div class="targets">
+        <span class="tpill" data-dev="gw">demo-office-gw <button title="Untarget">×</button></span>
+        <span class="tpill" data-dev="ap">demo-shop-ap <button title="Untarget">×</button></span>
+        <button class="tadd" title="Target another device — its centrs card is checked and added here">+ Device</button>
+        <button class="tadd" id="composerfile" title="Open a file…">+ File</button>
+      </div>
+      <div class="composer">
+        <div class="box">
+          <textarea id="chatinput" rows="2" placeholder="Reply or steer while it runs…" aria-label="Chat input"></textarea>
+          <button class="btn stop"><span class="sq"></span>Stop</button>
+        </div>
+      </div>
+      <div class="statusbar">
+        <button class="sel">Model <b>Spark 1.3</b><span class="car">▾</span></button>
+        <button class="sel">Effort <b>Max</b><span class="car">▾</span></button>
+        <button class="sel">Access <b>Ask first</b><span class="car">▾</span></button>
+        <span class="sp"></span>
+        <span class="runstat" id="runstat" title="Agent is running"><span class="rdot"></span><span id="runtime">0:42</span></span>
+        <span class="ctx" id="ctxbtn" title="Session stats">
+          <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" style="stroke:var(--border)" stroke-width="2.5"/><circle cx="10" cy="10" r="8" fill="none" style="stroke:var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="50.3" stroke-dashoffset="19.1" transform="rotate(-90 10 10)"/></svg>
+        </span>
+        <div class="statpop" id="statpop">
+          <h4>Session · 2h</h4>
+          <div class="arow"><span class="k">Model</span><span class="v">Spark 1.3 · Max</span></div>
+          <div class="arow"><span class="k">Access</span><span class="v">Ask first</span></div>
+          <div class="arow"><span class="k">Context</span><span class="v">62% · 48 msgs</span></div>
+          <div class="arow"><span class="k">Compact</span><span class="v">1× · history kept</span></div>
+          <div class="arow"><span class="k">Devices</span><span class="v">gw · ap · +1 preview</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cpane" id="pane-doc">
+      <div class="pastwrap">
+        <h1 id="doc-title">001-fw-review-handoff</h1>
+        <p class="lede" id="doc-lede">operations/001-fw-review-handoff.md · owner: vm-session · DoD: twin proof, then box read.</p>
+      </div>
+    </div>
+
+
+    <div class="cpane" id="pane-pastchat">
+      <div class="pastwrap">
+        <div class="lockbar"><span class="lockchip">locked</span><span id="ppc-sub">titled by the agent · 18 messages</span></div>
+        <h1 id="ppc-title">Cabin link signal check</h1>
+        <p class="lede"><span id="ppc-age">3d ago</span> · <span id="ppc-dev">demo-cabin-link</span></p>
+        <div class="msg user"><div class="bubble" id="ppc-user">Signal on the cabin link dipped again last night — same as before?</div></div>
+        <div class="msg agent">
+          <div class="who"><span class="dot"></span><span>muse · then</span></div>
+          <div class="body"><p id="ppc-agent">Same signature: tx-power reads 17 against a plan of 20. I can draft the bump and prove it on twin3 first.</p></div>
+        </div>
+        <div class="tomlfoot"><button class="btn primary">Make current</button><span class="note">today's main chat moves to Past chats</span></div>
+      </div>
+    </div>
+
+    <div class="cpane" id="pane-device">
+      <div class="tomlwrap">
+        <div class="fn"><span class="dot ok"></span><span id="pdev-role">gateway · 7.25</span><span>· reachable ✓</span></div>
+        <h1 id="pdev-name">demo-office-gw</h1>
+        <div class="statgrid" id="pdev-stats">
+          <div class="stat"><div class="k">Uptime</div><div class="v">12d</div></div>
+          <div class="stat"><div class="k">CPU / Mem</div><div class="v">4% <small>/ 61%</small></div></div>
+          <div class="stat"><div class="k">FW conns</div><div class="v">1,204 <small>tracked</small></div></div>
+          <div class="stat"><div class="k">Errors 24h</div><div class="v">0</div></div>
+        </div>
+        <div class="tsec">
+          <div class="sh">interfaces</div>
+          <div id="pdev-ifs">
+            <div class="trow"><label>ether1-gateway</label><span style="font:12px var(--mono)">142/38 Mbps</span></div>
+            <div class="trow"><label>wlan-shop · 14 clients</label><span style="font:12px var(--mono)">CCQ 91%</span></div>
+            <div class="trow"><label>vlan8-iot</label><span style="font:12px var(--mono)">idle</span></div>
+          </div>
+        </div>
+        <div class="tomlfoot"><button class="btn primary" id="pdev-add" style="display:none">Add to chat</button><button class="btn">Refresh</button><span class="note" id="pdev-note">in this chat ✓ · via centrs · native-api · 8s ago</span></div>
+      </div>
+    </div>
+
+    <div class="cpane" id="pane-toml">
+      <div class="tomlwrap">
+        <div class="fn"><span class="kchip toml">TOML</span> router.toml · router slot</div>
+        <h1>demo-office-gw</h1>
+        <div class="tsec">
+          <div class="sh">[slot]</div>
+          <div class="trow"><label>id</label><input class="mono" value="demo-office-gw"></div>
+          <div class="trow"><label>label</label><input value="Office gateway · wall rack"></div>
+          <div class="trow"><label>site</label><input value="demo-office"></div>
+          <div class="trow"><label>role</label><input value="gateway"></div>
+          <div class="trow"><label>serial</label><input class="mono" value="•••••• (bound at unbox)"></div>
+        </div>
+        <div class="tsec">
+          <div class="sh">[expect]</div>
+          <div class="trow"><label>identity</label><input class="mono" value="demo-office-gw"></div>
+          <div class="trow"><label>notes</label><textarea rows="2">Filter holds 42 rules; no shadowed rules after review.</textarea></div>
+        </div>
+        <div class="tomlfoot"><button class="btn primary">Save</button><button class="btn">Discard</button><span class="note">edits write back to router.toml · validated before save</span></div>
+      </div>
+    </div>
+
+  </main>
+
+  <aside class="right" id="rightpanel" style="display:none">
+    <div class="rpane">
+      <div class="rview active" id="rview-alerts">
+        <div class="rblock">
+          <div class="rsect">Needs attention</div>
+          <div class="action"><b>graphviz</b> is missing — topology renders fall back to text. <a href="#">Have the agent fix this</a><div class="src">muse doctor · helpful · required for truthful-topology-graphviz</div></div>
+          <div class="action"><b>cabin-link</b> tx-power reads 17, plan promises 20. <a href="#">Open drift.md</a><div class="src">drift · pull 3d ago</div></div>
+          <div class="action"><b>twin2</b> has no snapshot — first boot takes ~4 min. <a href="#" data-rgoto="rview-twins">Go to Twins</a><div class="src">quickchr doctor · warning</div></div>
+          <div class="setnote">muse doctor + quickchr doctor run at startup — this list combines both.</div>
+        </div>
+      </div>
+      <div class="rview" id="rview-past">
+        <div class="rblock">
+          <div class="rsect">Past chats · locked</div>
+          <div class="minidev" data-goto="pane-pastchat" data-key="past-cabin" data-title="Cabin link signal check" title="Open as a tab"><span class="lockchip">locked</span><span class="pt"><span class="t">Cabin link signal check</span><span class="e">tx-power reads 17 against a plan of 20</span></span><span class="age">3d</span></div>
+          <div class="minidev" data-goto="pane-pastchat" data-key="past-shop" data-title="Shop wifi survey walkthrough" title="Open as a tab"><span class="lockchip">locked</span><span class="pt"><span class="t">Shop wifi survey walkthrough</span><span class="e">stockroom corner, weak at −71 dBm</span></span><span class="age">6d</span></div>
+          <div class="minidev" data-goto="pane-pastchat" data-key="past-gw" data-title="First contact: office gateway" title="Open as a tab"><span class="lockchip">locked</span><span class="pt"><span class="t">First contact: office gateway</span><span class="e">identity confirmed, first pull stored</span></span><span class="age">2w</span></div>
+          <div class="setnote">Opens as a tab — pin to keep it, Make current to resume it.</div>
+        </div>
+      </div>
+      <div class="rview" id="rview-twins">
+        <div class="rblock">
+          <div class="rsect">Twins · this box</div>
+          <div class="twin"><div class="trow1"><span class="dot ok"></span><span class="name">twin1</span><span class="st run">running</span><span class="sp"></span><button class="minibtn">Console</button></div><div class="cfg">2 vCPU · 2 GB · 7.25 · up 2d</div></div>
+          <div class="twin"><div class="trow1"><span class="dot" style="background:var(--faint)"></span><span class="name">twin2</span><span class="st off">stopped</span><span class="sp"></span><button class="minibtn">Start</button></div><div class="cfg">2 vCPU · 2 GB · 7.25 · no snapshot</div></div>
+          <div class="twin"><div class="trow1"><span class="dot" style="background:var(--faint)"></span><span class="name">twin3</span><span class="st off">stopped</span><span class="sp"></span><button class="minibtn">Start</button></div><div class="cfg">1 vCPU · 1 GB · 7.24.2</div></div>
+          <div class="setnote">via quickchr · KVM · the agent proves claims here before touching a real device</div>
+        </div>
+        <div class="rblock">
+          <div class="rsect">QuickCHR on this box</div>
+          <div class="statgrid">
+            <div class="stat"><div class="k">Defined</div><div class="v">3</div></div>
+            <div class="stat"><div class="k">Running</div><div class="v">1</div></div>
+            <div class="stat"><div class="k">Disk</div><div class="v">8.2 <small>GB</small></div></div>
+            <div class="stat"><div class="k">Snapshots</div><div class="v">2</div></div>
+          </div>
+          <button class="btn rbtn" id="qcdoctor">Run quickchr doctor</button>
+          <div class="throttle" id="qcresult" style="display:none">quickchr doctor: 1 warning · 0 errors — twin2 has no snapshot. <a href="#" data-rgoto="rview-alerts">Go to Alerts →</a></div>
+        </div>
+      </div>
+      <div class="rview" id="rview-settings">
+        <div class="rblock">
+          <div class="rsect">Agent · muse, local</div>
+          <div class="agenthead"><span class="dot ok"></span><span>muse 1.4.14</span><span class="conn">connected · OAuth</span></div>
+          <div class="arow"><span class="k">Model</span><span class="v">Spark 1.3</span></div>
+          <div class="arow"><span class="k">Effort</span><span class="v">Max</span><span class="pending">→ High after this turn</span></div>
+          <div class="arow"><span class="k">Access</span><span class="v">Ask first</span></div>
+          <div class="arow"><span class="k">Context</span><span class="v">62%</span></div>
+          <div class="arow"><span class="k">Session</span><span class="v">2h · 48 msgs · 1 compaction</span></div>
+          <button class="btn rbtn" title="Drop the session and run the OAuth flow again">Reconnect</button>
+          <div class="setnote">Model changes apply to the main chat after the current turn finishes.</div>
+        </div>
+        <div class="rblock">
+          <div class="rsect">Appearance</div>
+          <div class="seg" id="themeseg">
+            <button data-theme="dark" class="on">Dark</button><button data-theme="light">Light</button><button data-theme="auto">Auto</button>
+          </div>
+        </div>
+        <div class="rblock">
+          <div class="rsect">Topologies</div>
+          <div class="setrow"><span>Office N=1 · v12</span><code>in use</code></div>
+          <div class="setrow"><span>Shop N=2 · v12</span><button class="minibtn">Switch</button></div>
+          <div class="setrow"><span>Cabin link · v9</span><button class="minibtn">Switch</button></div>
+          <button class="btn rbtn">+ New topology</button>
+          <div class="setnote">New topologies start from a template — the same list the Mode A bootstrap uses.</div>
+        </div>
+        <div class="rblock">
+          <div class="rsect">This machine</div>
+          <div class="setrow"><span>Workspace</span><code>~/networks/demo-office</code></div>
+          <div class="setrow"><span>App state</span><code>~/.local/share/routeros-muse</code></div>
+          <div class="setrow"><span>Device registry</span><code>winbox.cdb</code></div>
+          <div class="setrow"><label><input type="checkbox" checked> Ask before write-shaped runs</label></div>
+          <div class="setrow"><label><input type="checkbox" checked> Compact the main chat automatically</label></div>
+          <div class="setnote">Settings live on this machine, never in the workspace.</div>
+        </div>
+      </div>
+    </div>
+    <div class="rbar">
+      <button class="active hasalerts" data-rview="rview-alerts" title="Alerts: everything needing attention">
+        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.5 13 12H1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><line x1="7" y1="5.5" x2="7" y2="8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10.3" r="0.9" fill="currentColor"/></svg>Alerts<span class="bdot" title="3 need attention"></span>
+      </button>
+      <button data-rview="rview-past" title="Past chats: locked, open as a tab to resume">
+        <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 4v3l2 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Past
+      </button>
+      <button data-rview="rview-twins" title="Twins: CHR machines on this box">
+        <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="3" width="5" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="3" width="5" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Twins<span class="n">1/3</span>
+      </button>
+      <button data-rview="rview-settings" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 14 14"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="7" y1="1" x2="7" y2="13"/><line x1="1.8" y1="4" x2="12.2" y2="10"/><line x1="12.2" y1="4" x2="1.8" y2="10"/></g><circle cx="7" cy="7" r="2.6" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7" r="0.9" fill="currentColor"/></svg>
+      </button>
+      <button class="collapse" id="collapsebtn" title="Fold the right panel">»</button>
+    </div>
+  </aside>
+
+  <div class="crail show" id="crail">
+    <button class="hasalerts" data-crview="rview-alerts" title="Alerts"><svg width="15" height="15" viewBox="0 0 14 14"><path d="M7 1.5 13 12H1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><line x1="7" y1="5.5" x2="7" y2="8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10.3" r="0.9" fill="currentColor"/></svg></button>
+    <button data-crview="rview-past" title="Past chats"><svg width="15" height="15" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 4v3l2 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    <button data-crview="rview-twins" title="Twins"><svg width="15" height="15" viewBox="0 0 14 14"><rect x="1" y="3" width="5" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="3" width="5" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+    <button data-crview="rview-settings" title="Settings"><svg width="15" height="15" viewBox="0 0 14 14"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="7" y1="1" x2="7" y2="13"/><line x1="1.8" y1="4" x2="12.2" y2="10"/><line x1="12.2" y1="4" x2="1.8" y2="10"/></g><circle cx="7" cy="7" r="2.6" fill="var(--panel)" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7" r="0.9" fill="currentColor"/></svg></button>
+    <span class="sp"></span>
+    <button id="expandbtn" title="Unfold the right panel">«</button>
+  </div>
+</div>
+<div class="overlay" id="picker">
+  <div class="modal" role="dialog" aria-label="Open file">
+    <div class="mhead">Open file<button class="x" id="pickerx" title="Close">×</button></div>
+    <div class="mtabs">
+      <button class="mtab on" data-mview="mview-topology">Topology</button>
+      <button class="mtab" data-mview="mview-agentic">Agentic</button>
+      <button class="mtab" data-mview="mview-upload">Upload</button>
+    </div>
+    <div class="mbody">
+      <div class="mview on" id="mview-topology">
+        <div class="titem" data-oid="pane-doc" data-okey="doc-setup" data-oname="Network setup" data-ofile="setup"><span class="kchip toml">TOML</span><span class="fname">workspace.toml</span><span class="fmeta">Network setup</span></div>
+        <div class="titem" data-oid="pane-toml" data-okey="pane-toml" data-oname="Office gateway" data-ofile="router"><span class="kchip toml">TOML</span><span class="fname">router.toml</span><span class="fmeta">Office gateway</span></div>
+        <div class="tdir"><span class="kchip dir">DIR</span>operations/</div>
+        <div class="titem d1" data-oid="pane-doc" data-okey="doc-handoff" data-oname="Firewall review handoff" data-ofile="handoff"><span class="kchip md">MD</span><span class="fname">001-fw-review-handoff.md</span><span class="fmeta">handoff</span></div>
+        <div class="titem" data-oid="pane-doc" data-okey="doc-drift" data-oname="Drift log" data-ofile="drift"><span class="kchip md">MD</span><span class="fname">drift.md</span><span class="fmeta">1 open</span></div>
+        <div class="titem" data-oid="pane-doc" data-okey="doc-inbox" data-oname="Inbox" data-ofile="inbox"><span class="kchip dir">DIR</span><span class="fname">inbox/</span><span class="fmeta">2 new · unshaped</span></div>
+      </div>
+      <div class="mview" id="mview-agentic">
+        <div class="abub"><div class="ah">workspace.toml<button class="minibtn" data-goto="pane-doc" data-key="doc-setup" data-title="Network setup" data-rtop="setup">Open</button></div><p>Topology slot + shared defaults. The tree reads it; the agent writes drift findings here first.</p></div>
+        <div class="abub"><div class="ah">router.toml<button class="minibtn" data-goto="pane-toml" data-key="pane-toml" data-title="Office gateway" data-rtop="router">Open</button></div><p>One device slot: identity, role, expects. Visual section editor in the tab — validated before save.</p></div>
+        <div class="abub"><div class="ah">drift.md<button class="minibtn" data-goto="pane-doc" data-key="doc-drift" data-title="Drift log" data-rtop="drift">Open</button></div><p>Open drift items with pull evidence. Clearing one needs a twin proof or a box read.</p></div>
+        <div class="abub"><div class="ah">operations/*-handoff.md<button class="minibtn" data-goto="pane-doc" data-key="doc-handoff" data-title="Firewall review handoff" data-rtop="handoff">Open</button></div><p>Session handoffs the next run picks up. Claims flip unverified → proven with evidence attached.</p></div>
+      </div>
+      <div class="mview" id="mview-upload">
+        <div class="upzone">Drop a capture, export, or screenshot here — or pick one:<br><input type="file" id="upfile"><br><br><button class="btn primary" id="upattach">Attach to chat</button></div>
+      </div>
+    </div>
+    <div class="mfoot"><button class="btn" id="pickercancel">Cancel</button><button class="btn primary" id="pickeropen">Open</button></div>
+  </div>
+</div>
+<script>
+  // center tabs
+  const AGENT_RUNNING = true;
+  const DOWN_SVG = '<svg width="11" height="11" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  let chatScroll = null;
+  function atBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 40; }
+  function markUnread(on) {
+    document.getElementById("mainunread").style.display = on ? "" : "none";
+    document.getElementById("mainstat").innerHTML = on ? DOWN_SVG : (AGENT_RUNNING ? '<span class="mdot"></span>' : "");
+  }
+  function showPane(id) {
+    const msgs = document.querySelector("#pane-chat .msgs");
+    const wasChat = document.getElementById("pane-chat").classList.contains("active");
+    if (wasChat && id !== "pane-chat") {
+      chatScroll = msgs.scrollTop;
+      markUnread(!atBottom(msgs));
+    }
+    document.querySelectorAll(".ctab[data-pane]").forEach((x) => x.classList.remove("active"));
+    document.querySelectorAll(".cpane").forEach((x) => x.classList.remove("active"));
+    const tab = document.querySelector('.ctab[data-pane="' + id + '"]');
+    if (tab) tab.classList.add("active");
+    document.getElementById(id).classList.add("active");
+    if (id === "pane-chat") {
+      if (chatScroll !== null) msgs.scrollTop = chatScroll;
+      markUnread(false);
+    }
+  }
+  document.querySelectorAll(".ctab[data-pane]").forEach((t) =>
+    t.addEventListener("click", () => showPane(t.dataset.pane)));
+  const PIN_SVG = '<svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1a3.2 3.2 0 0 1 3.2 3.2c0 2.4-3.2 6.3-3.2 6.3S2.8 6.6 2.8 4.2A3.2 3.2 0 0 1 6 1z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="4.2" r="1.1" fill="currentColor"/></svg>';
+  const DOCS = {
+    handoff: { title: "001-fw-review-handoff", lede: "operations/001-fw-review-handoff.md · owner: vm-session · DoD: twin proof, then box read." },
+    setup: { title: "workspace.toml", lede: "Network setup · topology slot + shared defaults. (Visual render as in A/C.)" },
+    drift: { title: "drift.md", lede: "Drift log · 1 open item: cabin-link tx-power." },
+    inbox: { title: "inbox/", lede: "Unshaped drops · 2 new — triage into the topology or discard." }
+  };
+  function renderDoc(k) {
+    document.getElementById("doc-title").textContent = DOCS[k].title;
+    document.getElementById("doc-lede").textContent = DOCS[k].lede;
+  }
+  const PASTS = {
+    cabin: { title: "Cabin link signal check", age: "3d ago", dev: "demo-cabin-link", msgs: 18, user: "Signal on the cabin link dipped again last night — same as before?", agent: "Same signature: tx-power reads 17 against a plan of 20. I can draft the bump and prove it on twin3 first." },
+    shop: { title: "Shop wifi survey walkthrough", age: "6d ago", dev: "demo-shop-ap", msgs: 31, user: "Walk me through the survey — where is the weak spot?", agent: "Stockroom corner at −71 dBm. The AP plan covers it if we nudge wlan-shop up one channel." },
+    gw: { title: "First contact: office gateway", age: "2w ago", dev: "demo-office-gw", msgs: 12, user: "Just unboxed the gateway. What do you see?", agent: "Identity confirmed on the box and the first pull is stored — firewall review is the next step." }
+  };
+  function renderPastChat(k) {
+    const p = PASTS[k];
+    document.getElementById("ppc-title").textContent = p.title;
+    document.getElementById("ppc-sub").textContent = "titled by the agent · " + p.msgs + " messages";
+    document.getElementById("ppc-age").textContent = p.age;
+    document.getElementById("ppc-dev").textContent = p.dev;
+    document.getElementById("ppc-user").textContent = p.user;
+    document.getElementById("ppc-agent").textContent = p.agent;
+  }
+  const DEVS = {
+    gw: { name: "demo-office-gw", role: "gateway · 7.25", stats: [["Uptime", "12d", ""], ["CPU / Mem", "4%", "/ 61%"], ["FW conns", "1,204", "tracked"], ["Errors 24h", "0", ""]], ifs: [["ether1-gateway", "142/38 Mbps"], ["wlan-shop · 14 clients", "CCQ 91%"], ["vlan8-iot", "idle"]], via: "via centrs · native-api · 8s ago", inChat: true },
+    ap: { name: "demo-shop-ap", role: "ap · 7.25", stats: [["Clients", "14", ""], ["CCQ", "91%", ""], ["Uptime", "31d", ""], ["Errors 24h", "0", ""]], ifs: [["wlan-shop", "14 clients"], ["ether1-uplink", "96/41 Mbps"]], via: "via centrs · native-api · 2m ago", inChat: true },
+    cabin: { name: "demo-cabin-link", role: "link · 7.24.2", stats: [["Signal", "−58 dBm", ""], ["CCQ", "94%", ""], ["Drift", "1", "open"], ["Version", "7.24.2", ""]], ifs: [["wlan-link", "−58 dBm"], ["ether1-poe", "idle"]], via: "via centrs · native-api · just now", inChat: false }
+  };
+  function renderDevice(k) {
+    const d = DEVS[k];
+    document.getElementById("pdev-name").textContent = d.name;
+    document.getElementById("pdev-role").textContent = d.role;
+    document.getElementById("pdev-stats").innerHTML = d.stats.map((s) => '<div class="stat"><div class="k">' + s[0] + '</div><div class="v">' + s[1] + (s[2] ? " <small>" + s[2] + "</small>" : "") + "</div></div>").join("");
+    document.getElementById("pdev-ifs").innerHTML = d.ifs.map((r) => '<div class="trow"><label>' + r[0] + '</label><span style="font:12px var(--mono)">' + r[1] + "</span></div>").join("");
+    const add = document.getElementById("pdev-add");
+    const note = document.getElementById("pdev-note");
+    if (d.inChat) { add.style.display = "none"; note.textContent = "in this chat ✓ · " + d.via; }
+    else { add.style.display = ""; note.textContent = d.via + " · Add marks clear intent; prompting without adding still sends the data, flagged unclear"; }
+  }
+  function wireWorkingTab(tab) {
+    tab.querySelector(".pinbtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      tab.classList.toggle("pinned");
+    });
+    tab.querySelector(".x").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasActive = tab.classList.contains("active");
+      tab.remove();
+      if (wasActive) showPane("pane-chat");
+    });
+  }
+  document.querySelectorAll(".ctab.working").forEach(wireWorkingTab);
+  function openSlot(id, key, name) {
+    const open = document.querySelector('.ctab[data-pane="' + id + '"][data-key="' + key + '"]');
+    if (open) { showPane(id); return; }
+    let slot = document.querySelector(".ctab.working:not(.pinned)");
+    if (!slot) {
+      slot = document.createElement("div");
+      slot.className = "ctab working";
+      slot.title = "Preview slot — the next selection replaces this unless pinned";
+      slot.innerHTML = '<button class="pinbtn" title="Pin — keep this tab when opening something else">' + PIN_SVG + '</button><span class="t"></span><span class="x" title="Close">×</span>';
+      slot.addEventListener("click", () => showPane(slot.dataset.pane));
+      wireWorkingTab(slot);
+      document.querySelector(".tabbar").appendChild(slot);
+    }
+    slot.dataset.pane = id;
+    slot.dataset.key = key;
+    slot.querySelector(".t").textContent = name;
+    showPane(id);
+  }
+  function topWorkspace(file) {
+    const row = document.querySelector('#wslist [data-file="' + file + '"]');
+    if (row) row.parentNode.prepend(row);
+  }
+  document.querySelectorAll("[data-goto]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.goto;
+      const key = b.dataset.key || id;
+      const name = b.dataset.title || (b.querySelector(".dn") ? b.querySelector(".dn").textContent : id);
+      if (key.indexOf("past-") === 0) renderPastChat(key.slice(5));
+      if (key.indexOf("dev-") === 0) renderDevice(key.slice(4));
+      if (key.indexOf("doc-") === 0) renderDoc(key.slice(4));
+      openSlot(id, key, name);
+      if (b.dataset.rtop) topWorkspace(b.dataset.rtop);
+      if (b.classList.contains("docrow")) setWsExpanded(false);
+      if (b.closest(".overlay")) closePicker();
+    }));
+  // right subviews
+  document.querySelectorAll(".rbar button").forEach((b) =>
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".rbar button").forEach((x) => x.classList.remove("active"));
+      document.querySelectorAll(".rview").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      document.getElementById(b.dataset.rview).classList.add("active");
+    }));
+  document.querySelectorAll("[data-rgoto]").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      rightpanel.style.display = "";
+      crail.classList.remove("show");
+      document.querySelector('.rbar button[data-rview="' + b.dataset.rgoto + '"]').click();
+    }));
+  // targeting pills
+  document.querySelectorAll(".tpill button").forEach((b) =>
+    b.addEventListener("click", () => b.closest(".tpill").remove()));
+  // theme segmented control
+  document.querySelectorAll("#themeseg button").forEach((b) =>
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#themeseg button").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on");
+      const mode = b.dataset.theme;
+      document.documentElement.dataset.theme =
+        mode === "auto"
+          ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+          : mode;
+    }));
+  // collapse / expand right panel
+  const rightpanel = document.getElementById("rightpanel");
+  const crail = document.getElementById("crail");
+  document.getElementById("collapsebtn").addEventListener("click", () => {
+    rightpanel.style.display = "none";
+    crail.classList.add("show");
+  });
+  document.getElementById("expandbtn").addEventListener("click", () => {
+    rightpanel.style.display = "";
+    crail.classList.remove("show");
+  });
+  document.querySelectorAll("[data-crview]").forEach((b) =>
+    b.addEventListener("click", () => {
+      rightpanel.style.display = "";
+      crail.classList.remove("show");
+      document.querySelector('.rbar button[data-rview="' + b.dataset.crview + '"]').click();
+    }));
+  const picker = document.getElementById("picker");
+  function openPicker() { picker.classList.add("open"); }
+  function closePicker() { picker.classList.remove("open"); }
+  document.getElementById("composerfile").addEventListener("click", openPicker);
+  document.getElementById("wsadd").addEventListener("click", openPicker);
+  document.getElementById("wsopen").addEventListener("click", openPicker);
+  document.getElementById("pickerx").addEventListener("click", closePicker);
+  document.getElementById("pickercancel").addEventListener("click", closePicker);
+  picker.addEventListener("click", (e) => { if (e.target === picker) closePicker(); });
+  document.getElementById("upattach").addEventListener("click", closePicker);
+  document.querySelectorAll(".mtab").forEach((t) =>
+    t.addEventListener("click", () => {
+      document.querySelectorAll(".mtab").forEach((x) => x.classList.remove("on"));
+      document.querySelectorAll(".mview").forEach((x) => x.classList.remove("on"));
+      t.classList.add("on");
+      document.getElementById(t.dataset.mview).classList.add("on");
+    }));
+  let pickedTree = null;
+  document.querySelectorAll("#mview-topology .titem").forEach((t) =>
+    t.addEventListener("click", () => {
+      document.querySelectorAll("#mview-topology .titem").forEach((x) => x.classList.remove("sel"));
+      t.classList.add("sel");
+      pickedTree = t;
+    }));
+  document.getElementById("pickeropen").addEventListener("click", () => {
+    const t = pickedTree || document.querySelector("#mview-topology .titem");
+    const key = t.dataset.okey;
+    if (key.indexOf("doc-") === 0) renderDoc(key.slice(4));
+    openSlot(t.dataset.oid, key, t.dataset.oname);
+    topWorkspace(t.dataset.ofile);
+    closePicker();
+  });
+  function setWsExpanded(on) {
+    document.querySelector(".left").classList.toggle("expanded", on);
+    document.getElementById("wsmore").textContent = on ? "Show less ↑" : "Show more ↓";
+  }
+  document.getElementById("wsmore").addEventListener("click", () => {
+    setWsExpanded(!document.querySelector(".left").classList.contains("expanded"));
+  });
+  function refreshWs() {
+    const empty = document.querySelectorAll("#wslist .docrow").length === 0;
+    document.getElementById("wsempty").style.display = empty ? "" : "none";
+    document.getElementById("wsmore").style.display = empty ? "none" : "";
+  }
+  const chatmsgs = document.querySelector("#pane-chat .msgs");
+  const tailbar = document.getElementById("tailbar");
+  chatmsgs.addEventListener("scroll", () => {
+    tailbar.style.display = atBottom(chatmsgs) ? "none" : "block";
+  });
+  tailbar.addEventListener("click", () => { chatmsgs.scrollTop = chatmsgs.scrollHeight; });
+  chatmsgs.scrollTop = chatmsgs.scrollHeight;
+  refreshWs();
+  let runSecs = 42;
+  setInterval(() => {
+    runSecs += 1;
+    const m = Math.floor(runSecs / 60), s = runSecs % 60;
+    document.getElementById("runtime").textContent = m + ":" + String(s).padStart(2, "0");
+  }, 1000);
+  const chatinput = document.getElementById("chatinput");
+  function fitInput() {
+    chatinput.style.height = "auto";
+    const h = chatinput.scrollHeight;
+    chatinput.style.height = Math.min(h + (h > 40 ? 19 : 0), 132) + "px";
+  }
+  chatinput.addEventListener("input", fitInput);
+  fitInput();
+  document.getElementById("qcdoctor").addEventListener("click", () => {
+    document.getElementById("qcresult").style.display = "block";
+  });
+  document.getElementById("pdev-add").addEventListener("click", () => showPane("pane-chat"));
+  const statpop = document.getElementById("statpop");
+  function togglePop(e) { e.stopPropagation(); statpop.classList.toggle("open"); }
+  document.getElementById("runstat").addEventListener("click", togglePop);
+  document.getElementById("ctxbtn").addEventListener("click", togglePop);
+  statpop.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => statpop.classList.remove("open"));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") statpop.classList.remove("open"); });
+  document.querySelectorAll(".unx").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const pill = document.querySelector('.tpill[data-dev="' + b.dataset.undev + '"]');
+      if (pill) pill.remove();
+      const card = b.closest(".dev");
+      card.classList.remove("targeted");
+      card.querySelector(".chat").innerHTML = '<span class="gone">not in this chat</span>';
+    }));
+  document.getElementById("alertdismiss").addEventListener("click", () => {
+    document.getElementById("agentalert").style.display = "none";
+  });
+</script>
+</body>
+</html>
