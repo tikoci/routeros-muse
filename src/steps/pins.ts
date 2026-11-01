@@ -13,6 +13,7 @@ import {
 	type ToolSource,
 	TRILOGY,
 	type TrilogyTool,
+	toolEnv,
 } from "../lib/tools";
 
 export { parseVersion } from "../lib/tools";
@@ -53,10 +54,16 @@ export type ChannelResolver = (tool: TrilogyTool) => Promise<string | null>;
 export async function resolveChannelPin(
 	tool: TrilogyTool,
 ): Promise<string | null> {
+	// T94: npm enables Node's compile cache by default, which lands in
+	// $TMPDIR/node-compile-cache. One registry lookup must not litter
+	// TMPDIR (production @next resolves hit this too), so disable it.
+	const env = toolEnv(null);
+	env["NODE_DISABLE_COMPILE_CACHE"] = "1";
 	const r = await run(
 		["npm", "view", `@tikoci/${tool}`, "dist-tags", "--json"],
 		{
 			timeoutMs: 30_000,
+			env,
 		},
 	);
 	const out = `${r.stdout}\n${r.stderr}`;

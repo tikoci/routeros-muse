@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import * as nodeFs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
 	comparePins,
 	isChannelPin,
@@ -71,6 +74,19 @@ describe("channel pins", () => {
 			return;
 		}
 		expect(v).toMatch(/^\d+\.\d+\.\d+/);
+	}, 60_000);
+
+	test("channel resolution leaves no node-compile-cache in TMPDIR", async () => {
+		// T94: npm enables Node's compile cache by default, landing in
+		// $TMPDIR/node-compile-cache. The resolve spawn disables it, so
+		// clearing the cache and resolving must not bring it back.
+		const cache = path.join(
+			process.env["TMPDIR"] ?? os.tmpdir(),
+			"node-compile-cache",
+		);
+		nodeFs.rmSync(cache, { recursive: true, force: true });
+		await resolveChannelPin("centrs");
+		expect(nodeFs.existsSync(cache)).toBe(false);
 	}, 60_000);
 });
 
