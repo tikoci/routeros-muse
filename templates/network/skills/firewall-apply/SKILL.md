@@ -8,17 +8,16 @@ tested: none
 
 # `firewall-apply` skill (read order → propose → twin-verify → tag → clear) [template v1 draft]
 
-Promoted from the executed twin verification loop
-(t28-bur-proof.md firewall section, twin1/7.26beta3): tagged
+Promoted from an executed twin verification loop
+(7.26beta3 CHR twin): tagged
 non-terminal log rules, host→guest traffic, counter read-back,
 `place-before` ordering proof, live non-terminal fall-through
 proof, tag cleanup to pristine. Consumes the `routeros-firewall`
-DOMAIN skill (rule semantics) and adds OUR procedure (proposal
+DOMAIN skill (rule semantics) and adds this procedure (proposal
 shape, twin verification, ledger). Terminal accept/drop placement
 is PRESCRIBED from the domain skill, not executed — the drill
 stays non-terminal by design so the twin was never at lockout
-risk. Build-tracker references (T/K IDs, notes paths) are
-pointers pending staging scrub. No secrets below.
+risk. No secrets below.
 
 ## Part 1 — The checklist (order first, always)
 
@@ -70,12 +69,12 @@ rules, restated once so the procedure stands alone:
 ```sh
 centrs execute --quickchr <twin> '/ip/firewall/filter/print'
 centrs execute --quickchr <twin> '/ipv6/firewall/filter/print'
-# -> full ordered rule lists (or {} when the chain is empty — twin1 baseline)
+# -> full ordered rule lists (or {} when the chain is empty — fresh-twin baseline)
 ```
 
-- Grounded: twin1 baseline read `{}` (no filter rules on a
+- Grounded: a fresh-twin baseline read `{}` (no filter rules on a
   fresh CHR); populated order read after staging showed
-  position-exact rows (t28-bur-proof.md firewall section).
+  position-exact rows.
 - Read BOTH families even for a v4-only intent: the proposal
   must state the v6 posture ("no v6 rules, unchanged") rather
   than assume it. Silent half-coverages are how bypasses ship.
@@ -116,8 +115,8 @@ centrs execute --quickchr <twin> '/ip/firewall/filter/print stats'
 # -> ";;; t28-fw-probe  0 input  log  1 086  21"  (3 hits = 21 packets / 1086 bytes)
 ```
 
-- Grounded end to end (t28-bur-proof.md): 3 host→guest HTTP
-  hits through the quickchr forward produced 21 packets /
+- Grounded end to end: 3 host→guest HTTP hits
+  through the quickchr forward produced 21 packets /
   1086 bytes on the staged log rule. Counters are the proof
   the rule matches the intended traffic.
 - Prefer a non-terminal `action=log` twin probe for the FIRST
@@ -138,7 +137,7 @@ curl ...   # one more hit = 7 packets
 # t28-fw-top: 0 -> 7 packets; t28-fw: 21 -> 28 packets — BOTH incremented
 ```
 
-- Grounded (t28-bur-proof.md): `place-before=0` put `*2`
+- Grounded: `place-before=0` put `*2`
   above `*1` on re-print; one further hit incremented BOTH
   rules' counters — the live proof that `log` is
   non-terminal and evaluation falls through.
@@ -148,7 +147,7 @@ curl ...   # one more hit = 7 packets
   settle "which rule sees it first" without touching verdicts.
 - Cleanup is the tag remove (step 5): both drill rules went
   with one `remove [find comment~"t28-fw"]`, re-print back
-  to `{}` (t28-bur-proof.md).
+  to `{}`.
 
 ### 5. Tag, apply, clear (writes — production shape)
 
@@ -168,7 +167,7 @@ centrs execute <prod> '/ip/firewall/filter/print'   # compare against pre-change
   proposal's attached pre-change print — not "remove
   returned ok". The remove returning `{}` says nothing
   about what remains.
-- Production applies need owner approval per change (bigdude
+- Production applies need owner approval per change (production
   rule); the twin evidence + proposal + pre-change print
   are the approval packet.
 
@@ -196,11 +195,11 @@ rollback of a firewall change.
 ### Access
 
 - Twins: anything goes — but prefer non-terminal probes
-  first even on twins; lockout-free drills keep the lab fast.
-- bigdude (production): reads free; ANY write asks the
+  first even on twins; lockout-free drills keep iteration fast.
+- Production: reads free; ANY write asks the
   developer first — including log-rule probes, not just
   terminal verdicts.
-- Operator Unknown → ask before any write (concepts K14).
+- Operator Unknown → ask before any write.
 
 ### Envs
 
@@ -242,9 +241,9 @@ rollback of a firewall change.
   (routeros-centrs: missing menus reject this way).
 - Lockout on a twin → console in via quickchr and
   tag-remove; on production → escalate with the proposal +
-  twin evidence, do not guess Camden.
-- Redaction: scrub secrets from stored prints per C1;
-  firewall prints can carry addresses worth treating as
+  twin evidence, do not guess at rules.
+- Redaction: scrub secrets from stored prints (pre-publish-scrub
+  tiers); firewall prints can carry addresses worth treating as
   sensitive off-box.
 
 ### Limits
