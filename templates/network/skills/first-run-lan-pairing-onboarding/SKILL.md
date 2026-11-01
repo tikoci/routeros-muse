@@ -7,12 +7,13 @@ tested: none
 
 # `first-run-lan-pairing-onboarding` skill (bind → sweep → seed → grant → hand off) [template v1 draft]
 
-Promoted from the centrs-as-app first-run paragraph (install-time
+Promoted from an app first-run paragraph (install-time
 generated-secret in production since 2026-10-10), the
 `discover`/`devices` CLI shapes (observed centrs `0.1.9-next`
 this session), the tunnel-research LAN firewall findings, and the
-`/app`-on-L009 precedent. Backlog #43. Hands off to #26 (agent
-accounts), #14 (transport negotiation), and #41 (upstream
+`/app`-on-L009 precedent. Hands off to agent-access-bootstrap (agent
+accounts), first-contact (transport negotiation), and
+connector-onboarding-verify (upstream
 connector door) after pairing — pairing proves the LAN bond, not
 the cloud path. No secrets below; passwords and addresses appear
 as shapes only.
@@ -37,24 +38,24 @@ has left the LAN.
 ### 0. Bind (host first, by install secret)
 
 - First run auto-adds the host router using the install-time
-  generated-secret pattern — already in production on the
-  applicant's network since 2026-10-10 (collected:
-  centrs-as-app-design § Two listeners). The host is an implicit
+  generated-secret pattern — already in production on a
+  live network since 2026-10-10 (collected:
+  the app design). The host is an implicit
   target: this slice needs no WinBox CDB at all (collected:
-  review-of-reviews §6).
+  an earlier design review).
 - Restart may deliberately REQUIRE re-pairing. Never silently
   fall back to a saved administrator when the bound account
-  fails — fail closed to re-pairing (collected: Astra §3).
+  fails — fail closed to re-pairing.
 - The two-listener boundary holds from first boot: the public
   listener serves ONLY `/mcp` + `/healthz` behind an
   authenticated identity; the LAN listener serves pairing,
   password entry, device mapping, scope grants, the approval
   queue, and the call log. The LAN side is NEVER published
-  through any public door (collected: app-design § Two
-  listeners).
+  through any public door (collected: the app
+  design).
 - The container is proven ground, not the risk: Bun `/app` on
-  arm64 L009s since 2026-10-10 (collected: claude-code-feedback
-  §1a + grounds table). Spend the risk budget on the pairing +
+  arm64 L009 hardware in production since 2026-10-10 (collected:
+  the agent-feedback notes). Spend the risk budget on the pairing +
   approval loop instead. Still verify the SELECTED device (Bun
   ships no 32-bit ARM — the L009 precedent settles only L009s).
 
@@ -74,13 +75,13 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
 
 - MCP shape matches: `centrs_discover` listens for MNDP
   neighbors; `save=true` writes the CDB and requires
-  `confirm:true` (observed `src/mcp/tools.ts` discover input
+  `confirm:true` (observed discover input
   shape + `requireConfirm`).
 - Offering is not enrolling: every discovered neighbor still
   needs an explicit grant (§3) before any agent call touches it.
   A `--save` into `group=discovered` is an address-book entry,
-  not an authorization (see #42 §1: CDB group ≠ auth).
-- Reachability caveats (collected: Astra §7 + tunnel research):
+  not an authorization (see remote-agent-profile-hardening §1: CDB group ≠ auth).
+- Reachability caveats (collected: the tunnel research):
   a container's loopback is the container — the local router hop
   needs the correct gateway/service address, firewall
   permission, service admission, and trust config. L2 discovery
@@ -98,13 +99,13 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
 
 ### 2. Seed (CDB import + explicit adds)
 
-- A WinBox CDB import seeds a fleet (collected: app-design § Two
-  listeners); RouterOS CMR device mapping SHOULD feed the CDB as
+- A WinBox CDB import seeds a fleet (collected: the app design);
+  RouterOS CMR device mapping SHOULD feed the CDB as
   that integration lands — but CMR mechanics are a parked
   beta3 re-check, not asserted here, and CMR stays
   enrollment-only meanwhile (run-script ignores the controller
   login's policy — journaled 2026-10-13; collected:
-  review-of-reviews §6 + #42 §0).
+  an earlier design review + remote-agent-profile-hardening §0).
 - `devices` is the ONLY command that writes the CDB (observed
   `centrs devices --help`, 0.1.9-next): `init|list|show|groups|
   add|edit|set|remove`, with `--cdb-file` / `--cdb-password`
@@ -114,24 +115,23 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
 - Fleet CDB rows are an ADDRESS BOOK once mounted: credentials
   come from the bound principal or the service account, never
   from a CDB password picked because the name matched. The
-  precedence audit (§3-adjacent, full treatment in #42 §3)
+  precedence audit (§3-adjacent, full treatment in
+  remote-agent-profile-hardening §3)
   applies: env and `__default__` must never override a remote
-  identity silently (collected: review-of-reviews §6 +
-  Astra §4).
+  identity silently (collected: an earlier design review).
 - CDB group stays inventory metadata through seeding — group
   names chosen at import time (`discovered`, site names,
-  roles) organize; they authorize nothing (collected:
-  Astra §4).
+  roles) organize; they authorize nothing.
 
 ### 3. Grant (LAN-only secrets, explicit scopes)
 
 - Passwords are typed into a page served by the router ON THE
-  LAN. They never transit the internet or an agent habitat —
+  LAN. They never transit the internet or an agent environment —
   this is the hard boundary, not a preference (collected:
-  app-design § Two listeners).
+  the app design).
 - "LAN only" is reachability, not trust: the LAN UI still needs
   authentication, TLS for password entry, and browser CSRF
-  protection (collected: Astra §5).
+  protection.
 - Firewall + service gates, learned the hard way (collected:
   tunnel research): the input chain's closing drop-not-from-LAN
   rule silently eats container dials — symptom is a timeout /
@@ -141,8 +141,8 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
   distinguishes "firewall ate it" from "service refused it".
   Service gates apply too: `www-ssl` `available-from` ranges
   must include the app-bridge source shape.
-- Scope grants per device group (collected: app-design §
-  Security model): authenticated identity → scopes (read / plan
+- Scope grants per device group (collected: the app design):
+  authenticated identity → scopes (read / plan
   / commit, per device group); writes only via approved plans;
   commits arm the on-router dead-man by default. Devices get
   per-device least-privilege RouterOS users; credentials exist
@@ -150,9 +150,9 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
 - RouterOS-login option: presented credentials validated by a
   real local login, that user as principal, scopes from groups,
   revocation by disable/delete with short-lived bearers —
-  with the #42 §1 vetting caveats (TOTP unproven,
+  with the remote-agent-profile-hardening §1 vetting caveats (TOTP unproven,
   `sensitive`-store deferred) attached, not waived.
-- Why LAN-first (collected: tunnel research § auth mismatch):
+- Why LAN-first (collected: the tunnel research):
   RouterOS Basic is unrepresentable in the Muse vault
   (single-secret-or-OAuth only), so no cloud door can carry the
   first credential — LAN pairing precedes every remote door by
@@ -163,22 +163,23 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
 - The app keeps pairing state, device mapping, scope grants, and
   the call log visible in the LAN UI and the container log:
   every call logged with identity, target, plan, outcome
-  (collected: app-design § Security model). Custody gradient to
+  (collected: the app design). Custody gradient to
   preserve across doors: NO door holds a router credential
-  outside the on-router store (collected: app-design).
+  outside the on-router store (collected: the app design).
 - Ledger entry per pairing (evidence-ledger): date + box +
   method (install-secret / MNDP / import), grants by SHAPE
   (never secrets), firewall/service rules added with their
   before/after read-backs, pending list.
-- Handoff, in order: #26 bootstraps the agent accounts (local
-  reader/admin/break-glass — agents never ride RADIUS); #14
-  negotiates the transport; #41 verifies the upstream connector
+- Handoff, in order: agent-access-bootstrap bootstraps the agent
+  accounts (local reader/admin/break-glass — agents never ride RADIUS);
+  first-contact negotiates the transport;
+  connector-onboarding-verify verifies the upstream connector
   door with harmless live reads. Pairing hands OFF to these —
   it never substitutes for them.
 - Pending stays explicit: CMR mapping (beta3 re-check), the app
   as its own OAuth authorization server (grown-up door form;
   token floor first), federation (one call, many apps —
-  deferred, CDB fan-out covers the lab case).
+  deferred, CDB fan-out covers the small case).
 
 ## Part 2 — Skill doc
 
@@ -188,7 +189,7 @@ Load when: first run of a router-hosted agent app; adding a
 router to the fleet; re-pairing after a restart or credential
 change; "where may router passwords be typed" questions; a new
 box needs its LAN bond before any cloud door. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
@@ -205,12 +206,12 @@ capability-probe pattern: K22.)
 
 - Reads-first: MNDP sweep + CDB list/show reads before any
   save/add; firewall/service read-backs before rule changes.
-- Local/LAN writes free on lab boxes; production router writes
+- Local/LAN writes free on test boxes; production router writes
   (firewall accepts, service gates) ask the developer first
-  per item (bigdude rule carries over).
+  per item (the production rule carries over).
 - Passwords travel LAN-page-only: never into chat, notes,
   coord, env dumps, or staged scripts.
-- Never delete twin1/twin2; dirty pairing experiments get a
+- Never delete a twin others rely on; dirty pairing experiments get a
   fresh twin.
 
 ### Envs
@@ -272,7 +273,7 @@ moment they exist.
 - CMR device mapping is a parked verification item — quoted
   as seam, never as working.
 - This skill proves the LAN bond only. Cloud reachability,
-  vault behavior, and connector verification belong to #41 —
-  pairing success implies none of them.
+  vault behavior, and connector verification belong to
+  connector-onboarding-verify — pairing success implies none of them.
 - The app-as-OAuth-authorization-server is design, not code —
   the token floor is the only minting path until it exists.

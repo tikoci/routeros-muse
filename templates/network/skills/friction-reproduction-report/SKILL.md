@@ -8,10 +8,10 @@ tested: none
 # `friction-reproduction-report` skill (feel → reproduce → check → file) [template v1 draft]
 
 Promoted from the standing repo rules (reproduce-first, claim =
-command + output, issues-first upstream), the tikoci-issues
-triage file (10 numbered friction items with repro shapes), the
-twin-proof transcripts (t28 series), and the landed-issue trail
-(#543/#544/#545, #541). Backlog #48. This is the skill form of
+command + output, issues-first upstream), an upstream-issues
+triage file (numbered friction items with repro shapes), the
+twin-proof transcripts, and the landed-issue trail
+(centrs #543/#544/#545, #541). This is the skill form of
 prefs-level repo rules — the rules stay authoritative; this
 skill teaches their exercise. No secrets below; repros carry
 shapes, never live credentials.
@@ -19,7 +19,7 @@ shapes, never live credentials.
 ## Part 1 — The checklist (no claim without a run)
 
 Run top to bottom. A friction is reportable when it reproduces
-on demand, its evidence names command + output + habitat, and
+on demand, its evidence names command + output + environment, and
 its upstream state is checked (filed, linked, or queued —
 never duplicated).
 
@@ -41,37 +41,37 @@ error, a confusing shape, a timeout with no cause — write the
 entry before diagnosing. Memory of friction decays faster than
 any other evidence.
 
-- Entry shape (collected: tikoci-issues items + #41 friction
-  logs #1–#6): numbered, titled, with the exact command (or
+- Entry shape (collected: triage items + connector-onboarding
+  friction logs): numbered, titled, with the exact command (or
   action), the observed output (or symptom), what was expected,
   and what's UNKNOWN. Unknown-attribution is a first-class
   field: "device-side vs centrs-side (MTWEI/MD5 negotiation?
   7.26beta change?)" is an honest entry, not an incomplete one
-  (collected: tikoci-issues #1).
-- Habitat + versions on every entry: machine, OS/hypervisor,
-  tool versions, target firmware. "Fails on orca" without
+  (collected: the triage file).
+- Environment + versions on every entry: machine, OS/hypervisor,
+  tool versions, target firmware. "Fails on the test host" without
   versions is a rumor; "centrs 0.1.9-next, CHR 7.26beta3,
-  orca/KVM" is a report (collected: t28-proof header shape).
+  KVM host" is a report (collected: the proof header shape).
 - Owner-flagged classes get flagged at entry time, not triage
   time: agent-hostile CLI output, secret-bearing output with no
-  warning, silent fallbacks (collected: tikoci-issues #8/#9 —
+  warning, silent fallbacks (collected: the triage file —
   the `/export` TUNNEL_TOKEN return and the ANSI/OSC8
   `--once` output were flagged as CLASSES, with instances
   attached).
-- NEEDS TRIAGE is a valid state (collected: tikoci-issues #1
+- NEEDS TRIAGE is a valid state (collected: the triage
   header) — it means "logged, not yet reproduced", and it must
   never be mistaken for "ready to file".
 
 ### 1. Reproduce (twin first, commands verbatim)
 
 Standing rule (observed NEEDS.md + AGENTS.md): reproduce
-locally; twins are yours (never delete twin1/twin2 — make your
-own for dirty work); bigdude writes need explicit developer
+locally; twins are yours (never delete a twin others rely on —
+make your own for dirty work); production writes need explicit developer
 approval per item. Reproduction happens on a twin or
 disposable CHR FIRST; production only confirms, never
 discovers.
 
-- Proof transcript shape (observed t28-vpn-proof.md): date /
+- Proof transcript shape: date /
   host / machine / driver header, redaction note up front
   (key material to shape, keys died with the twin, no
   production contact), then commands with outputs TRIMMED TO
@@ -85,31 +85,31 @@ discovers.
   IP-addressed probe empty, text-fetch 403) with the
   residential-network control passing — one failing command is
   an anecdote, a matrix with a control is a finding
-  (collected: design-notes BTH live test).
+  (collected: the BTH live test).
 - Review-grade tables for behavior claims: the CHR 7.25
   group×transport matrix (6 rows, pass/500(9)/trap each)
   settled the `api`-policy question across four firmwares
   because every cell named group + transport + outcome
-  (collected: review-of-reviews §2). A claim of the form
+  (collected: an earlier design review). A claim of the form
   "X needs Y" earns a table, not a sentence.
 - Negative results are results: "UDP blocked at syscall
-  (sendto → EPERM)", "TCP fallback never activated in our
-  tests", "quick tunnel creation dies on the intercepted
+  (sendto → EPERM)", "TCP fallback never activated in
+  testing", "quick tunnel creation dies on the intercepted
   path AND 403s through the proxy" — each closed a design
-  door permanently (collected: brief § Habitat A + design
+  door permanently (collected: the brief + design
   notes). Record what you ruled OUT with the same care as
   what you ruled in.
 - Teardown is part of the proof: machines removed, test
   users/groups/scripts off the box, captures scrubbed or
-  local-only, twin pristine-verified (collected: t28
-  teardown shape + T6 pristine cleanup). A repro that leaves
+  local-only, twin pristine-verified (collected: the proof
+  teardown shape + staged-run pristine cleanup). A repro that leaves
   residue is half a repro.
 
 ### 2. Check (open issues first, link don't duplicate)
 
 Standing rule (observed NEEDS.md): check open issues/PRs
 first (comment, don't duplicate). Triage rule (observed
-tikoci-issues header): check open issues first, strip
+the triage header): check open issues first, strip
 creds/addresses, comment rather than duplicate. A later pass
 (possibly another agent working those repos) files them —
 triage and filing are separate steps with separate owners.
@@ -119,22 +119,22 @@ triage and filing are separate steps with separate owners.
   halves); read the open matches fully; if one matches, LINK
   it ("Live instance: ...; do not duplicate") and add your
   repro as a comment-shaped note — never a second issue
-  (collected: tikoci-issues #6/#10 citing rosetta #168/#167
+  (collected: triage items citing rosetta#168/#167
   as already-open, with live instances attached).
 - Triage states that mean something: NEEDS TRIAGE (logged,
   unreproduced) → reproduced (transcript exists) → queued
   for filing (scrubbed, shaped) → filed (issue/PR linked) →
   landed (fix merged + behavior re-verified live). The
-  needs.toml trail shows the full arc: triage items →
-  branches (fix/execute-bare-menu-path-read) → PRs (#543/
+  needs trail shows the full arc: triage items →
+  branches → PRs (centrs #543/
   #544/#545) → merged (#541) → live re-verification
-  (t28-acl-proof.md) → follow-through task (T23).
+  → follow-through task.
 - Attribution honesty survives triage: "Unknown: device-side
   vs centrs-side" travels WITH the item until a test settles
-  it (collected: tikoci-issues #1). Triage narrows unknowns;
+  it (collected: the triage file). Triage narrows unknowns;
   it never deletes them by optimism.
 - Cross-repo routing: file where the fix lives (centrs vs
-  quickchr vs rosetta sections in tikoci-issues), note the
+  quickchr vs rosetta sections in the triage file), note the
   seam when the bug sits between repos (CDB fan-out? MCP
   wrapper vs server? transport vs router?), and say which
   repo's maintainer decides.
@@ -146,32 +146,32 @@ as PRs (issues first, comment don't duplicate). The issue is
 the unit of discussion; the PR is the unit of fix; the issue
 exists FIRST even when you already hold the patch.
 
-- Issue body shape: title naming symptom + surface; habitat +
+- Issue body shape: title naming symptom + surface; environment +
   versions; minimal repro commands (verbatim, scrubbed);
   observed vs expected; the matrix or table if behavior varies;
   unknowns stated; related issues linked (not duplicated).
   Strip creds/addresses before drafting — scrubbing is a
   filing step, not a pre-publish afterthought (collected:
-  tikoci-issues triage rule).
+  the triage rule).
 - The scrub is literal: passwords to `<throwaway>`,
   keys/tokens to shape ("44-char base64"), addresses to roles
   ("router LAN", "twin NIC"), serials deleted. The leaked-
   token postmortem (live TUNNEL_TOKEN in `/container/add
   env=...`, caught by spot-check, fixed + re-pulled + anchor-
   tested same session) is why scrubbing precedes filing, not
-  follows it (collected: #31 §0).
-- Linkage for life: the local record (needs.toml evidence,
+  follows it (collected: pre-publish-scrub §0).
+- Linkage for life: the local record (needs evidence,
   task evidence, proof note) cites the issue/PR number; the
   issue cites the repro; the fix PR cites the issue; the
-  re-verification cites the merge. "PR #541 MERGED 2026-10-28;
-  fixed behavior verified live notes/t28-acl-proof.md" is the
-  closed loop (observed needs.toml). An issue filed but never
+  re-verification cites the merge. "centrs PR #541 MERGED 2026-10-28;
+  fixed behavior verified live" is the
+  closed loop (observed the needs trail). An issue filed but never
   linked locally is a rumor with a number.
 - Filing is not landing: filed → open PR → merged → behavior
-  re-verified live → follow-through. #547 OPEN (mac-telnet
+  re-verified live → follow-through. centrs #547 OPEN (mac-telnet
   broadcast egress) vs #541 MERGED+re-verified shows two
   different states of done — report the state you have, not
-  the state you want (observed needs.toml).
+  the state you want (observed the needs trail).
 
 ## Part 2 — Skill doc
 
@@ -181,15 +181,15 @@ Load when: something broke or surprised you; writing a bug
 report; filing or triaging an upstream issue; "is this real
 enough to report" questions; reviewing someone else's repro;
 closing the loop on a merged fix. (Entry-skill +
-capability-probe pattern: K22.)
+capability-probe pattern.)
 
 ### Prereqs
 
-- A twin or disposable target for reproduction (twin1/twin2
-  never deleted; dirty work gets a fresh machine).
+- A twin or disposable target for reproduction (never delete
+  a twin others rely on; dirty work gets a fresh machine).
 - Tool versions + target firmware known and recordable.
 - Upstream tracker readable (search before filing).
-- Evidence-ledger habit (#30): dated entries, verbatim
+- Evidence-ledger habit: dated entries, verbatim
   commands, labeled claims.
 
 ### Access
@@ -212,13 +212,12 @@ capability-probe pattern: K22.)
 | Tool versions | Recorded in the entry, not env (`centrs --version`, firmware, host) |
 
 Throwaway credentials for repros live in shell variables,
-rotated per probe, redacted to `<throwaway>` in every record
-(t28-acl-proof.md convention). No live secret takes part in a
-reproduction.
+rotated per probe, redacted to `<throwaway>` in every record.
+No live secret takes part in a reproduction.
 
 ### Outputs
 
-- Friction log entry (numbered, habitat + versions, unknowns
+- Friction log entry (numbered, environment + versions, unknowns
   stated).
 - Proof transcript (commands verbatim, outputs trimmed,
   verdict line, teardown noted).
@@ -245,7 +244,7 @@ reproduction.
   original + move your repro there as a comment; record the
   lesson (search terms that missed).
 - Repro stops reproducing → say so immediately (version?
-  firmware? habitat?); a dead repro is data about scope,
+  firmware? environment?); a dead repro is data about scope,
   not a failed task.
 - Secret filed upstream → delete the value, rotate if live,
   record as an anomaly (evidence-ledger precedent); tell the
