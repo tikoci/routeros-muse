@@ -52,6 +52,15 @@ function failingCentrsBin(): string {
 	return dir;
 }
 
+/** Stub bin: centrs is un-runnable (bad interpreter), so spawn throws. */
+function unspawnableCentrsBin(): string {
+	const dir = mktmp("t97b-nospawn-");
+	const file = path.join(dir, "centrs");
+	nodeFs.writeFileSync(file, "#!/no/such/interpreter\nexit 0\n");
+	nodeFs.chmodSync(file, 0o755);
+	return dir;
+}
+
 /** Stub bin: centrs init swaps AGENTS.md via temp-then-rename, then fails. */
 function replacingCentrsBin(): string {
 	const dir = mktmp("t97b-replbin-");
@@ -265,4 +274,36 @@ describe("scaffold leftover reporting (T97 follow-up)", () => {
 			nodeFs.readFileSync(path.join(parent, "doomed", "AGENTS.md"), "utf8"),
 		).toBe("STUB DATA - must survive\n");
 	});
+});
+
+describe("scaffold spawn failure (T97 follow-up)", () => {
+	tposix(
+		"an unspawnable centrs rolls back intoDir without rejecting",
+		async () => {
+			const dir = mktmp("t97b-spawn-");
+			const res = await scaffoldIntoDir(
+				dir,
+				toolEnv(unspawnableCentrsBin()),
+				"minimal",
+			);
+			expect(res.ok).toBe(false);
+			if (!res.ok) expect(res.why).toMatch(/centrs devices init failed/);
+			expect(nodeFs.readdirSync(dir)).toEqual([]);
+		},
+	);
+
+	tposix(
+		"an unspawnable centrs rolls back the picker target without rejecting",
+		async () => {
+			const parent = mktmp("t97b-spawnws-");
+			const res = await scaffoldWorkspace(
+				parent,
+				"doomed",
+				toolEnv(unspawnableCentrsBin()),
+			);
+			expect(res.ok).toBe(false);
+			if (!res.ok) expect(res.why).toMatch(/centrs devices init failed/);
+			expect(nodeFs.existsSync(path.join(parent, "doomed"))).toBe(false);
+		},
+	);
 });
