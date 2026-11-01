@@ -7,15 +7,15 @@ tested: self-test
 
 # `maps-outdoor` skill (link question → outdoor layers → page + KML → verify) [template v1 draft]
 
-Backlog #51. Extends #16 map-reports (read that skill
-first): #16 owns the site-map page, the KML-truth
+Extends map-reports (read that skill
+first): map-reports owns the site-map page, the KML-truth
 discipline, and the PNG path — THIS skill adds only the
 OUTDOOR data sources an indoor map never carries:
 Starlink context, LiDAR terrain, government parcel
 lines, and solar data for off-grid sites. It consumes
-#16's pattern (own fixtures, own builder, own test) and
-never edits #16. Geo maps live here + #16; logical
-topology is #45; multi-AP site views are #52. The
+map-reports's pattern (own fixtures, own builder, own test) and
+never edits map-reports. Geo maps live here + map-reports; logical
+topology is truthful-topology-graphviz; multi-AP site views are site-plan-multi-ap. The
 reference builder proves the pipeline on synthetic
 fixtures (null-island coords, never a real place). No
 twin, no box writes: local render only.
@@ -29,7 +29,7 @@ wallpaper — the question decides which layers load.
    decision it gates (step 0).
 2. Source the outdoor layers with per-layer source
    labels + capture dates (step 1).
-3. Build the outdoor page on #16's page shape (step 2).
+3. Build the outdoor page on map-reports's page shape (step 2).
 4. Emit KML truth for outdoor features (step 3).
 5. Verify honesty labels + privacy, then file (step 4).
 
@@ -39,14 +39,14 @@ wallpaper — the question decides which layers load.
   (a) Starlink context — is there usable sky, what
   obstructs, where does the dish live; (b) LiDAR
   terrain — do ridges/gullies/tree lines break the
-  radio path (collected: showing-the-owner §1 via #16
+  radio path (collected: showing-the-owner §1 via map-reports
   — hillshade shows what satellite hides, and that
   decides where a link works); (c) parcels — whose
   land the link crosses, where the property lines run
   (built once, reused); (d) solar — winter-sun hours
   at an off-grid site (collected precedent: the
   panorama-to-LiDAR fit that recovered sun hours,
-  showing-the-owner §3 via #16 §3).
+  showing-the-owner §3 via map-reports §3).
 - Record the question + the decision it gates ("link
   A→B on 5 GHz: go/no-go by Friday") before loading
   any layer. Unasked layers stay off — a page with
@@ -69,7 +69,7 @@ wallpaper — the question decides which layers load.
   numbers — path-loss math says what it is or stays out.
 - Parcels (government data): county ArcGIS REST
   FeatureServer parcels with NO owner names (same
-  rule as #16 §0), roads, built once per site and
+  rule as map-reports §0), roads, built once per site and
   cached. Parcel fields are allow-listed (geometry +
   line labels); everything else is dropped at fetch.
 - Solar: winter-sun hours per candidate off-grid spot
@@ -80,12 +80,12 @@ wallpaper — the question decides which layers load.
 - Every layer carries: source label, capture/fetch
   date, and grade (measured vs read-by-eye vs
   inferred). Fetched features cache by bounding box
-  per #16 §0 — a small correction does not refetch.
+  per map-reports §0 — a small correction does not refetch.
 
-### 2. Build (the outdoor page — #16's shape, new layers)
+### 2. Build (the outdoor page — map-reports's shape, new layers)
 
 - One generated HTML page per site, same contract as
-  #16 §1: regenerated from records, never hand-edited,
+  map-reports §1: regenerated from records, never hand-edited,
   layers toggleable, records on top, honesty labels
   on. The outdoor layers render as overlay sections
   with per-layer source footers — the page this skill
@@ -98,19 +98,19 @@ wallpaper — the question decides which layers load.
   a survey" label. Fixture mode makes zero
   page-initiated network requests.
 - Present-it rule for this artifact (collected:
-  showing-the-owner §5 via #55): owner asking "will
+  showing-the-owner §5 via presentation-layer): owner asking "will
   this link work / where does the dish go" gets the
   outdoor page or a single image of it, with source
   labels per layer and a capture date.
 - Pending: first render against real records + live
   endpoints (ArcGIS parcels, USGS hillshade tiles,
-  Starlink obstruction tooling) — same Habitat-A
-  egress probes #16 lists, plus a parcel-field
+  Starlink obstruction tooling) — same sandbox-egress
+  probes map-reports lists, plus a parcel-field
   allow-list review on first real fetch.
 
 ### 3. Emit (KML truth for outdoor features)
 
-- Same KML discipline as #16 §0: positions the owner
+- Same KML discipline as map-reports §0: positions the owner
   can open in Google Earth with no new app; Fix-GPS
   corrections back in the same format. Outdoor
   additions: link-path LineStrings (endpoint to
@@ -142,7 +142,7 @@ wallpaper — the question decides which layers load.
   fields (self-test asserts `owner_name` absent from
   every output); no EXIF GPS in published frames;
   fixtures synthetic-only; GIS/parcel cache stays
-  local-only, never a public repo (same rule as #16).
+  local-only, never a public repo (same rule as map-reports).
 - Offline purity: fixture page carries no external
   refs, no fetch/XHR (self-test asserts); live
   endpoints enter only in real-record mode with a
@@ -150,7 +150,7 @@ wallpaper — the question decides which layers load.
 - File per `evidence-ledger`: the link question, the
   layer sources + dates, the verdict given, and what
   would change it. Map corrections flow back through
-  #16's Fix-GPS loop; this skill adds no second loop.
+  map-reports's Fix-GPS loop; this skill adds no second loop.
 
 ## Part 2 — Skill doc
 
@@ -159,12 +159,12 @@ wallpaper — the question decides which layers load.
 Load when: siting or judging an outdoor link; checking
 dish sky view or off-grid sun hours; laying a link
 across parcels; asking what terrain says about a
-coverage complaint; or extending a #16 site map with
+coverage complaint; or extending a map-reports site map with
 outdoor context.
 
 ### Prereqs
 
-- #16 map-reports read (page contract, KML discipline,
+- map-reports read (page contract, KML discipline,
   PNG path, Fix-GPS loop) — this skill assumes it.
 - The link question written down (step 0) before any
   layer loads.
@@ -176,8 +176,8 @@ outdoor context.
 - Pure local render: NO twin, NO box writes, NO router
   contact. Safe anywhere, including beside production.
 - Parcel layer is allow-listed fields only; the cache
-  is local-only. Real-place renders get the #16 blur
-  treatment before any public frame; #31 gates public steps.
+  is local-only. Real-place renders get the map-reports blur
+  treatment before any public frame; pre-publish-scrub gates public steps.
 
 ### Envs
 
@@ -191,7 +191,7 @@ are public-data endpoints plus local terrain reads.
 ### Outputs
 
 - Outdoor page (one per site, layered, source-labeled,
-  never hand-edited) + print/PNG via #16's primitive.
+  never hand-edited) + print/PNG via map-reports's primitive.
 - Outdoor KML (feature Placemarks + link LineStrings,
   Google-Earth-openable).
 - Per-layer source record (source, date, grade) filed
@@ -213,11 +213,11 @@ are public-data endpoints plus local terrain reads.
 
 - Layer source unreachable → last-good cached box with
   its capture date + source error; never swap areas
-  silently (#16 Recovery, concept-review §12 rule).
+  silently (map-reports Recovery, concept-review §12 rule).
 - Parcel fields leak owner data → drop the layer,
-  re-allow-list, scrub per #31, record the anomaly.
+  re-allow-list, scrub per pre-publish-scrub, record the anomaly.
 - Page disagrees with records → regenerate; records win.
-- Correction from the owner → #16 Fix-GPS loop; no
+- Correction from the owner → map-reports Fix-GPS loop; no
   second loop here by design.
 
 ### Limits
@@ -231,5 +231,5 @@ are public-data endpoints plus local terrain reads.
 - Dish-performance claims are out of scope (placement
   context only); RF path-loss math stays out unless
   it says exactly what it is.
-- Indoor site maps stay #16's; this skill's page is
+- Indoor site maps stay map-reports's; this skill's page is
   the outdoor overlay, not a second map system.
