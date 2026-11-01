@@ -1672,6 +1672,12 @@ try {
 			await row.click();
 			await page.locator("#pickeropen").click();
 			await page.waitForSelector("#pane-artifact.active", { timeout: 10_000 });
+			// The viewer builds the frame after its meta fetch: wait
+			// for the new frame's src, not just the shown pane, or the
+			// next read lands on the previous artifact's frame.
+			await page.waitForSelector(`#artframe[src*="${suffix}"]`, {
+				timeout: 10_000,
+			});
 		};
 		const artFrame = page.frameLocator("#artframe");
 		// Render primaries surface in recents with the ART kind.
@@ -1892,6 +1898,10 @@ try {
 				{ timeout: 10_000 },
 			)
 			.catch(() => {});
+		// Reselect rebuilds the frame after its meta fetch too.
+		await page.waitForSelector('#artframe[src*="first.html"]', {
+			timeout: 10_000,
+		});
 		check(
 			"t83 reselecting the first tab re-binds its header",
 			((await page.locator("#art-title").textContent()) ?? "") === "first.html",
@@ -1984,14 +1994,17 @@ try {
 			artifactBlocks.join(" | "),
 		);
 		// Expected frame errors come only from the deliberate probe
-		// fixtures, named explicitly: probe.html and navaway.html
-		// (static-phase script blocks; the aborted escape itself is
-		// console-silent). The navnow refusal lands on the error
-		// page, tracked separately in cspRefusals.
+		// fixtures, named explicitly: probe.html, navaway.html, and
+		// navnow.html (static-phase script blocks; the aborted
+		// escape itself is console-silent). The navnow refusal lands
+		// on the error page, tracked separately in cspRefusals.
 		check(
 			"t83 frame errors come only from the probe fixtures",
 			artifactBlockUrls.every(
-				(u) => u.includes("probe.html") || u.includes("navaway.html"),
+				(u) =>
+					u.includes("probe.html") ||
+					u.includes("navaway.html") ||
+					u.includes("navnow.html"),
 			),
 			artifactBlockUrls.join(" | "),
 		);
