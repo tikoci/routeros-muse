@@ -166,6 +166,8 @@ export type ScaffoldFs = {
 		length: number,
 	) => number;
 	closeSync?: (fd: number) => void;
+	openSync?: (p: string, flags: string, mode: number) => number;
+	fstatSync?: (fd: number) => { dev: number; ino: number };
 };
 
 /**
@@ -195,18 +197,31 @@ function writeFileExclusive(
 	full: string,
 	rel: string,
 	content: string | Buffer,
-	created: CreatedPath[] | undefined,
+	created: CreatedPath[],
 	fs?: ScaffoldFs,
 ): void {
-	const fd = nodeFs.openSync(full, "wx", 0o666);
-	const st = nodeFs.fstatSync(fd);
-	created?.push({ full, label: rel, dev: st.dev, ino: st.ino });
+	const openSync = fs?.openSync ?? nodeFs.openSync;
+	const fstatSync = fs?.fstatSync ?? nodeFs.fstatSync;
 	const writeSync =
 		fs?.writeSync ??
 		((fd: number, buf: Buffer, offset: number, length: number): number =>
 			nodeFs.writeSync(fd, buf, offset, length, null));
 	const closeSync = fs?.closeSync ?? nodeFs.closeSync;
+	const fd = openSync(full, "wx", 0o666);
+	// Everything after a successful open runs under one try, so the
+	// fd always closes; an fstat failure still ledgers the path, as
+	// ino 0 (ownership unverifiable: rollback keeps and reports it).
+	let primary: unknown = null;
 	try {
+		let dev = 0;
+		let ino = 0;
+		try {
+			const st = fstatSync(fd);
+			dev = st.dev;
+			ino = st.ino;
+		} finally {
+			created.push({ full, label: rel, dev, ino });
+		}
 		const buf = typeof content === "string" ? Buffer.from(content) : content;
 		let off = 0;
 		while (off < buf.length) {
@@ -218,9 +233,18 @@ function writeFileExclusive(
 			}
 			off += n;
 		}
-	} finally {
-		closeSync(fd);
+	} catch (err) {
+		primary = err;
 	}
+	// Close always runs; a close error never masks the primary one.
+	let closeErr: unknown = null;
+	try {
+		closeSync(fd);
+	} catch (err) {
+		closeErr = err;
+	}
+	if (primary !== null) throw primary;
+	if (closeErr !== null) throw closeErr;
 }
 
 /**
@@ -324,22 +348,32 @@ export function copyTemplateFiles(
 		} else {
 			content = nodeFs.readFileSync(path.join(template, rel));
 		}
+		// A local ledger proves what THIS call created; only that may
+		// be removed in the no-ledger form (never a pre-existing file
+		// whose open failed with EMFILE/EACCES/...).
+		const local: CreatedPath[] = [];
 		try {
-			writeFileExclusive(full, rel, content, opts?.createdFiles, opts?.fs);
+			writeFileExclusive(full, rel, content, local, opts?.fs);
 		} catch (err) {
+			opts?.createdFiles?.push(...local);
 			if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
 				throw new ScaffoldConflict([rel]);
 			}
 			if (!opts?.createdFiles) {
-				// No ledger to roll back: remove the partial write here.
-				try {
-					nodeFs.unlinkSync(full);
-				} catch {
-					// best effort: leave nothing partial behind
+				for (const mine of local) {
+					try {
+						const st = nodeFs.lstatSync(mine.full);
+						if (mine.ino !== 0 && st.dev === mine.dev && st.ino === mine.ino) {
+							nodeFs.unlinkSync(mine.full);
+						}
+					} catch {
+						// best effort: leave nothing partial behind
+					}
 				}
 			}
 			throw err;
 		}
+		opts?.createdFiles?.push(...local);
 		written.push(rel);
 	}
 	return written;

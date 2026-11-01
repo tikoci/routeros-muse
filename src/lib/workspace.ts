@@ -570,8 +570,13 @@ export type ScaffoldResult =
 
 /** Ledger entry for a path this run just created (lstat identity). */
 function statCreated(full: string, label: string): CreatedPath {
-	const st = nodeFs.lstatSync(full);
-	return { full, label, dev: st.dev, ino: st.ino };
+	try {
+		const st = nodeFs.lstatSync(full);
+		return { full, label, dev: st.dev, ino: st.ino };
+	} catch {
+		// Created but unidentifiable: ino 0 keeps it and reports it.
+		return { full, label, dev: 0, ino: 0 };
+	}
 }
 
 /** errno code, or a short message, for leftover notes. */
@@ -588,10 +593,10 @@ function shortErr(err: unknown): string {
  * path is already gone (null); a mismatch is a foreign
  * replacement and stays, with a leftover note. Removal errors
  * also come back as notes, so rollback continues past them. An
- * ino of 0 (platforms without stable inodes) skips the identity
- * check and removes by path.
+ * ino of 0 (no stable inode, or the identity read failed) means
+ * ownership can't be proven: the path stays and is reported.
  */
-function removeOwned(
+export function removeOwned(
 	entry: CreatedPath,
 	remove: (p: string) => void,
 ): string | null {
@@ -602,7 +607,8 @@ function removeOwned(
 		if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return null;
 		return `${entry.label} (${shortErr(err)})`;
 	}
-	if (entry.ino !== 0 && (st.dev !== entry.dev || st.ino !== entry.ino)) {
+	if (entry.ino === 0) return `${entry.label} (ownership unverifiable)`;
+	if (st.dev !== entry.dev || st.ino !== entry.ino) {
 		return `${entry.label} (ownership changed)`;
 	}
 	try {
@@ -724,11 +730,11 @@ function resolveDestOnce(dir: string): string {
 /**
  * Ensure dirname(dest) exists as real dirs (T97), creating missing
  * levels one at a time; an existing component that is not a real
- * directory throws. Returns ledger entries for the levels this run
- * created, so rollback removes them too.
+ * directory throws. Each level this run creates joins the caller's
+ * ledger the moment mkdir lands, so a later mkdir failure still
+ * rolls the earlier levels back.
  */
-function ensureParentChain(dest: string): CreatedPath[] {
-	const created: CreatedPath[] = [];
+function ensureParentChain(dest: string, created: CreatedPath[]): void {
 	const missing: string[] = [];
 	let cur = path.dirname(path.resolve(dest));
 	for (;;) {
@@ -760,7 +766,6 @@ function ensureParentChain(dest: string): CreatedPath[] {
 		}
 		created.push(statCreated(p, p));
 	}
-	return created;
 }
 
 /**
@@ -835,7 +840,7 @@ export async function scaffoldWorkspace(
 		return left;
 	};
 	try {
-		createdParents.push(...ensureParentChain(dest));
+		ensureParentChain(dest, createdParents);
 		try {
 			nodeFs.mkdirSync(dest);
 		} catch (err) {
@@ -990,7 +995,7 @@ export async function scaffoldIntoDir(
 				return { ok: false, why: `not a directory: ${dir}` };
 			}
 		} else {
-			createdParents.push(...ensureParentChain(dest));
+			ensureParentChain(dest, createdParents);
 			try {
 				nodeFs.mkdirSync(dest);
 				destEntry = statCreated(dest, dir);
@@ -1045,5 +1050,8 @@ export async function scaffoldIntoDir(
 		leftovers.push(...rollback());
 		return scaffoldFail(failed, leftovers);
 	}
-	return { ok: true, dir };
+	// Lexically normalized: dest resolution already collapsed any
+	// `..`, so the echoed spelling must too or it names a path that
+	// never got created (base/missing/../ws).
+	return { ok: true, dir: path.normalize(dir) };
 }

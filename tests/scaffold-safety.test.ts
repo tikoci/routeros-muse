@@ -8,8 +8,13 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { copyTemplateFiles, templatesRoot } from "../src/lib/templates";
 import { toolEnv } from "../src/lib/tools";
-import { scaffoldIntoDir, scaffoldWorkspace } from "../src/lib/workspace";
+import {
+	removeOwned,
+	scaffoldIntoDir,
+	scaffoldWorkspace,
+} from "../src/lib/workspace";
 
 const POSIX = process.platform !== "win32";
 const tposix = POSIX ? test : test.skip;
@@ -219,8 +224,8 @@ describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
 					fs: {
 						closeSync: (fd) => {
 							closes++;
-							if (closes === 1) throw new Error("boom-close");
 							realClose(fd);
+							if (closes === 1) throw new Error("boom-close");
 						},
 					},
 				},
@@ -377,5 +382,121 @@ describe("scaffold destination policy (T97 follow-up)", () => {
 		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.existsSync(path.join(base, "p1"))).toBe(false);
+	});
+});
+
+describe("T97 re-review edge cases", () => {
+	tposix("ino 0 (unverifiable) keeps the path and reports it", () => {
+		const dir = mktmp("t97c-ino0-");
+		const f = path.join(dir, "AGENTS.md");
+		nodeFs.writeFileSync(f, "foreign\n");
+		const note = removeOwned(
+			{ full: f, label: "AGENTS.md", dev: 0, ino: 0 },
+			(p) => nodeFs.unlinkSync(p),
+		);
+		expect(note).toMatch(/AGENTS\.md \(ownership unverifiable\)/);
+		expect(nodeFs.readFileSync(f, "utf8")).toBe("foreign\n");
+	});
+
+	tposix("no-ledger copy never unlinks a file it did not create", () => {
+		const dest = mktmp("t97c-noledger-");
+		const pre = path.join(dest, ".gitignore");
+		nodeFs.writeFileSync(pre, "owner\n");
+		const root = templatesRoot();
+		if (!root) throw new Error("no templates root");
+		expect(() =>
+			copyTemplateFiles(path.join(root, "minimal"), dest, "x", {
+				fs: {
+					openSync: () => {
+						const e = new Error(
+							"EMFILE: too many open files",
+						) as NodeJS.ErrnoException;
+						e.code = "EMFILE";
+						throw e;
+					},
+				},
+			}),
+		).toThrow(/EMFILE/);
+		expect(nodeFs.readFileSync(pre, "utf8")).toBe("owner\n");
+	});
+
+	tposix("an fstat failure still closes, ledgers, and reports", async () => {
+		const dir = mktmp("t97c-fstat-");
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			"minimal",
+			{
+				fs: {
+					fstatSync: () => {
+						throw new Error("EIO-fstat");
+					},
+				},
+			},
+		);
+		expect(res.ok).toBe(false);
+		if (!res.ok) {
+			expect(res.why).toMatch(/EIO-fstat/);
+			// The one file created before fstat failed is unverifiable:
+			// kept and named, never silently left.
+			expect(res.leftover?.join(" ")).toMatch(/ownership unverifiable/);
+		}
+	});
+
+	tposix("a close error does not mask the write error", async () => {
+		const dir = mktmp("t97c-mask-");
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			"minimal",
+			{
+				fs: {
+					writeSync: () => {
+						throw new Error("primary-write-ENOSPC");
+					},
+					closeSync: (fd) => {
+						nodeFs.closeSync(fd);
+						throw new Error("secondary-close-error");
+					},
+				},
+			},
+		);
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.why).toMatch(/primary-write-ENOSPC/);
+	});
+
+	const tnotroot = POSIX && process.getuid?.() !== 0 ? test : test.skip;
+	tnotroot("a partial ancestor chain is ledgered and removed", async () => {
+		const base = mktmp("t97c-anc-");
+		const env = toolEnv(stubCentrsBin());
+		const old = process.umask(0o277); // new dirs: no write/exec for owner
+		let res: Awaited<ReturnType<typeof scaffoldIntoDir>>;
+		try {
+			res = await scaffoldIntoDir(
+				path.join(base, "a", "b", "ws"),
+				env,
+				"minimal",
+			);
+		} finally {
+			process.umask(old);
+		}
+		expect(res.ok).toBe(false);
+		expect(nodeFs.existsSync(path.join(base, "a"))).toBe(false);
+	});
+
+	tposix("a .. tail returns a usable dir", async () => {
+		const base = mktmp("t97c-dot-");
+		const named = path.join(base, "missing", "..", "ws");
+		const res = await scaffoldIntoDir(
+			named,
+			toolEnv(stubCentrsBin()),
+			"minimal",
+		);
+		expect(res.ok).toBe(true);
+		if (res.ok) {
+			expect(nodeFs.existsSync(path.join(res.dir, "workspace.toml"))).toBe(
+				true,
+			);
+		}
 	});
 });
