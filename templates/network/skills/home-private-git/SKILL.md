@@ -75,8 +75,7 @@ the live home (`anti-drive-live`).
 1. `git pull` (or confirm single-copy canonical — one home only).
 2. Pull router-owned dirs fresh where they exist (sibling skill flow);
    land raw captures under `observations/<device>/raw/` (ignored).
-3. Run the checker over captures (prototype: `bun checker.ts
-   --all --out observations`, one JSON line per device, exit 0 clean).
+3. Verify captures using state-pull §2; manual verification is the scaffold baseline.
 4. Read manifest ages with the freshness split: content-changed
    vs last-observed vs last-attempted — healthy data never looks stale.
 

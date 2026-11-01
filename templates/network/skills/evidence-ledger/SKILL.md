@@ -119,7 +119,7 @@ happened, because the surprise is usually the finding:
   (a twin still wedged as a living specimen), the anomaly note names
   the custodian rule — reproduce around it, don't "fix" it silently.
 
-### 4. Attach and close (ledger → tracker → room)
+### 4. Attach and close (ledger → tracker → handoff)
 
 - The tracker points at the ledger, never the reverse: the
   tracker's `evidence` field names the note file ("the board tracks

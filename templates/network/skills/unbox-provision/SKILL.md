@@ -42,8 +42,8 @@ twin; the new hardware is touched at step 5, read at step 6.
 - The rule (collected, from an earlier field run): the device ID names
   the JOB (`<site>-<location>-<role>`); the label is what
   is on the UNIT; the serial binds hardware to device at
-  unbox. A device outlives the hardware in it (concept
-  review §10: "the AP serving this room" vs "the unit
+  unbox. A device outlives the hardware in it (from pilot
+  feedback: "the AP serving this room" vs "the unit
   installed there").
 - The write is one record per device — copy
   `references/device-record.example.toml`: device, label
@@ -70,8 +70,7 @@ twin; the new hardware is touched at step 5, read at step 6.
 
 ### 1. Photo-to-plan device onboarding (PENDING on CHR)
 
-- Collected pipeline (onboarding scenario, platform-explainer
-  SAM §): holder photographs the label → SAM 3.1 segments
+- Collected pipeline (from earlier field guidance): holder photographs the label → SAM 3.1 segments
   the sticker region → vision/OCR reads model + serial +
   MAC → Rosetta resolves the exact hardware profile
   (ports, radios, version constraints) → device bound, twin
@@ -186,14 +185,14 @@ twin; the new hardware is touched at step 5, read at step 6.
   present in export.rsc (3 hits). Trust-on-first-pull
   establishment — exactly the unbox case. Serial
   continuity is now ARMED for the next pull.
-- The boundary is a commit message (collected, feedback
-  §3): "netinstalled …, first pull". From the first
+- The boundary is a commit message (collected from pilot
+  feedback): "netinstalled …, first pull". From the first
   pull on, every device has intent (TOML) AND evidence
   (pulled state), and the look-after loop applies:
   check note, explain offline, execute with approval,
   read back, pull, diff, record.
-- Existing networks DON'T unbox (collected, feedback
-  §3): the import path (import-existing-network) is
+- Existing networks DON'T unbox (collected from pilot
+  feedback): the import path (import-existing-network) is
   a first pull plus questions to the owner — NO
   reinstall. Many owners only ever do look-after; make
   the import path explicit and never reinstall a box
@@ -227,7 +226,7 @@ networks — that is import-existing-network.
 - Bench access for step 5 when hardware is real
   (netinstall server or console); camera for steps 1–2
   with EXIF/GPS handling decided up front.
-- pull/ + checker.ts runnable for step 6.
+- The state-pull capture and verification procedure available for step 6; checkout-only helpers are optional.
 
 ### Access
 

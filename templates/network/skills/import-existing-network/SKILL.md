@@ -43,10 +43,7 @@ under the normal approval rules.
 
 ### 0. Pull first (reads — the mandatory opening)
 
-```sh
-cd pull && bun pull.ts --quickchr <device> --out out
-# -> {"status":"ok","dir":"out/<device>/<ts>/","files":5,"notes":[...]}
-```
+Capture the target using state-pull §1, including its identity gate and manifest-last assembly.
 
 - Grounded: the twin pull returned
   `status: ok` with 5 files + manifest; the CHR note
@@ -67,10 +64,7 @@ cd pull && bun pull.ts --quickchr <device> --out out
 
 ### 1. Checker-verify (no router contact — the trust step)
 
-```sh
-cd pull && bun checker.ts --device <device> --out out
-# -> {"device":"<device>","ok":true,"dir":"out/<device>/latest","totalBytes":2073,"files":5,"problems":[]}
-```
+Verify the capture using state-pull §2 before adoption. Use manual verification in a scaffolded workspace; checkout-only helpers are optional.
 
 - Grounded: the twin `ok: true`, 5
   files, zero problems. The checker re-hashes every file
@@ -178,9 +172,7 @@ infrastructure; asking what a box can/cannot do; any
 
 - centrs on PATH; target reachable for the pull
   (`first-contact` establishes the path when unknown).
-- pull/ + checker.ts runnable (`cd pull && make test`
-  green); `out/` local and git-ignored-equivalent
-  (never published — no repo here, keep it that way).
+- The state-pull capture and verification procedure available; captures local and excluded from publication.
 - Know the device's last manifest (serial continuity) or
   be prepared to ESTABLISH the device binding deliberately.
 

@@ -54,7 +54,7 @@ an open decision, see Limits):
 
 Mechanics grounded in two lived systems:
 
-- **Manifest-last** (pull.ts, read this session): files land
+- **Manifest-last** (collected from an earlier field run): files land
   first, each hashed; `manifest.json` (file list + sha256 +
   status + notes) is written AFTER all files; `latest` flips
   last. The mailbox mirrors it: envelope files first, manifest
@@ -210,15 +210,14 @@ two agents talk without a connection" questions. (Entry-skill
 
 ### Limits
 
-- SIGNER UNDECIDED (open, blocking real use): the brief asks
-  the sandbox to sign while the workspace AGENTS.md confirms it holds no
-  keys. Until someone decides who signs
-  with what, envelopes are format-complete but unactionable —
-  this skill's procedures assume the decision exists.
-- Partially verified: manifest-last + one-writer mechanics are
-  lived (pull.ts, 19/19 re-runs); the ENVELOPE round-trip
-  (wrap → carrier → verify → act → receipt) has NOT executed
-  end-to-end anywhere. First round-trip grounds it.
+- SIGNER UNDECIDED (open, blocking real use): who signs with
+  what remains undecided for this design. Until signing-key
+  custody is decided, envelopes are drafts, not actionable jobs.
+- Collected precedents from earlier field runs: manifest-last
+  captures and a single-writer communication protocol, whose
+  protocol tests passed 19/19. The ENVELOPE round-trip (wrap →
+  carrier → verify → act → receipt) has NOT executed end-to-end
+  anywhere. First round-trip grounds it.
 - Cloudflare-carrier verification #1 open (design-time); BTH
   share-create + round-trip open (bth-file-exchange); Drive
   fence unratified (§2). Three carriers, three pending proofs.

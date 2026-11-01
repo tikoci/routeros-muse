@@ -40,8 +40,7 @@ compute here. No disk at all → `home-single-copy`.
    `observations/<device>/raw/` (ignored). Export-over-native-API is
    the proven read; pin `--via` explicitly (auto-select does
    not fail over, transfer ignores record `via=ssh`).
-3. Manifest check: age, sha256 + byte size per file (checker over
-   captures; prototype `bun checker.ts --all`).
+3. Verify manifest schema, age, sha256 and byte size using state-pull §2.
 4. Read ages with the freshness split: content-changed vs
    last-observed vs last-attempted — a quiet router with fresh pulls
    is healthy, not stale.

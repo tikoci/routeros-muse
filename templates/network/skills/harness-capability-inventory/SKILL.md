@@ -203,9 +203,8 @@ harness; any "can the owner SEE this here?" question.
 
 - The matrix above (v1, 2026-10-30) + its proof note
   for the observed row.
-- Source docs for collected rows: the sandbox tool
-  inventory + the platform tooling explainer;
-  an earlier scoping ruling for the T3/Meta rows.
+- Re-probe collected or stale matrix cells in the environment
+  being inventoried before relying on them.
 - Shell on the machine being inventoried (observed row);
   `dot` for the render probe, `bun` + `curl` for the
   serve probe. No twin, no router contact, no credentials.

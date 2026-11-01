@@ -73,7 +73,7 @@ them (collected: the architecture review, still true).
   `webProxyPlan` value). Let the proxy/daemon own the listener
   and authenticate requests, then mount an MCP adapter over
   shared operations — no second independently secured HTTP
-  server (collected: the architecture review§5).
+  server (collected from an earlier design review).
 
 ### 1. Bind (explicit grants, four concepts apart)
 
@@ -81,7 +81,7 @@ them (collected: the architecture review, still true).
   (record identity is `(target, user)`), NOT a RouterOS
   `/user/group`, an Access group, or an OAuth scope. Map policy
   bits, not group names — and matching email text to a username
-  is not pairing (collected: the architecture review§4).
+  is not pairing (collected from an earlier design review).
 - Choose whose authority executes: same-principal (human login
   bound to that router + account, RouterOS enforces) or delegated
   service execution (human login authorizes an explicit grant to

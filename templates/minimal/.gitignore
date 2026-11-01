@@ -1,3 +1,5 @@
+# Local captures created by state-pull.
+/out/
 # Capture boundary: raw pulls stay local, only redacted summaries travel.
 observations/*/pull-*/
 observations/*/latest

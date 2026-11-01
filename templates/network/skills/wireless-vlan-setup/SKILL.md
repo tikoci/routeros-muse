@@ -199,9 +199,9 @@ centrs execute --quickchr <twin> '/interface/vlan/remove [find comment="<tag>"]'
 Load when: adding a guest, staff, or IoT VLAN; isolating
 wireless clients from office subnets; attaching an SSID to a
 VLAN; proving VLAN separation on a twin; rolling back a VLAN
-or guest-network change. (Demo lineage: the guest-WiFi question,
-WiFi-logins-to-VLAN, guest-isolation repair; concept
-review §7 guest operating loop.)
+or guest-network change. (Collected from earlier field runs: guest-WiFi setup,
+WiFi-logins-to-VLAN, guest-isolation repair, and the guest
+operating loop.)
 
 ### Prereqs
 

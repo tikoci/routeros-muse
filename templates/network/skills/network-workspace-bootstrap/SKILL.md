@@ -106,8 +106,8 @@ In-tree memory (owner workflow — survives promotion):
 
 Cross-session talk (workspace-native handoff):
 
-- Handoff protocol: open by reading `inbox/` + the last session
-  summary; close by writing a handoff note under `inbox/` or
+- Handoff protocol: open by reading `inbox/`,
+  `operations/*-handoff.md`, and the last session summary; close by writing a handoff note under `inbox/` or
   `operations/*-handoff.md` with what/where/next; long runs update
   the note as they go. Point at state (paths, commits, UIDs);
   never paste copies. Never edit another session's note — append
@@ -125,7 +125,8 @@ anything. Shape from START-HERE first-session, the entry-skill
 probe, and the acceptance sketch:
 
 1. Cold read: AGENTS.md → START-HERE → conventions.md →
-   workspace.toml + router.toml → inbox/ + last summary. Confusion
+   workspace.toml + router.toml → inbox/ + `operations/*-handoff.md`
+   + last summary. Confusion
    here is a layout bug, not a reader bug.
 2. Capability probe (blocked — manual until the probe lands): OS,
    trilogy versions vs workspace.toml pins, box reachability.

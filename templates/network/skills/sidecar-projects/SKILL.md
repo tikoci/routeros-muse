@@ -16,10 +16,8 @@ managed network's records, and keeps a LoRa-gateway
 future optional. That flexibility — a directory over
 one-size-fits-all SaaS — is the point of this skill.
 
-Honest sourcing: the parable paragraph in the skills backlog is
-the ONLY source. An unpublished project tree
-was excluded from the mirrored sources (venv-bloated)
-and is not drawn on here; the reference fixture is
+Collected from pilot feedback: the parable is secondhand; no
+source project tree was inspected. The reference fixture is
 synthetic, shaped like the parable. The manifest schema
 (v1) is PROPOSED — the first real sidecar ratifies or
 amends it. Repo grounding: structured records track state

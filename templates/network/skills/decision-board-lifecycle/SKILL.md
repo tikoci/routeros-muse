@@ -156,7 +156,7 @@ explanation feel like part of the workspace.
   REQUEST. Editing a source checkout does not update the
   router's copy. Different edits have different publication
   behavior — put reload/restart semantics in the recipe; do not
-  guess (collected: the semantics table).
+  guess (collected from pilot feedback).
 - PNG delivery for the non-expert owner (journaled, collected
   from earlier field runs): the owner looks at things on a phone in
   a text thread, so the useful output is often a PNG, not a web

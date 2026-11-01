@@ -7,7 +7,7 @@ tested: none
 
 # `truthful-topology-graphviz` skill (read → emit → mark → render → polish) [template v1 draft]
 
-Promoted from the platform tooling explainer's Topology pipeline
+Promoted from a topology pipeline collected from earlier field guidance
 (Spark reads actual topology → DOT → SVG), the
 observed/inferred rule, and the standing Image-vs-Graphviz
 correction. Distinct from map-reports (geo maps — where
@@ -38,7 +38,7 @@ inferred, and the render regenerates after the next change.
 
 ### 0. Read (the router is the source, not the sketch)
 
-The pipeline's first stage (collected: the platform explainer):
+The pipeline's first stage (collected: earlier field guidance):
 Spark reads the ACTUAL topology — centrs reads of
 interfaces/bridges/routes on the real router, or the quickchr
 twin — and only then emits DOT. No read, no diagram.
@@ -71,7 +71,7 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
 
 ### 1. Emit (deterministic DOT, generator-written)
 
-- DOT it is (collected: the platform explainer): deterministic
+- DOT it is (collected: earlier field guidance): deterministic
   layout, MikroTik palette — the forum Graphviz skill is the
   prior art. The generator emits DOT from read envelopes; no
   hand-added nodes, no eyeballed links. Deterministic input →
@@ -96,7 +96,7 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
   without a legend is illustration, not evidence.
 - Inferred sources, honestly labeled: rack/closet photo → SAM
   segmentation → Spark draft → Graphviz (optional secondary
-  use, never a dependency — collected: the platform explainer);
+  use, never a dependency — collected: earlier field guidance);
   vendor-PDF antenna patterns read by eye (label as read by
   eye, cite the page, keep variants separate, never digitize a
   curve into false precision — collected: earlier field runs
@@ -112,8 +112,8 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
 
 - The rendered SVG is truthful BY CONSTRUCTION: it can only
   show what the reads contained, and it regenerates after
-  every change to show the diff (collected: the platform
-  explainer). The diff — before-render vs after-render — is
+  every change to show the diff (collected: earlier field
+  guidance). The diff — before-render vs after-render — is
   the verification artifact for topology-changing work.
 - Every render carries a revision identifier + generated time
   (+ source-read citations per §0). Old renders are kept (or
@@ -131,7 +131,7 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
 
 ### 4. Polish (Image around truth, never as truth)
 
-- What Image is good for (collected: the platform explainer):
+- What Image is good for (collected: earlier field guidance):
   the presentation layer — polished hero visuals, stylized
   before/after illustrations, wiring-closet photo cleanup.
   $0.01/image on the same Model API key.
@@ -140,13 +140,13 @@ Usage: centrs retrieve <target> <routeros-path> [flags]
   relationships in a generated "topology diagram" can be
   subtly wrong, and you cannot diff or verify it. For a
   project whose brand is verified-not-guessed, an
-  unverifiable diagram is off-message (collected: the platform
-  explainer + the agent-feedback correction, which stands).
-- The correction is part of the record: the explainer's own
+  unverifiable diagram is off-message (collected: earlier field
+  guidance + the agent-feedback correction, which stands).
+- The correction is part of the record: the guidance's own
   author corrected "Muse Image for topology" to "Graphviz for
   topology, Muse Image for polish" — cite the corrected form,
   and correct anyone quoting the uncorrected pitch (collected:
-  the platform explainer).
+  earlier field guidance).
 - Polish never touches topology claims: Image may frame, crop,
   or beautify AROUND a Graphviz render; the nodes, edges, and
   labels inside the frame come from §0–§3 only.

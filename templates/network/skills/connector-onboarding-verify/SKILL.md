@@ -71,7 +71,7 @@ escalated after the read set printed).
 - Never design a step that asks for the user's IdP password: the
   Cloudflare account was Google-SSO-only, the applicant refused the
   vault password prompt, and OAuth issued by the target service was
-  the path (collected: the friction log). Detect SSO-only early and
+  the path (collected: an earlier field run). Detect SSO-only early and
   say so instead of walking into a password wall.
 - Gotchas actually hit (collected: the onboarding recon notes): pairing
   codes are single-use with a ~14 min TTL; authorization codes
@@ -81,7 +81,7 @@ escalated after the read set printed).
   agent-approval; where urllib is blocked, use curl.
 - Deliver OAuth URLs as raw code blocks, not rendered link cards:
   the card "gets furl'ed" twice; code-block cut-and-paste worked
-  first try (collected: the friction log).
+  first try (collected: an earlier field run).
 
 ### 2. Probe (harmless live reads, printed as a banner)
 
@@ -95,7 +95,7 @@ escalated after the read set printed).
   shape, inventory names + statuses, counts, and what is still
   untested. The platform marks the connector connected the moment
   OAuth completes, with no credential check — the printed probe is
-  what makes the setup trustworthy (collected: the friction log).
+  what makes the setup trustworthy (collected: an earlier field run).
 - State what was NOT proven alongside what was: Cloudflare writes
   through `execute` were explicitly untested whatever the token
   scopes allow; the T3 token was one-shot (process memory only) —
@@ -109,7 +109,7 @@ escalated after the read set printed).
   and recorded in the connector doc — e.g. the sandbox's urllib
   signature ban (Error 1010) needed curl + a 0600 temp config
   deleted after each call, so no future agent re-diagnoses it or,
-  worse, re-registers the credential (collected: the friction log).
+  worse, re-registers the credential (collected: an earlier field run).
 
 ### 3. Escalate (one rung, re-probed, re-recorded)
 
@@ -144,7 +144,7 @@ escalated after the read set printed).
 - Carry expected-weird states with the connector: a 522 with a
   known-benign cause still costs a diagnosis cycle unless the
   "test router, no web origin by design" fact travels with the zone
-  (collected: the friction log). Test twins and test targets get the
+  (collected: an earlier field run). Test twins and test targets get the
   same treatment.
 - The evidence ledger points at the probe outputs (command +
   output, trimmed honestly, secrets redacted to shapes); a handoff

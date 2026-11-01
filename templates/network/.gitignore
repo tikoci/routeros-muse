@@ -1,3 +1,5 @@
+# Local captures created by state-pull.
+/out/
 # Capture boundary (committed summaries, local-only raw).
 # See conventions.md. Raw pull dirs never commit; the _sample
 # self-test fixture is the one committed exception.

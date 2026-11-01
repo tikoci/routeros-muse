@@ -48,11 +48,7 @@ completes — the first read is the evidence everything else stands on.
 
 ### 1. Pull + compare (the first 10 minutes)
 
-```sh
-bun pull.ts --host <addr> --name <device> --out out   # or --quickchr <twin>
-bun checker.ts --device <device> --out out              # clean before consuming
-diff -r out/<device>/<prev>/ out/<device>/latest/       # what changed
-```
+Capture and verify through state-pull §1–§2, then compare the verified capture with the previous capture using diff.
 
 - Grounded shape: the UM campaign compared db-size/users/log triples
   across every cycle — define YOUR triple

@@ -50,11 +50,11 @@ proposal) reads from a VERIFIED capture, never live boxes.
 
 ```sh
 # identity gate FIRST (hardware serial; license system-id on CHR)
-centrs retrieve --quickchr <twin> /system/routerboard --attributes serial-number
-centrs retrieve --quickchr <twin> /system/license --attributes system-id
+centrs retrieve --quickchr <twin> /system/routerboard --attributes serial-number --format json
+centrs retrieve --quickchr <twin> /system/license --attributes system-id --format json
 # export as a READ (no --yes): twin path, then host path
-centrs execute --quickchr <twin> '/export terse' --timeout 30s
-centrs execute --host <addr> --timeout 30s -- '/export terse'
+centrs execute --quickchr <twin> '/export terse' --timeout 30s --format json
+centrs execute --host <addr> --timeout 30s --format json -- '/export terse'
 # key prints, JSON for stable capture (host path: same commands with --host)
 centrs retrieve --quickchr <twin> /system/resource --format json
 centrs retrieve --quickchr <twin> /ip/address --format json
@@ -70,18 +70,27 @@ centrs retrieve --quickchr <twin> /system/package --format json
   product repo's `tools/pull` on a CHR twin + production (full
   pulls ok, serial-refusal proven, checker clean) — an optional
   extra for people working from a routeros-muse checkout (§2).
-- Serial FIRST (identity gate): hardware reads
-  `/system/routerboard serial-number`; CHR has no routerboard, so
-  fall back to `/system/license system-id`.
-  Single `--attributes X` projects `data` to the scalar, not an
-  object — consumers parse accordingly.
-- Export path: `/export terse` over centrs `execute` as a READ.
-  Capture stdout to `export.rsc`, normalize CRLF before hashing.
-- Redaction is load-bearing: the first production export leaked a live
-  tunnel token via inline `/container/add env="..."` — the redactor
-  now covers inline `env=` K/V plus `password|secret|private-key|
-  community`. Never store or post
+- Read hardware serial first; use license system-id only when
+  routerboard identity is unavailable. Require a successful JSON
+  envelope and compare its identity with the previous manifest
+  before continuing. Deliberately establish the binding on the
+  first capture; mismatch follows §4.
+- For export, require `ok: true` and a string `data.ret`. Decode
+  that string, normalize CRLF, redact secret-bearing properties and
+  container environment values, and stabilize the header timestamp
+  before writing `export.rsc`. Redaction is load-bearing: an early
+  production export leaked a live tunnel token via an inline
+  `/container/add env="..."`; cover inline `env=` K/V plus
+  `password|secret|private-key|community`. Never store or post
   unredacted captures.
+- For menu files, require successful envelopes, extract `data`,
+  strip volatile counters/timestamps, and serialize the resulting
+  data rather than the centrs envelope.
+- Write the sanitized files into the timestamped capture directory.
+  Compute their byte counts and sha256 hashes, then write
+  `manifest.json` LAST with the §0 fields and honest status/notes.
+  Verify the capture before advancing `latest`; apply §4 on refusal
+  or partial results.
 
 ### 2. Verify (no router contact)
 
@@ -119,8 +128,8 @@ centrs retrieve --quickchr <twin> /system/package --format json
 
 - Serial mismatch REFUSES: write `<timestamp>-refused/` dir with
   `attempt.json` only, `latest` untouched. Proven:
-  tampered-manifest copy refused correctly (the product checker
-  reports this state as exit 2).
+  tampered-manifest copy refused correctly (the product pull exits 2
+  on serial refusal).
 - Partial keeps last good: failed reads set `partial=true`, note the
   cause in `manifest.notes`, keep prior files.
   Vocabulary is ok/partial/refused/running.

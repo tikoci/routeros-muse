@@ -30,7 +30,11 @@ const DENY_MORE: RegExp[] = [
 	/181789/,
 	/heltec-victron|victron-heltec/i,
 	/ginny-pig/i,
-	/\(T\d+/,
+	// Parenthetical tracker IDs; "(T3 Code ...)"/"(T3 Connect ...)" are
+	// the product, not a tracker reference.
+	/\((?!T3\s+(?:Code|Connect)\b)T\d+\b/,
+	// A source label, including in JSON fixture comments.
+	/owner-presentation/i,
 ];
 
 // Citation forms, the retired coord room/CLI, and the standing-pair
@@ -43,11 +47,9 @@ const DENY_MD: RegExp[] = [
 	/Coding Agent Feedback/,
 	/demo-hardware-notes/i,
 	/showing-the-owner/i,
-	/concept[- ]review\s*§/i,
-	/owner-presentation/i,
+	/concept[-\s]+review\s*§/i,
 	/\bcoord\b/i,
 	/standing pair/i,
-	/\(T\d+/,
 ];
 
 // Strings that must NEVER match: private IPs, key shapes, bare
@@ -61,6 +63,8 @@ const ALLOW: string[] = [
 	"bare T40 and T9 references without parens",
 	"T3 Code desktop",
 	"T3 Connect MCP",
+	"(T3 Code desktop)",
+	"(T3 Connect MCP)",
 	"cells S1/S2/C2/B2/B3",
 	"validator rules S1-S6",
 	"R0-R8 and P0-P9 probes",
@@ -75,6 +79,14 @@ const ALLOW: string[] = [
 	"collected: an earlier review",
 	"from pilot feedback",
 	"from an earlier field run",
+];
+
+// Strings that MUST match: residue shapes earlier patterns missed
+// (a JSON source label; a citation wrapped across lines).
+const MUST_DENY: string[] = [
+	'{"_comment":"shape per site (owner-presentation rules)."}',
+	"see concept\nreview §7 for the loop",
+	"(T40) workspace shape",
 ];
 
 function allFiles(dir: string): string[] {
@@ -96,22 +108,31 @@ describe("shipped templates carry no pilot-lab residue", () => {
 			// presentation-layer is owned by another branch; it skips
 			// the markdown-only patterns until that branch lands.
 			const ownMD = f.endsWith(".md") && !f.includes("presentation-layer");
-			const deny = ownMD
-				? [...DENY, ...DENY_MORE, ...DENY_MD]
-				: [...DENY, ...DENY_MORE];
-			const lines = nodeFs.readFileSync(f, "utf8").split("\n");
-			lines.forEach((line, i) => {
-				for (const re of deny) {
-					if (re.test(line)) {
-						hits.push(
-							`${path.relative(root, f)}:${i + 1}: ${line.trim().slice(0, 100)}`,
-						);
-						break;
-					}
-				}
-			});
+			const more = f.includes("presentation-layer")
+				? DENY_MORE.filter((re) => !re.test("owner-presentation"))
+				: DENY_MORE;
+			const deny = ownMD ? [...DENY, ...more, ...DENY_MD] : [...DENY, ...more];
+			// Whole-file matching so a citation wrapped across lines is
+			// still caught; the line number comes from the match index.
+			const text = nodeFs.readFileSync(f, "utf8");
+			for (const re of deny) {
+				const m = re.exec(text);
+				if (!m) continue;
+				const lineNo = text.slice(0, m.index).split("\n").length;
+				const line = text.split("\n")[lineNo - 1] ?? "";
+				hits.push(
+					`${path.relative(root, f)}:${lineNo}: ${line.trim().slice(0, 100)}`,
+				);
+			}
 		}
 		expect(hits).toEqual([]);
+	});
+	test("denylist still catches known residue shapes", () => {
+		const missed = MUST_DENY.filter(
+			(sample) =>
+				![...DENY, ...DENY_MORE, ...DENY_MD].some((re) => re.test(sample)),
+		);
+		expect(missed).toEqual([]);
 	});
 	test("denylist stays tight: allow-cases never match", () => {
 		const bad: string[] = [];
