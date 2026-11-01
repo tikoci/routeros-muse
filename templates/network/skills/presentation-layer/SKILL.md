@@ -7,7 +7,7 @@ tested: self-test
 
 # `presentation-layer` skill (matrix → pick → render → verify → deliver) [template v1 draft]
 
-Backlog #55 (TOP-LEVEL THEME). The standing rule: agents
+The standing rule: agents
 surface findings as visuals suited to the PARTICULAR
 harness, never multi-paragraph essays by default. This
 skill is the decision procedure; the evidence it keys off
@@ -25,7 +25,7 @@ box writes: local render only.
 Run top to bottom. Every artifact regenerates from the
 records — hand-editing a delivered visual is forgery.
 
-1. Read the target harness's matrix row (#54): which
+1. Read the target harness's matrix row (harness-capability-inventory): which
    surfaces are observed-yes, and is the row a rumor
    (>~30 days)? (step 0).
 2. Pick the artifact by the present-it table: who is
@@ -47,14 +47,14 @@ records — hand-editing a delivered visual is forgery.
   NOT fallbacks — a pending surface means "pick a
   different artifact", never "try it and hope".
 - Matrix v1 cells this skill leans on (collected:
-  #54 matrix 2026-10-30): orca serves loopback pages
+  the capability matrix, 2026-10-30): a local workstation serves loopback pages
   + generates images (observed) but inline display in
-  the owner's UI is pending; Habitat A has no loopback
-  from its sandbox browser (collected) with Issues +
+  the owner's UI is pending; sandboxed agents have no loopback
+  from the sandbox browser (collected) with Issues +
   Drive .md as evidence channels; T3/Meta/plain-chat
   rows are near-blank pending — route those through
   file/PNG artifacts until probed.
-- Rumor rule (collected: #54 step 4): a matrix older
+- Rumor rule (collected: the harness-matrix step 4): a matrix older
   than ~30 days is a rumor. Keying off a rumor is
   allowed only if the delivery says so ("matrix 45
   days old — re-probe if this fails to render").
@@ -65,29 +65,29 @@ records — hand-editing a delivered visual is forgery.
 
 ### 1. Pick (the present-it table)
 
-Collected OPINION (showing-the-owner §5 — the template's
+Collected OPINION (the template's
 standing rule, adopted here): pick the artifact by who's
 looking and what they need to do next.
 
 | Who / what | Artifact | Must include |
 |---|---|---|
-| Person on site, doing physical work | Setup sheet PNG pages (#16 render primitive; #18 content) | Labels, ports, direction in words, "how to tell it worked", "if not, stop and send a photo" |
-| Owner deciding between options | Whiteboard page or screenshot (#44) | Answer first, options, what the test showed, what it can't show, estimates marked |
-| Owner asking "where / what covers what" | Site map page or image (#16) | Source labels per layer, "estimate" on coverage, capture date |
-| Owner asked to check/change one thing | WebFig deep link (#17) | Router name, the page, what to look at |
+| Person on site, doing physical work | Setup sheet PNG pages (map-reports render primitive; field-sheets content) | Labels, ports, direction in words, "how to tell it worked", "if not, stop and send a photo" |
+| Owner deciding between options | Whiteboard page or screenshot (decision-board-lifecycle) | Answer first, options, what the test showed, what it can't show, estimates marked |
+| Owner asking "where / what covers what" | Site map page or image (map-reports) | Source labels per layer, "estimate" on coverage, capture date |
+| Owner asked to check/change one thing | WebFig deep link (webfig-handoff) | Router name, the page, what to look at |
 | Remote diagnosis | Readings with provenance | Timestamps, which box, which reads failed |
-| Owner correcting the agent | Page emitting structured correction (Fix-GPS pattern, #16 §4) | Original value, new value, proposed vs applied |
+| Owner correcting the agent | Page emitting structured correction (Fix-GPS pattern, map-reports §4) | Original value, new value, proposed vs applied |
 
-- Status dashboards ("are things up?") route to #56
+- Status dashboards ("are things up?") route to
   container-render-surface when a live surface exists,
   else to this skill's static board (HTML + PNG).
-  Topology questions route to #45 (DOT→SVG), never to
-  a generated-pixels diagram (collected: meta-tooling
-  explainer via #54 — generator pixels are
+  Topology questions route to truthful-topology-graphviz (DOT→SVG), never to
+  a generated-pixels diagram (collected: the platform tooling
+  explainer — generator pixels are
   unverifiable, never the source of a topology claim).
-- Multi-AP layout questions route to #52 (Leaflet is
+- Multi-AP layout questions route to site-plan-multi-ap (Leaflet is
   NOT the useful view); outdoor-link context routes to
-  #51. This skill picks those skills' artifacts; it
+  maps-outdoor. This skill picks those skills' artifacts; it
   does not re-render their domains.
 - Essay fallback: when NO visual surface is observed
   for the harness (plain-chat row today), a short
@@ -98,17 +98,17 @@ looking and what they need to do next.
 ### 2. Render (records in, views out)
 
 - Render via the OWNING skill's generator where one
-  exists (#16 build-map.ts, #44 board fragment, #45
-  DOT pipeline) — this skill's reference renderer
+  exists (map-reports build-map.ts, decision-board-lifecycle board fragment,
+  truthful-topology-graphviz DOT pipeline) — this skill's reference renderer
   covers only the generic status board + link list,
   the artifact with no other owner.
 - Observed (self-test): `references/render-views.py`
   takes a findings fixture and emits four views —
-  `views-orca.html` (self-contained, inline CSS, no
+  `views-local.html` (self-contained, inline CSS, no
   external refs, no script), `views-board.svg`
   (hand-built 1080×1350 status board), `views-board.png`
   (headless-chromium screenshot of the inlined SVG,
-  same flags as #16's proven PNG path), and
+  same flags as map-reports' proven PNG path), and
   `views-links.md` (harness routing table + WebFig
   deep links against `router.invalid`, never a real
   host). The test renders fully offline into a temp dir.
@@ -117,7 +117,7 @@ looking and what they need to do next.
   fixture. Undated, unkeyed views are rumors with
   pixels.
 - Pending: first render against REAL findings (not the
-  fixture) + a live-harness display check (the #54
+  fixture) + a live-harness display check (the harness-matrix
   UI-level probe this pipeline cannot run alone).
 
 ### 3. Verify (before anything reaches the owner)
@@ -132,23 +132,23 @@ looking and what they need to do next.
   parses as XML; the PNG path needs only a local
   chromium.
 - PNG check: exactly 1080×1350 and non-blank (same
-  `check-png.py` pattern as #16, vendored copy in
+  `check-png.py` pattern as map-reports, vendored copy in
   references/; threshold 32 unique colors for the
   simpler board).
 - Privacy audit: fixtures synthetic + documentation
   hosts only (`router.invalid`); no real site names,
   addresses, serials, or credentials on any view; maps
-  blurred per #16 before any public frame; #31 gates
+  blurred per map-reports before any public frame; pre-publish-scrub gates
   any public step.
 
 ### 4. Deliver (to the evidence channel, then record)
 
 - Deliver to the harness's matrix-listed evidence
-  channel: orca → local files + coord pointer; Habitat
-  A → Issue or Drive .md in place (collected: #54);
+  channel: local workstation → local files + coord pointer; sandboxed
+  agents → Issue or Drive .md in place (collected: the harness matrix);
   unprobed harnesses → file/PNG handoff + a note that
   the channel is assumed, not observed.
-- On render/display failure: STOP and demote. Per #54
+- On render/display failure: STOP and demote. Per harness-matrix
   recovery, a green matrix cell that fails to render
   lied — reproduce, demote to pending with the failure
   output, post to coord, re-probe. Never retry the
@@ -165,7 +165,7 @@ looking and what they need to do next.
 Load when: reporting anything to the owner; choosing a
 presentation format; asking "can the owner SEE this
 here"; debugging a visual that failed to render; or
-adding a harness row that #54 just probed.
+adding a harness row that harness-capability-inventory just probed.
 
 ### Prereqs
 
@@ -182,7 +182,7 @@ adding a harness row that #54 just probed.
   contact. Safe anywhere, including beside production.
 - Views are owner-safe by construction (synthetic
   fixtures, documentation hosts) until real findings
-  flow through — then #31 + the step-3 privacy audit
+  flow through — then pre-publish-scrub + the step-3 privacy audit
   gate every delivery.
 
 ### Envs
@@ -232,16 +232,17 @@ is part of any render path here.
 ### Limits
 
 - This skill routes and renders generic boards; domain
-  artifacts belong to their skills (#16 maps, #44
-  boards, #45 topology, #52 layouts, #17 links). It
+  artifacts belong to their skills (map-reports maps,
+  decision-board-lifecycle boards, truthful-topology-graphviz
+  topology, site-plan-multi-ap layouts, webfig-handoff links). It
   picks them, never rebuilds them.
 - No live-harness display check exists yet: the PNG
   mechanism is proven locally, but sandbox-PNG-inline
   and phone-thread delivery are pending day-0 probes
-  (collected: showing-the-owner §6 via #16).
+  (collected: the owner-presentation notes via map-reports).
 - The present-it table is adopted OPINION, not measured
   UX — the first owner who misunderstands a picked
   artifact overrules the table; record the correction.
 - Essay fallback is a floor, not a license: two
   consecutive text fallbacks for the same harness is
-  a probe-the-harness task (#54), not a style.
+  a probe-the-harness task (harness-capability-inventory), not a style.
