@@ -545,7 +545,7 @@
         <h1 id="art-title">…</h1>
         <div class="artbar"><span class="lockchip" id="art-tier">static</span><span class="note" id="art-why">scripts blocked</span><span class="sp"></span><button class="btn" id="art-toggle">Run scripts</button><button class="btn" id="art-source">View source</button></div>
         <div class="artnav" id="art-nav" hidden></div>
-        <iframe id="artframe" title="artifact" sandbox=""></iframe>
+        <iframe id="artframe" title="artifact" sandbox="" csp="sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'"></iframe>
       </div>
     </div>
 
@@ -838,23 +838,25 @@
       markUnread(false);
     }
   }
-  // Each artifact tab keeps its own {path, tier, fromJob}: selecting
+  // Each artifact tab keeps its own {path, optin, prov}: selecting
   // a tab re-binds the shared frame and header to that tab's
   // artifact, so the scripts opt-in is per tab and per path.
+  // prov is the last-known provenance hint; every open re-fetches
+  // it fresh from meta.
   function markActiveTab(tab) {
     document.querySelectorAll(".ctab[data-pane]").forEach((x) => x.classList.remove("active"));
     tab.classList.add("active");
   }
   function bindArtTab(tab) {
     if (!artState) return;
-    tab.dataset.art = JSON.stringify({ path: artState.path, tier: artState.tier, fromJob: artState.fromJob });
+    tab.dataset.art = JSON.stringify({ path: artState.path, optin: artState.optin, prov: artState.prov });
     artTab = tab;
     markActiveTab(tab);
   }
   function selectArtifactTab(tab) {
     let st = null;
     try { st = JSON.parse(tab.dataset.art || "null"); } catch { st = null; }
-    if (st && st.path) renderArtifact(st.path, st.tier, st.fromJob);
+    if (st && st.path) renderArtifact(st.path, st.optin === true, st.prov);
     artTab = tab;
     showPane("pane-artifact");
     markActiveTab(tab);
@@ -884,8 +886,20 @@
   }
   // Artifact viewer (T83, D17/D19): renderable files open framed,
   // never as source text. Static is the default; scripts run only
-  // for render-job tiers or the owner's explicit toggle.
+  // for verified render jobs or the owner's explicit toggle.
+  // Execution never trusts the tree's tier hint: the server decides
+  // the CSP at serve time from the exact bytes, and the label below
+  // comes from a fresh meta fetch on every open.
   const ARTIFACT_EXTS = ["html", "htm", "svg", "png", "jpg", "jpeg", "gif", "webp"];
+  // Tier CSPs for the frame's csp attribute. These MUST equal the
+  // server's ARTIFACT_CSP strings (pinned by tests/artifact.test.ts):
+  // Chromium then refuses to DISPLAY a navigation destination that
+  // lacks a matching CSP. The outgoing request still fires — this
+  // is display refusal, not exfiltration prevention.
+  const ART_CSP = {
+    static: "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'",
+    scripts: "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'",
+  };
   function isArtifact(p) {
     const m = /\.([^.\/]+)$/.exec(p || "");
     return m ? ARTIFACT_EXTS.indexOf(m[1].toLowerCase()) !== -1 : false;
@@ -897,22 +911,32 @@
   }
   let artState = null;
   let artTab = null;
-  function renderArtifact(path, tier, fromJob) {
-    const t = tier === "scripts" ? "scripts" : "static";
-    artState = { path, tier: t, fromJob: t === "scripts" && fromJob === true };
+  let artSeq = 0;
+  function paintArtifact(path, tier, fromJob, optin, prov) {
     document.getElementById("art-title").textContent = path.split("/").pop();
     document.getElementById("art-path").textContent = path;
-    document.getElementById("art-tier").textContent = t;
-    document.getElementById("art-why").textContent = artWhy(t, artState.fromJob);
-    document.getElementById("art-toggle").textContent = t === "static" ? "Run scripts" : "Back to static";
+    document.getElementById("art-tier").textContent = tier;
+    document.getElementById("art-why").textContent = artWhy(tier, fromJob);
+    const tog = document.getElementById("art-toggle");
+    tog.textContent = optin ? "Back to static" : "Run scripts";
+    // A render-job grant needs no opt-in: the toggle idles with an
+    // explanation instead of promising a downgrade it cannot give
+    // (the server grants scripts to verified bytes regardless).
+    const idle = !optin && prov === "render-job";
+    tog.disabled = idle;
+    tog.title = idle ? "Scripts granted by the render job" : "";
     document.getElementById("art-source").style.display = isTextArtifact(path) ? "" : "none";
     const nav = document.getElementById("art-nav");
     nav.hidden = true;
     nav.textContent = "";
+  }
+  function buildArtFrame(path, t, optin) {
+    const nav = document.getElementById("art-nav");
     const f = document.createElement("iframe");
     f.id = "artframe";
     f.title = "artifact";
     f.setAttribute("sandbox", t === "scripts" ? "allow-scripts" : "");
+    f.setAttribute("csp", ART_CSP[t]);
     // Navigation can't be blocked by policy (Chromium has no
     // navigate-to): count this frame's loads — a second load means
     // the artifact navigated away, so blank it and say so inline.
@@ -928,8 +952,36 @@
         nav.hidden = false;
       }
     });
-    f.src = "/api/artifact?path=" + encodeURIComponent(path) + (t === "scripts" ? "&tier=scripts" : "");
+    // The query carries the owner's opt-in only — never a tier name.
+    f.src = "/api/artifact?path=" + encodeURIComponent(path) + (optin ? "&optin=1" : "");
     document.getElementById("artframe").replaceWith(f);
+  }
+  function renderArtifact(path, optin, hintProv) {
+    const my = ++artSeq;
+    const o = optin === true;
+    const hint = hintProv === "render-job" ? "render-job" : null;
+    // Optimistic paint from the tree hint so the header never sits
+    // blank; the meta fetch corrects it before the frame is built.
+    // The hint steers display only — the server grants scripts from
+    // the served bytes, so a stale hint can mislabel, never execute.
+    artState = { path, optin: o, prov: hint };
+    paintArtifact(path, o || hint ? "scripts" : "static", !o && hint !== null, o, hint);
+    fetch("/api/artifact/meta?path=" + encodeURIComponent(path)).then((r) => r.json()).then((j) => {
+      if (my !== artSeq) return;
+      const prov = j && j.provenance === "render-job" ? "render-job" : null;
+      const t = o || prov ? "scripts" : "static";
+      artState = { path, optin: o, prov };
+      paintArtifact(path, t, t === "scripts" && prov !== null, o, prov);
+      buildArtFrame(path, t, o);
+    }).catch(() => {
+      if (my !== artSeq) return;
+      // Meta unreachable: hold the optimistic paint and frame per
+      // the opt-in alone — the server still decides the CSP.
+      const t = o ? "scripts" : "static";
+      artState = { path, optin: o, prov: null };
+      paintArtifact(path, t, false, o, null);
+      buildArtFrame(path, t, o);
+    });
   }
   async function renderArtifactSource(path) {
     document.getElementById("doc-title").textContent = path.split("/").pop();
@@ -1177,8 +1229,8 @@
     if (key.indexOf("past-") === 0) renderPastChat(key.slice(5));
     else if (key.indexOf("dev-") === 0) renderDevice(key.slice(4));
     else if (b.dataset.path && isArtifact(b.dataset.path)) {
-      const t = b.dataset.tier === "scripts" ? "scripts" : "static";
-      renderArtifact(b.dataset.path, t, t === "scripts");
+      const hint = b.dataset.tier === "scripts" ? "render-job" : null;
+      renderArtifact(b.dataset.path, false, hint);
       openSlot("pane-artifact", key, name);
       if (b.closest(".overlay")) closePicker();
       return;
@@ -1201,7 +1253,7 @@
     if (a) {
       const p = a.dataset.apath;
       if (p.endsWith(".toml")) { renderToml(p); openSlot("pane-toml", p, p.split("/").pop()); }
-      else if (isArtifact(p)) { renderArtifact(p, "static", false); openSlot("pane-artifact", p, p.split("/").pop()); }
+      else if (isArtifact(p)) { renderArtifact(p, false, null); openSlot("pane-artifact", p, p.split("/").pop()); }
       else { renderDoc(p); openSlot("pane-doc", p, p.split("/").pop()); }
       topWorkspace(p);
       closePicker();
@@ -1451,8 +1503,8 @@
     const p = t.dataset.path;
     if (p.endsWith(".toml")) { renderToml(p); openSlot("pane-toml", p, p.split("/").pop()); }
     else if (isArtifact(p)) {
-      const tier = t.dataset.tier === "scripts" ? "scripts" : "static";
-      renderArtifact(p, tier, tier === "scripts");
+      const hint = t.dataset.tier === "scripts" ? "render-job" : null;
+      renderArtifact(p, false, hint);
       openSlot("pane-artifact", p, p.split("/").pop());
     }
     else { renderDoc(p); openSlot("pane-doc", p, p.split("/").pop()); }
@@ -1461,8 +1513,7 @@
   });
   document.getElementById("art-toggle").addEventListener("click", () => {
     if (!artState) return;
-    const next = artState.tier === "static" ? "scripts" : "static";
-    renderArtifact(artState.path, next, false);
+    renderArtifact(artState.path, !artState.optin, artState.prov);
     if (artTab && artTab.isConnected) bindArtTab(artTab);
   });
   document.getElementById("art-source").addEventListener("click", () => {
