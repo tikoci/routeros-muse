@@ -1100,3 +1100,14 @@ evidence = "developer test drive 2026-11-02; merged 388c3dd (b1f7e24 + orchestra
 blocked_by = []
 agent = "muse-spark-1.3 (orch muse-wonder-1.0)"
 updated = "2026-11-02"
+
+[[task]]
+id = "T111"
+title = "Password channel into centrs MCP for encrypted CDBs"
+status = "needed"
+detail = "Codex resumed review of T105 (2026-11-02) P1 CONFIRMED: centrs MCP gets only CENTRS_CDB_FILE in config env; the unlock password lives in the muse worker env, and muse does not propagate process env to MCP children (T105 A/B capture), so validate/retrieve/devices against an encrypted CDB return cdb/password-required after unlock. Needs a server-owned channel that never puts the password in session config/state/transcripts: candidate is a wrapper launcher (ui-bridge precedent) whose config env carries only a path to a 0700 password file in the private data home, written at unlock, deleted at lock, read by the wrapper to set CENTRS_CDB_PASSWORD for the centrs child only. Secret-at-rest tradeoff vs session-only memory is a developer decision before building. Open-CDB sessions unaffected; explain/rosetta unaffected."
+evidence = "codex gpt-6.1-sol resumed T105 review 2026-11-02 (real centrs stdio probe against encrypted fixture: cdb/password-required); T105 evidence records the honest-failure limitation; related upstream tikoci/centrs#558 (developer-owned, encrypted CDB creation path)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
