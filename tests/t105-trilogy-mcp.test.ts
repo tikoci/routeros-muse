@@ -224,6 +224,7 @@ describe("trilogy preallow seed", () => {
 		// local read.
 		expect([...SEED_TOOL_NAMES].sort()).toEqual(
 			[
+				"mcp__routeros_muse__ui_add_device",
 				"mcp__routeros_muse__ui_notify",
 				"mcp__routeros_muse__ui_open",
 				"mcp__routeros_muse__ui_select_device",

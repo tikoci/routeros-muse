@@ -116,12 +116,13 @@ async function collectSse(
 }
 
 describe("ui tool identity", () => {
-	test("server name and tool set are exactly the three demo tools", () => {
+	test("server name and tool set are exactly the four ui tools", () => {
 		expect(UI_MCP_SERVER).toBe("routeros_muse");
 		expect([...UI_TOOL_NAMES]).toEqual([
 			"ui_notify",
 			"ui_open",
 			"ui_select_device",
+			"ui_add_device",
 		]);
 	});
 
@@ -301,7 +302,7 @@ describe("seeded ui tool rules", () => {
 		const tools = rules.filter(
 			(e) => (e["rule"] as Record<string, unknown>)?.["kind"] === "tool_action",
 		);
-		// T105: the three ui tools first, then the read-only centrs +
+		// T105: the four ui tools first, then the read-only centrs +
 		// rosetta tools — seed order pinned, no mixed/write tools.
 		expect(tools).toEqual(
 			SEED_TOOL_NAMES.map((tool_name) => ({
@@ -1122,6 +1123,15 @@ describe("bridge MCP surface", () => {
 								] as Record<string, unknown>
 							)["required"],
 						).toEqual(["id"]);
+						// T110 pins the duplicated bridge schema: host
+						// required, user/id optional.
+						expect(
+							(
+								(byName.get("ui_add_device") as Record<string, unknown>)[
+									"inputSchema"
+								] as Record<string, unknown>
+							)["required"],
+						).toEqual(["host"]);
 					});
 				} finally {
 					await srv.stop();

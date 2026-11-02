@@ -4,7 +4,7 @@
 // workspace's private config home), scoped to the workspace's
 // absolute root, plus network allow rules for THIS workspace's
 // router.toml device hosts only, plus `tool_action` allow rules
-// for the three ui_* MCP tools (T55, same toggle).
+// for the four ui_* MCP tools (T55 plus T110, same toggle).
 //
 // Each workspace gets its own private home (D45):
 // <dataHome>/routeros-muse/.muse-config/<workspace-id>/, holding
@@ -485,7 +485,7 @@ function networkEntry(host: string): PolicyEntry {
 }
 
 /**
- * A ui_* allow rule (T55/D41): kind tool_action naming the
+ * A ui_* allow rule (T55/D41, plus T110 ui_add_device): kind tool_action naming the
  * namespaced tool, with NO workspace scope (global to the home —
  * grounded P7). The home itself is per-workspace (D45), so the
  * rules stay workspace-scoped through it. Key order matches

@@ -48,6 +48,7 @@ import {
 	writePreallowReads,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
+import { parseToml } from "../lib/toml";
 import {
 	toolBinDir as defaultToolBinDir,
 	detectInstalled,
@@ -88,8 +89,12 @@ import {
 	mintMcpToken,
 	NOTIFY_TEXT_MAX,
 	resolveUiOpen,
+	slugFromHost,
 	stripMcpPrefix,
 	tokensEqual,
+	validAddHost,
+	validAddId,
+	validAddUser,
 } from "../mcp/ui-tools";
 import {
 	type ApprovalMode,
@@ -1336,6 +1341,46 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			emit({ method: "ui/select-device", params: { id } });
 			return json({ ok: true, result: `selected ${id}` });
 		}
+		// T110: open the Add-device dialog prefilled with host/user.
+		// Supported in both modes (no noWs refusal: the dialog saves
+		// router.toml in workspace mode, CDB-only without one). The
+		// host is display-only in the UI — never written from this
+		// spelling unchecked — and both spellings re-validate at the
+		// POST route (defense in depth: the route is directly
+		// reachable). Returns ok:true on open only; the owner may
+		// cancel, and saving is their click, so this never claims the
+		// device was added.
+		if (tool === "ui_add_device") {
+			const host = args["host"];
+			if (!validAddHost(host)) {
+				return json({
+					ok: false,
+					why: "need {host} (letters, digits, dot, colon, dash, underscore, 1-255 chars; no spaces or metacharacters)",
+				});
+			}
+			const userRaw = args["user"];
+			if (userRaw !== undefined && userRaw !== "" && !validAddUser(userRaw)) {
+				return json({
+					ok: false,
+					why: "bad {user} (letters, digits, dot, dash, underscore, 1-64 chars)",
+				});
+			}
+			const idRaw = args["id"];
+			if (idRaw !== undefined && idRaw !== "" && !validAddId(idRaw)) {
+				return json({
+					ok: false,
+					why: "bad {id} (lowercase slug: [a-z0-9-], starts alnum, 1-64 chars)",
+				});
+			}
+			const user = typeof userRaw === "string" ? userRaw : "";
+			const id =
+				typeof idRaw === "string" && idRaw !== "" ? idRaw : slugFromHost(host);
+			emit({ method: "ui/add-device", params: { host, user, id } });
+			return json({
+				ok: true,
+				result: `add-device dialog opened for ${host}`,
+			});
+		}
 		return json({
 			ok: false,
 			why: `unknown ui tool: ${tool.slice(0, 120)}`,
@@ -1838,6 +1883,297 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						});
 					}
 					return json({ ok: false, why: "need GET or POST" }, 405);
+				}
+				// T110 add-device save: the owner typed the secret in the
+				// UI modal (opened via the ui_add_device relay), so the
+				// password rides this loopback POST body only (the same
+				// accepted shape as T48) — never logged, never argv in
+				// OUR code (setCdbCredentials' internal centrs argv is
+				// the documented existing residual). Workspace mode
+				// appends a [device] block to router.toml then creates
+				// the CDB record; no-workspace mode is CDB-only. The
+				// router.toml entry stays when the CDB write fails — the
+				// card's Set credentials affordance is the recovery.
+				if (p === "/api/devices/add" && req.method === "POST") {
+					const body = (await req.json()) as {
+						host?: unknown;
+						user?: unknown;
+						password?: unknown;
+						sshKey?: unknown;
+						profile?: unknown;
+						session?: unknown;
+						id?: unknown;
+					};
+					// Defense in depth: the route is directly reachable,
+					// so it re-validates with the same validators as the
+					// relay (ui-tools.ts).
+					if (!validAddHost(body.host)) {
+						return json({
+							ok: false,
+							why: "need {host} (letters, digits, dot, colon, dash, underscore, 1-255 chars; no spaces or metacharacters)",
+						});
+					}
+					const host = body.host;
+					const field = (v: unknown): string | undefined =>
+						typeof v === "string" ? v : undefined;
+					const user = field(body.user) ?? "";
+					const password = field(body.password) ?? "";
+					const sshKey = field(body.sshKey) ?? "";
+					const profile = field(body.profile) ?? "";
+					const session = field(body.session) ?? "";
+					if (!user || !validAddUser(user)) {
+						return json({
+							ok: false,
+							why: "need {user} (letters, digits, dot, dash, underscore, 1-64 chars)",
+						});
+					}
+					if (!password && !sshKey) {
+						return json({
+							ok: false,
+							why: "need {password} or {sshKey} (one secret to save)",
+						});
+					}
+					const idRaw = field(body.id) ?? "";
+					if (idRaw !== "" && !validAddId(idRaw)) {
+						return json({
+							ok: false,
+							why: "bad {id} (lowercase slug: [a-z0-9-], starts alnum, 1-64 chars)",
+						});
+					}
+					// No-workspace mode has no router.toml, so the id is
+					// the CDB host target itself (the inventory key the
+					// new card renders under).
+					const id = noWs ? host : idRaw !== "" ? idRaw : slugFromHost(host);
+					// Workspace mode: append the device block first.
+					// Re-read immediately before write (C15 interim
+					// stance, same as credentials) and refuse on an
+					// unparseable file rather than appending blind.
+					if (!noWs) {
+						let current: string;
+						try {
+							current = nodeFs.readFileSync(
+								path.join(root, "router.toml"),
+								"utf8",
+							);
+						} catch {
+							current = "";
+						}
+						// Parsed value drives the block form below; a
+						// missing file starts empty.
+						let v: Record<string, unknown> = {};
+						if (current !== "") {
+							const parsedNow = parseToml(current);
+							if (!parsedNow.ok) {
+								return json(
+									{
+										ok: false,
+										stage: "router",
+										id,
+										why: "router.toml is unparseable; edit the file by hand",
+									},
+									409,
+								);
+							}
+							v = (parsedNow.value ?? {}) as Record<string, unknown>;
+						}
+						const devices = readDevices(root);
+						const byId = devices.find((d) => d.id === id);
+						const coversHost = (d: Device): boolean =>
+							d.cdb === host || (d.cdb === undefined && d.host === host);
+						if (byId && (coversHost(byId) || byId.host === host)) {
+							// Idempotent retry: same id+host (a legacy cdb
+							// target differing from host is still this
+							// device) — skip the append.
+						} else if (byId) {
+							return json(
+								{
+									ok: false,
+									stage: "router",
+									id,
+									why: `device id ${id} already names a different host; pick another id`,
+								},
+								409,
+							);
+						} else if (devices.some((d) => d.id !== id && coversHost(d))) {
+							return json(
+								{
+									ok: false,
+									stage: "router",
+									id,
+									why: `host ${host} is already registered under another id; open that card instead`,
+								},
+								409,
+							);
+						} else {
+							// Block form follows the file: a second [device]
+							// table would be a duplicate-table error, so a
+							// file that already names devices grows the
+							// [[device]] array-of-tables shape instead (the
+							// same shape readDevices and the suite use). A
+							// lone [device] single table is promoted by
+							// rewriting its header line only — every other
+							// byte stays untouched. Anything more exotic
+							// refuses honestly rather than appending blind.
+							const entry = `id = "${id}"\nhost = "${host}"\ncdb = "${host}"\n`;
+							let base = current;
+							let header: string;
+							if (Array.isArray(v["device"])) {
+								header = "[[device]]";
+							} else if (v["device"] && typeof v["device"] === "object") {
+								const rewritten = current.replace(
+									/^[ \t]*\[[ \t]*device[ \t]*\][ \t]*\r?$/m,
+									"[[device]]",
+								);
+								if (rewritten === current) {
+									return json(
+										{
+											ok: false,
+											stage: "router",
+											id,
+											why: "router.toml [device] header is not in plain form; edit the file by hand",
+										},
+										409,
+									);
+								}
+								base = rewritten;
+								header = "[[device]]";
+							} else if (Array.isArray(v["devices"])) {
+								header = "[[devices]]";
+							} else if (
+								v["device"] !== undefined ||
+								v["devices"] !== undefined
+							) {
+								return json(
+									{
+										ok: false,
+										stage: "router",
+										id,
+										why: "router.toml device shape is not a table or array; edit the file by hand",
+									},
+									409,
+								);
+							} else {
+								header = "[device]";
+							}
+							const sep = base === "" || base.endsWith("\n") ? "" : "\n";
+							const next = `${base}${sep}\n${header}\n${entry}`;
+							const parsedNext = parseToml(next);
+							if (!parsedNext.ok) {
+								return json(
+									{
+										ok: false,
+										stage: "router",
+										id,
+										why: "router.toml is unparseable; edit the file by hand",
+									},
+									409,
+								);
+							}
+							const written = writeWorkspaceFile(root, "router.toml", next);
+							if (written.status !== 200) {
+								const why =
+									typeof (written.body as Record<string, unknown>)?.["why"] ===
+									"string"
+										? (written.body as Record<string, unknown>)["why"]
+										: "router.toml write refused";
+								return json(
+									{ ok: false, stage: "router", id, why },
+									written.status,
+								);
+							}
+						}
+					}
+					// Then create the CDB record via the T48 creation
+					// path ({missing:true}); never a parallel writer.
+					const created = await setCdbCredentials(
+						cdbFile,
+						host,
+						{
+							user,
+							...(password ? { password } : {}),
+							...(sshKey ? { sshKey } : {}),
+							...(profile ? { profile } : {}),
+							...(session ? { session } : {}),
+						},
+						envFor(req),
+						{ missing: true },
+					);
+					if (created.ok) {
+						return json({ ok: true, id, action: created.action });
+					}
+					if ("conflict" in created) {
+						// Retry after a half-finished first save: the record
+						// exists. Re-run the helper with the fresh snapshot
+						// (its own expected-snapshot semantics) — but only
+						// when the record carries OUR user, so a retry never
+						// overwrites a stranger's credentials. Otherwise the
+						// 409 stands and the owner reviews in the modal.
+						if (created.current.user === user) {
+							const retried = await setCdbCredentials(
+								cdbFile,
+								host,
+								{
+									user,
+									...(password ? { password } : {}),
+									...(sshKey ? { sshKey } : {}),
+									...(profile ? { profile } : {}),
+									...(session ? { session } : {}),
+								},
+								envFor(req),
+								created.current,
+							);
+							if (retried.ok) {
+								return json({ ok: true, id, action: retried.action });
+							}
+							if ("conflict" in retried) {
+								return json(
+									{
+										ok: false,
+										stage: "cdb",
+										id,
+										conflict: true,
+										why: retried.why,
+										current: retried.current,
+									},
+									409,
+								);
+							}
+							return json(
+								{
+									ok: false,
+									stage: "cdb",
+									id,
+									why: retried.why,
+									...(retried.code ? { code: retried.code } : {}),
+								},
+								retried.code === "cdb/stale-write-refused" ? 400 : 200,
+							);
+						}
+						return json(
+							{
+								ok: false,
+								stage: "cdb",
+								id,
+								conflict: true,
+								why: created.why,
+								current: created.current,
+							},
+							409,
+						);
+					}
+					// Encrypted-CDB creation may fail here until
+					// tikoci/centrs#558 (developer-owned, upstream) — the
+					// why rides the envelope honestly, no workaround.
+					return json(
+						{
+							ok: false,
+							stage: "cdb",
+							id,
+							why: created.why,
+							...(created.code ? { code: created.code } : {}),
+						},
+						created.code === "cdb/stale-write-refused" ? 400 : 200,
+					);
 				}
 				if (p === "/api/twins") {
 					return json(await listTwins(tools));
