@@ -4,7 +4,7 @@
 # asserts per-path track/ignore behavior. Needs: sh, git.
 set -eu
 skill_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-root=$(CDPATH= cd -- "$skill_dir/../.." && pwd)
+root=$(CDPATH= cd -- "$skill_dir/../../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 mkdir -p "$work/observations/_sample/capture-0" "$work/observations/realdevice/pull-20261028"

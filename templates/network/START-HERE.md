@@ -35,7 +35,7 @@ evidence.
 
 Plan: `router.toml`, `inventory/`. Reality: `observations/`. Work:
 `operations/` (proposals) and `work/` (agent-built code/projects).
-Proof: `checks/`, `reports/`, `decisions.md`. Guides: `skills/`
+Proof: `checks/`, `reports/`, `decisions.md`. Guides: `.agents/skills/`
 (your agent loads these on demand — start with the one matching
 this home). Agent entry: `AGENTS.md`.
 

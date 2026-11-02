@@ -135,7 +135,7 @@ One private repo per network (split per site only when a second site
 forces it), instantiated from the starter layout:
 
 1. Clone or init the layout: START-HERE, `workspace.toml`,
-   `inventory/ observations/ operations/ checks/ skills/ reports/
+   `inventory/ observations/ operations/ checks/ .agents/skills/ reports/
    inbox/` plus `whiteboard/`; instantiate only what is useful.
 2. `workspace.toml` declares the canonical home and pins the trilogy
    versions the repo was built against.

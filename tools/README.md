@@ -6,7 +6,7 @@ Each tool is a Bun script with a co-located `*.test.ts` run by
 
 - `check-skills.ts` — skill gate: shape + playbook + tested-references.
   `bun tools/check-skills.ts [skills-root]` (default
-  `templates/network/skills`); topic vocab in `skill-topics.txt`.
+  `templates/network/.agents/skills`); topic vocab in `skill-topics.txt`.
 - `ui-smoke.ts` — hermetic browser smoke for the web UI (T43 standing
   rule): temp workspace + temp muse home, echo provider, real server
   in-process, playwright chromium. Run `make smoke`; screenshots land

@@ -26,7 +26,7 @@ conventions plus skills, no deployment anything.
 1. Create the layout subset: START-HERE, `workspace.toml`
    (`home = "single-copy"`), `inventory/ observations/ operations/`
    plus `inbox/`. N=1 starts here and stops here.
-2. Add `checks/ skills/ reports/ whiteboard/` only when something
+2. Add `checks/ .agents/skills/ reports/ whiteboard/` only when something
    needs to live in them. Empty dirs are not instantiated to look
    complete.
 3. Record trilogy pins in `workspace.toml` at bootstrap.

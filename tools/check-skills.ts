@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 //             (none|self-test|twin-run); self-test+ requires a passing
 //             test.sh; twin-run additionally requires references/twin-run.md
 //             citing machine + date.
-// Usage: bun tools/check-skills.ts [skills-root]   (default templates/network/skills)
+// Usage: bun tools/check-skills.ts [skills-root]   (default templates/network/.agents/skills)
 // Exit: 0 all green, 1 any failure. Zero deps; Bun only.
 import { Glob } from "bun";
 
@@ -313,7 +313,7 @@ export async function verifySkill(
 }
 
 if (import.meta.main) {
-	const root = process.argv[2] ?? "templates/network/skills";
+	const root = process.argv[2] ?? "templates/network/.agents/skills";
 	const files = (
 		await Array.fromAsync(
 			new Glob("*/SKILL.md").scan({ cwd: root, onlyFiles: true }),

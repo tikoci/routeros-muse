@@ -32,7 +32,7 @@ the live home (`anti-drive-live`).
    useful (N=1 starts with one `router.toml` plus one
    `observations/` folder):
    `START-HERE`, `workspace.toml`, `inventory/ observations/ operations/
-   checks/ skills/ reports/ inbox/` plus `whiteboard/`.
+   checks/ .agents/skills/ reports/ inbox/` plus `whiteboard/`.
 3. `workspace.toml` declares the canonical home (`home = "private-git"`,
    plus repo URL) and pins the trilogy versions the repo was built
    against. This answers the workspace-shape open question.
