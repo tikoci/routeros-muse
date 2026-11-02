@@ -20,11 +20,12 @@ import {
 	showCdbDevice,
 } from "../lib/fleet";
 import {
+	checkServerPid,
 	ensurePreallowReads,
 	ensurePrivateHome,
 	privateConfigHome,
 	READ_COMMANDS,
-	unionWorkspaceHosts,
+	workspaceHosts,
 } from "../lib/preallow";
 import {
 	dataHomeDir,
@@ -148,12 +149,15 @@ export type ServeOpts = {
 	 */
 	trustWorkspace?: boolean;
 	/**
-	 * Private muse config-home override (T101 round 2, D44): tests
-	 * isolate here. Defaults to
-	 * <dataHome>/routeros-muse/muse-config. Forwarded to worker
-	 * spawns (museConfigHome) so the worker reads the same policy
-	 * file the server seeds; the shared ~/.config/muse is never
-	 * written (auth reaches the worker as a symlink).
+	 * Private muse config-home override (T101 round 4, D45):
+	 * tests isolate here (the override is the exact home, no
+	 * workspace id is appended). Defaults to this workspace's
+	 * home, <dataHome>/routeros-muse/.muse-config/<workspace-id>
+	 * (no-workspace mode: .muse-config/_no-workspace/).
+	 * Forwarded to worker spawns (museConfigHome) so the worker
+	 * reads the same policy file the server seeds; the shared
+	 * ~/.config/muse is never written (auth reaches the worker
+	 * as a symlink).
 	 */
 	configHome?: string;
 };
@@ -557,11 +561,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// no-workspace picker lists real history. A registry write failure
 	// warns but never blocks the boot.
 	const regFile = registryFile(opts.dataHome);
-	// T101 round 2 (D44): our private muse config home — the
-	// XDG_CONFIG_HOME every worker spawns with, and the only
-	// approval-policy.json we seed. Defaults under the data home;
-	// tests override it directly.
-	const museCfgHome = opts.configHome ?? privateConfigHome(opts.dataHome);
+	// T101 round 4 (D45): this workspace's private muse config
+	// home — the XDG_CONFIG_HOME every worker spawns with, and
+	// the only approval-policy.json we seed. Per workspace
+	// (<dataHome>/routeros-muse/.muse-config/<workspace-id>);
+	// no-workspace mode gets the fixed _no-workspace home. Tests
+	// override it directly.
+	const museCfgHome =
+		opts.configHome ??
+		privateConfigHome(opts.dataHome, noWs ? undefined : root);
 	const defaultDir = defaultWorkspacesDir(opts.defaultWorkspaceDir);
 	// T93: the picker create flow offers these templates (minimal
 	// default); read once at boot from the package templates dir.
@@ -680,23 +688,17 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	function stashHomeWarnings(more: string[]): void {
 		homeWarnings = [...homeWarnings, ...more].slice(-8);
 	}
-	/** Roots feeding the network-rule union: the registry plus this root. */
-	function unionRoots(): string[] {
-		const roots = new Set<string>();
-		for (const e of readRegistry(regFile).entries) roots.add(e.path);
-		if (!noWs) roots.add(root);
-		return [...roots];
-	}
 	/**
-	 * Run the D43/D44 seed and refresh the report. Never throws:
+	 * Run the D43/D45 seed and refresh the report. Never throws:
 	 * seeding failures (unreadable file, unknown schema, lost
 	 * races) land as warnings and the boot continues. Always
 	 * ensures the private home first (both modes: workers need
-	 * auth everywhere); round 3 fails closed — when the home
-	 * itself is rejected, the seed is SKIPPED (never write
-	 * through a link we refused) and the reason lands in
-	 * homeError + warnings + the boot log. No-workspace mode
-	 * seeds the network union only and keeps the report null.
+	 * auth everywhere); fails closed — when the home itself is
+	 * rejected, the seed is SKIPPED (never write through a link
+	 * we refused) and the reason lands in homeError + warnings +
+	 * the boot log. Each workspace seeds only its own
+	 * router.toml hosts (D45, no union). No-workspace mode
+	 * seeds nothing and keeps the report null.
 	 */
 	function refreshPreallow(enabled: boolean): void {
 		const warnings: string[] = [...homeWarnings];
@@ -713,7 +715,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			warnings.push(homeError);
 			console.error(`private muse home unsafe, seeding skipped: ${homeError}`);
 		}
-		const hosts = enabled ? unionWorkspaceHosts(unionRoots()) : [];
+		const hosts = enabled && !noWs ? workspaceHosts(root) : [];
 		if (homeError === null) {
 			try {
 				const res = ensurePreallowReads({
@@ -725,6 +727,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				warnings.push(...res.warnings);
 			} catch (err) {
 				warnings.push(err instanceof Error ? err.message : String(err));
+			}
+			if (!noWs) {
+				// D45: warn-only same-workspace detection (never
+				// load-bearing; the check itself never throws).
+				const { warning } = checkServerPid(museCfgHome);
+				if (warning !== null) warnings.push(warning);
 			}
 		}
 		if (noWs) {
@@ -1349,9 +1357,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					};
 					if (body.action === "prune") {
 						const { removed } = pruneRegistry(regFile);
-						// D44: the union shrank — re-seed so removed
-						// workspaces' hosts leave the network rules.
-						refreshPreallow(readPreallowReads(opts.dataHome));
+						// D45: no re-seed — this workspace's hosts
+						// are its own router.toml, untouched by the
+						// registry. (Each pruned workspace's own
+						// home keeps its last seed, harmless: that
+						// server is gone with it.)
 						return json({ ok: true, removed });
 					}
 					if (body.action === "create") {
@@ -1382,8 +1392,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 						if (!made.ok) return json({ ok: false, why: made.why }, 400);
 						const workspace = registerWorkspace(regFile, body.name, made.dir);
-						// D44: a new root joined the network-rule union.
-						refreshPreallow(readPreallowReads(opts.dataHome));
+						// D45: no re-seed — the new workspace gets
+						// its own home (and its own seed) when it
+						// is served; ours is unchanged.
 						return json({
 							ok: true,
 							workspace,
@@ -1478,7 +1489,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						body.fromTomlEditor === true ? { fromTomlEditor: true } : undefined,
 					);
 					if (res.status === 200 && body.path === "router.toml") {
-						// D44: device hosts feed the network-rule union.
+						// D45: this workspace's hosts feed its own
+						// network rules — re-seed so dropped hosts
+						// are pruned.
 						refreshPreallow(readPreallowReads(opts.dataHome));
 					}
 					return json(res.body, res.status);

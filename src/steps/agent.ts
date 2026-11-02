@@ -5,9 +5,8 @@
 // auth lives in muse's store, never here. reportAgent is the
 // print-only twin for doctor: same facts, never installs.
 
-import * as os from "node:os";
-import * as path from "node:path";
 import { type Ctx, ensureConsent, resumeLine } from "../ctx";
+import { museAuthFile as sharedMuseAuthFile } from "../lib/preallow";
 import { have, runShell } from "../lib/run";
 import { Stop } from "../lib/stop";
 
@@ -20,13 +19,14 @@ export function museInstallLine(): string {
 	return process.platform === "win32" ? MUSE_INSTALL_PS1 : MUSE_INSTALL_SH;
 }
 
+/**
+ * The real muse auth file (D45): shared with the private-home
+ * linker (src/lib/preallow.ts) so both resolve the same store —
+ * $XDG_CONFIG_HOME/muse/auth.json, else ~/.config (win32:
+ * %APPDATA%, unverified).
+ */
 export function museAuthFile(): string {
-	if (process.platform === "win32") {
-		const base =
-			process.env["APPDATA"] ?? path.join(os.homedir(), "AppData", "Roaming");
-		return path.join(base, "muse", "auth.json");
-	}
-	return path.join(os.homedir(), ".config", "muse", "auth.json");
+	return sharedMuseAuthFile();
 }
 
 /**

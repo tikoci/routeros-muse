@@ -398,14 +398,17 @@ sandbox+approval with a cleared env; MCP servers run unsandboxed
 
 ## D44: private muse config home (round 2)
 
-Our workers spawn with `XDG_CONFIG_HOME=<dataHome>/routeros-muse/muse-config`
-(D44, T101 round 2). Inside it, `muse/` holds our own
+Our workers spawn with
+`XDG_CONFIG_HOME=<dataHome>/routeros-muse/.muse-config/<workspace-id>`
+(D44, T101 round 2; per-workspace layout and the leading dot are round
+4, D45 — see below). Inside each home, `muse/` holds our own
 `approval-policy.json` (schema v2, same tagged `reason:"routeros-muse:seed"`
 rules), our own minimal `settings.json` (`{"schema_version":1}` — unknown
 fields make muse exit 3, verified with a real boot), and an `auth.json`
 SYMLINK to the real `${XDG_CONFIG_HOME:-$HOME/.config}/muse/auth.json`,
 re-ensured on every spawn. The shared `~/.config/muse/` is never written.
-Dirs are 0700; symlinked parents are refused.
+Dirs are 0700; symlinks at or below `<dataHome>/routeros-muse` are
+refused (round 4 also covers `.muse-config` and `<workspace-id>`).
 
 Why: muse persists approval-policy.json without a lock, so sharing the
 file with other agents on the box risks dropping a rule in the
@@ -422,13 +425,13 @@ If the real auth.json is absent, sessions fail turns with
 `authRequired` (the existing boot-probe/banner path) and Settings
 carries a "not signed in" warning.
 
-Network-rule ownership: the desired host set is the UNION of
-router.toml device hosts over registered workspaces (registry.toml),
-recomputed at boot, toggle, router.toml save, workspace create, and
-registry prune; tagged network rules outside the union are pruned.
-Untagged rules (the owner's own Always-allow choices) are never
-touched. No separate ownership state file: registry.toml +
-router.toml files ARE the state (derived ownership, cannot drift).
+Network-rule ownership: rounds 2–3 used the UNION of router.toml
+device hosts over registered workspaces (registry.toml), recomputed
+at boot, toggle, router.toml save, workspace create, and registry
+prune. REMOVED in round 4 (D45): each workspace seeds only its own
+hosts into its own home; tagged network rules outside that set are
+pruned. Untagged rules (the owner's own Always-allow choices) are
+never touched, in every round.
 
 Read set as amended 2026-11-02: exactly `centrs retrieve`,
 `quickchr list`, `quickchr doctor`. Dropped: find (-exec/-delete),
@@ -447,19 +450,19 @@ state (clears dead PIDs/frozen markers) — bookkeeping under
 
 Concurrency: all seeding serializes in-process (one mutex; the path
 is fully synchronous so run-to-completion does the work and the
-guard makes it explicit) AND cross-process (round 3: a lock file
-next to the policy, `approval-policy.json.lock`, O_EXCL-created
-holding {pid, started}, bounded backoff, stale locks — dead pid
-or older than 30s — broken, always released in a finally). The
-reread-before-rename guard with retries stays under the lock.
-Residual window: a live muse session persisting an Always-allow
-into our private file writes WITHOUT a lock and WITHOUT a re-read,
-so it can still clobber a seed (or a seed can clobber it) when
-the two land in the same instant — smaller than round 1 (only our
-own workers write this file now, not every agent on the box), but
-not zero. Convergence is eventual: the next boot/toggle/edit
-re-seeds our tagged set over whatever the file holds, and muse
-re-persists owner choices on next approval.
+guard makes it explicit). Round 3 added a cross-process lock file
+next to the policy (`approval-policy.json.lock`); REMOVED in round
+4 (D45) after a re-review confirmed four defects in it — per-workspace
+homes made it unnecessary. What stays: the in-process mutex and the
+reread-before-rename guard with retries. Residual window: a live
+muse session persisting an Always-allow into our private file
+writes WITHOUT a lock and WITHOUT a re-read, so it can still
+clobber a seed (or a seed can clobber it) when the two land in the
+same instant — smaller than round 1 (only our own workers write
+this file now, not every agent on the box), but not zero.
+Convergence is eventual: the next boot/toggle/edit re-seeds our
+tagged set over whatever the file holds, and muse re-persists
+owner choices on next approval.
 
 Fail-closed (round 3): when the private home itself is rejected
 (symlink anywhere in the `<dataHome>/routeros-muse` down-chain),
@@ -513,6 +516,62 @@ git still reads ~/.gitconfig. Not linked: GitHub stays the
 developer's call (D34), and each extra link widens what the private
 home exposes. An upstream per-session env surface in MSP would
 remove the need for links.
+
+## D45: one private home per workspace (round 4)
+
+Rounds 2–3 kept ONE private home for every workspace
+(`<dataHome>/routeros-muse/muse-config/`), which needed the
+cross-workspace host union and the cross-process seed lock. Round 4
+(D45) gives each workspace its own home:
+
+`<dataHome>/routeros-muse/.muse-config/<workspace-id>/`
+
+- `<workspace-id>` is `<sanitized-basename>-<hash12>`: the
+  workspace dir's basename (readable) plus 12 hex chars of sha256
+  over the canonical absolute root (realpath; path.resolve when
+  unresolvable). Stable across spellings of the same root; a MOVED
+  workspace gets a NEW home — accepted by design, and seeding
+  recreates its rules from scratch on next boot.
+- The leading dot marks the dir as managed, not for user editing;
+  it is not a security measure.
+- No-workspace mode (D23) gets the fixed
+  `.muse-config/_no-workspace/` home (settings + auth link; nothing
+  seeded — there is no router.toml to seed from).
+- Each home holds its own `muse/approval-policy.json`,
+  `muse/settings.json`, the `muse/auth.json` link and the `tikoci`
+  link, with round-2/3 semantics: re-ensured per spawn, 0600/0700,
+  dangling real auth warns.
+- The seed lock is GONE entirely: no lock file, no acquire/release,
+  no stale logic, no SEED_LOCK_* constants, no race worker. The
+  in-process mutex and the reread-before-rename guard stay.
+- The registry host union is GONE: each workspace seeds ONLY its
+  own router.toml hosts. Re-seed triggers are boot, the Settings
+  toggle, and router.toml saves. Cost accepted: an Always-allow
+  clicked in one workspace does not carry to another.
+- Two servers on the same workspace: WARN ONLY via a `server.pid`
+  file in that workspace's home. No blocking, a stale pid is
+  silently ignored, symlinks are never followed (neither read nor
+  replaced), and correctness never depends on it.
+- Chain safety: refuse a symlink at or below
+  `<dataHome>/routeros-muse`, now including `.muse-config` and
+  `<workspace-id>`; symlinks above it stay allowed. Fail closed:
+  no seeding and no spawn on an unsafe home, the reason in status
+  and session start, never a fallback to the shared
+  `~/.config/muse`.
+- Settings/status shows this workspace's private home path
+  (`preallow.configHome`).
+- The round-2/3 flat `muse-config/muse/` layout is an orphan from
+  development builds — it never shipped. Left alone: never
+  migrated, never deleted.
+
+Round-4 also fixed the agent auth check (`src/steps/agent.ts`):
+it hardcoded `~/.config/muse/auth.json` and now shares one
+`museAuthFile()` helper with the private-home linker
+(`$XDG_CONFIG_HOME/muse/auth.json`, else `~/.config` — the muse
+launcher's own order, verified in its script; an empty
+XDG_CONFIG_HOME falls back like the launcher's `-n` test). win32
+keeps `%APPDATA%`, unverified (no Windows probe; the Linux
+binary's strings show no APPDATA use for muse's own config).
 
 ## Option C verdict: FEASIBLE
 

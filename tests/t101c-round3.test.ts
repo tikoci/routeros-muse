@@ -3,7 +3,9 @@
 // 1. Read set keeps `centrs retrieve` (brief change: the seeded
 //    rule trusts centrs's read/write split; C19 fixed upstream).
 // 2. Fail closed on an unsafe private home (no seed, no spawn).
-// 3. Cross-process seed lock.
+// 3. Cross-process seed lock — DELETED in round 4 (D45): the lock
+//    is gone with the per-workspace homes (see t101d), along with
+//    the t101c-seed-worker race harness.
 // 4. Small items: settings.json mode, dangling real auth.json.
 // 5. Worker isolation is real (fake muse records XDG_CONFIG_HOME).
 //
@@ -103,7 +105,7 @@ describe("round 3 fix 2: fail closed on an unsafe private home", () => {
 		nodeFs.writeFileSync(victim, "victim-bytes\n");
 		const target = path.join(base, "real-target");
 		nodeFs.mkdirSync(target, { recursive: true });
-		const cfg = path.join(base, "muse-config");
+		const cfg = path.join(base, "cfg");
 		nodeFs.symlinkSync(target, cfg);
 		const ws = mktmp("t101c-cfgroot-ws-");
 		expect(() =>
@@ -125,9 +127,10 @@ describe("round 3 fix 2: fail closed on an unsafe private home", () => {
 		const dh = path.join(base, "dh");
 		nodeFs.mkdirSync(dh, { recursive: true });
 		nodeFs.symlinkSync(target, path.join(dh, "routeros-muse"));
+		const ws = mktmp("t101c-rm-ws-");
 		expect(() =>
 			ensurePrivateHome({
-				privateHome: privateConfigHome(dh),
+				privateHome: privateConfigHome(dh, ws),
 				dataHome: dataHomeDir(dh),
 			}),
 		).toThrow(/symlink/i);
@@ -139,7 +142,8 @@ describe("round 3 fix 2: fail closed on an unsafe private home", () => {
 		const victim = path.join(base, "victim.txt");
 		nodeFs.writeFileSync(victim, "victim-bytes\n");
 		const dh = path.join(base, "dh");
-		const priv = privateConfigHome(dh);
+		const ws = mktmp("t101c-pol-ws-");
+		const priv = privateConfigHome(dh, ws);
 		const museDir = path.join(priv, "muse");
 		nodeFs.mkdirSync(museDir, { recursive: true });
 		nodeFs.symlinkSync(victim, path.join(museDir, "approval-policy.json"));
@@ -157,21 +161,22 @@ describe("round 3 fix 2: fail closed on an unsafe private home", () => {
 		nodeFs.symlinkSync(path.join(base, "real"), path.join(base, "link"));
 		const dh = path.join(base, "link", "dh");
 		const emptyReal = mktmp("t101c-above-real-");
+		const ws = mktmp("t101c-above-ws-");
 		const res = ensurePrivateHome({
-			privateHome: privateConfigHome(dh),
+			privateHome: privateConfigHome(dh, ws),
 			dataHome: dataHomeDir(dh),
 			realConfigHome: emptyReal,
 		});
 		expect(res.warnings.join(" ")).toMatch(/not signed in/i);
 		expect(
 			nodeFs.existsSync(
-				path.join(privateConfigHome(dh), "muse", "settings.json"),
+				path.join(privateConfigHome(dh, ws), "muse", "settings.json"),
 			),
 		).toBe(true);
 	});
 
 	t101c(
-		"symlinked muse-config: boot seeds nothing through the link, status carries the error, session start fails",
+		"symlinked .muse-config: boot seeds nothing through the link, status carries the error, session start fails",
 		async () => {
 			const real = mktmp("t101c-unsafe-real-");
 			nodeFs.mkdirSync(path.join(real, "muse"), { recursive: true });
@@ -187,7 +192,10 @@ describe("round 3 fix 2: fail closed on an unsafe private home", () => {
 					recursive: true,
 				});
 				const fake = mktmp("t101c-unsafe-fake-");
-				nodeFs.symlinkSync(fake, path.join(dh, "routeros-muse", "muse-config"));
+				nodeFs.symlinkSync(
+					fake,
+					path.join(dh, "routeros-muse", ".muse-config"),
+				);
 				const ws = mktmp("t101c-unsafe-ws-");
 				nodeFs.writeFileSync(
 					path.join(ws, "workspace.toml"),
@@ -298,164 +306,9 @@ describe("round 3 fix 4: small items", () => {
 	});
 });
 
-describe("round 3 fix 3: cross-process seed lock", () => {
-	t101c(
-		"two real processes seeding together keep both rule sets",
-		async () => {
-			const base = mktmp("t101c-race-");
-			const cfg = path.join(base, "cfg");
-			const wsA = path.join(base, "ws-a");
-			const wsB = path.join(base, "ws-b");
-			nodeFs.mkdirSync(wsA, { recursive: true });
-			nodeFs.mkdirSync(wsB, { recursive: true });
-			const coord = path.join(base, "coord");
-			nodeFs.mkdirSync(coord, { recursive: true });
-			const worker = path.join(import.meta.dir, "t101c-seed-worker.ts");
-			// Both sides assert the SAME union (two servers share
-			// one registry, so their unions agree); the shells
-			// differ per root — that is what the race dropped.
-			const run = (role: string, ws: string) =>
-				Bun.spawn(
-					[
-						process.execPath,
-						worker,
-						cfg,
-						ws,
-						role,
-						coord,
-						"host-a.lan",
-						"host-b.lan",
-					],
-					{ stdout: "pipe", stderr: "pipe" },
-				);
-			const a = run("a", wsA);
-			const b = run("b", wsB);
-			const [outA, outB] = await Promise.all([
-				new Response(a.stdout).text(),
-				new Response(b.stdout).text(),
-			]);
-			const [codeA, codeB] = await Promise.all([a.exited, b.exited]);
-			expect(codeA).toBe(0);
-			expect(codeB).toBe(0);
-			expect(outA).not.toContain("error");
-			expect(outB).not.toContain("error");
-			// Both workspaces' shell sets survived, and the union
-			// holds both hosts: no rename clobbered the other.
-			const rules = readPolicy(cfg).rules;
-			for (const ws of [wsA, wsB]) {
-				for (const prefix of READ_COMMANDS) {
-					expect(
-						rules.some(
-							(r) =>
-								r["reason"] === PREALLOW_TAG &&
-								JSON.stringify(
-									(r["rule"] as Record<string, unknown>)["argv_prefix"],
-								) === JSON.stringify(prefix) &&
-								(r["rule"] as Record<string, unknown>)["workspace_root"] === ws,
-						),
-					).toBe(true);
-				}
-			}
-			const hosts = rules
-				.filter(
-					(r) =>
-						r["reason"] === PREALLOW_TAG &&
-						(r["rule"] as Record<string, unknown>)["kind"] === "network",
-				)
-				.map((r) => (r["rule"] as Record<string, unknown>)["host"]);
-			expect([...hosts].sort()).toEqual(["host-a.lan", "host-b.lan"]);
-			// The lock released: no leftover beside the policy.
-			expect(
-				nodeFs
-					.readdirSync(path.join(cfg, "muse"))
-					.filter((f) => f !== "approval-policy.json"),
-			).toEqual([]);
-		},
-		60_000,
-	);
-
-	t101c("the lock holds pid + timestamp and releases in a finally", () => {
-		const cfg = mktmp("t101c-lockshape-");
-		const ws = mktmp("t101c-lockshape-ws-");
-		let seen: string | null = null;
-		ensurePreallowReads(
-			{ configHome: cfg, workspaceRoot: ws, hosts: [], enabled: true },
-			{
-				renameSync: (tmp, file) => {
-					seen = nodeFs.readFileSync(`${policyFile(cfg)}.lock`, "utf8");
-					nodeFs.renameSync(tmp, file);
-				},
-			},
-		);
-		const parsed = JSON.parse(seen as unknown as string) as Record<
-			string,
-			unknown
-		>;
-		expect(parsed["pid"]).toBe(process.pid);
-		expect(typeof parsed["started"]).toBe("number");
-		expect(nodeFs.existsSync(`${policyFile(cfg)}.lock`)).toBe(false);
-	});
-
-	t101c("a stale lock (dead pid) is broken, then released", () => {
-		const cfg = mktmp("t101c-stale-");
-		const ws = mktmp("t101c-stale-ws-");
-		nodeFs.mkdirSync(path.dirname(policyFile(cfg)), { recursive: true });
-		// A pid that cannot be alive (large + reaped check).
-		const deadPid = 2 ** 30 + (process.pid % 1000);
-		let alive = true;
-		try {
-			process.kill(deadPid, 0);
-		} catch {
-			alive = false;
-		}
-		if (alive) return; // Absurdly unlikely; never hang the suite.
-		nodeFs.writeFileSync(
-			`${policyFile(cfg)}.lock`,
-			JSON.stringify({ pid: deadPid, started: Date.now() }),
-		);
-		const res = ensurePreallowReads({
-			configHome: cfg,
-			workspaceRoot: ws,
-			hosts: [],
-			enabled: true,
-		});
-		expect(res.changed).toBe(true);
-		expect(nodeFs.existsSync(`${policyFile(cfg)}.lock`)).toBe(false);
-		expect(taggedPrefixes(cfg)).toContain(JSON.stringify(["quickchr", "list"]));
-	});
-
-	t101c(
-		"a live fresh lock gives up with a warning and leaves the file alone",
-		() => {
-			const cfg = mktmp("t101c-held-");
-			const ws = mktmp("t101c-held-ws-");
-			nodeFs.mkdirSync(path.dirname(policyFile(cfg)), { recursive: true });
-			const before = JSON.stringify({ schema_version: 2, rules: [] });
-			nodeFs.writeFileSync(policyFile(cfg), before);
-			nodeFs.writeFileSync(
-				`${policyFile(cfg)}.lock`,
-				JSON.stringify({ pid: process.pid, started: Date.now() }),
-			);
-			const res = ensurePreallowReads(
-				{
-					configHome: cfg,
-					workspaceRoot: ws,
-					hosts: [],
-					enabled: true,
-					lockTimeoutMs: 150,
-				},
-				undefined,
-			);
-			expect(res.changed).toBe(false);
-			expect(res.warnings.join(" ")).toMatch(/lock/i);
-			expect(nodeFs.readFileSync(policyFile(cfg), "utf8")).toBe(before);
-		},
-	);
-});
-
 describe("round 3 fix 5: worker isolation is real", () => {
 	t101c(
-		"worker and auth probe both run under the private config home",
+		"worker and auth probe both run under this workspace's home",
 		async () => {
 			const real = mktmp("t101c-iso-real-");
 			nodeFs.mkdirSync(path.join(real, "muse"), { recursive: true });
@@ -466,15 +319,23 @@ describe("round 3 fix 5: worker isolation is real", () => {
 			const saved = process.env["XDG_CONFIG_HOME"];
 			process.env["XDG_CONFIG_HOME"] = real;
 			try {
+				const ws = mktmp("t101c-iso-ws-");
+				nodeFs.writeFileSync(
+					path.join(ws, "workspace.toml"),
+					"canonical = true\n",
+				);
 				const { bin, log } = stubT50Bin();
 				await withT50Env(log, async () => {
 					// provider meta runs the boot auth probe (a
 					// disposable spawn); the send below spawns the
 					// worker. The fake records the XDG_CONFIG_HOME
 					// each spawn received.
-					const srv = await startT50Srv(bin, { provider: "meta" });
+					const srv = await startT50Srv(bin, {
+						provider: "meta",
+						workspace: ws,
+					});
 					try {
-						const priv = privateConfigHome(srv.dataHome);
+						const priv = privateConfigHome(srv.dataHome, ws);
 						const res = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
 							headers: { "content-type": "application/json" },

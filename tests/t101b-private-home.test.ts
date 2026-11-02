@@ -1,9 +1,10 @@
 // T101 round 2 (D44): private muse config home — fail-first suite.
 //
-// Our muse workers run with XDG_CONFIG_HOME pointed at a private home
-// (<dataHome>/routeros-muse/muse-config) holding our own
-// approval-policy.json + settings.json plus a symlink to the user's
-// real auth.json. The shared ~/.config/muse is never written.
+// Our muse workers run with XDG_CONFIG_HOME pointed at this
+// workspace's private home
+// (<dataHome>/routeros-muse/.muse-config/<workspace-id>) holding our
+// own approval-policy.json + settings.json plus a symlink to the
+// user's real auth.json. The shared ~/.config/muse is never written.
 //
 // Hermetic: temp dirs for the private home, the real home (fake
 // auth.json, never read for content — link target only), and the
@@ -19,9 +20,11 @@ import {
 	PREALLOW_TAG,
 	policyFile,
 	privateConfigHome,
+	privateConfigRoot,
 	READ_COMMANDS,
-	unionWorkspaceHosts,
 	withSeedLock,
+	workspaceConfigId,
+	workspaceHosts,
 } from "../src/lib/preallow";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
@@ -83,10 +86,14 @@ function makeWs(hosts: string[]): string {
 }
 
 describe("private home path", () => {
-	test("privateConfigHome nests under the data home", () => {
+	test("privateConfigHome nests per workspace under the data home (D45)", () => {
 		const dh = mktmp("t101b-dh-");
-		expect(privateConfigHome(dh)).toBe(
-			path.join(dh, "routeros-muse", "muse-config"),
+		const ws = mktmp("t101b-dh-ws-");
+		expect(privateConfigRoot(dh)).toBe(
+			path.join(dh, "routeros-muse", ".muse-config"),
+		);
+		expect(privateConfigHome(dh, ws)).toBe(
+			path.join(privateConfigRoot(dh), workspaceConfigId(ws)),
 		);
 	});
 });
@@ -254,7 +261,7 @@ describe("ensurePrivateHome", () => {
 		});
 	});
 
-	t101b("symlinked muse-config parent: refused, victim untouched", () => {
+	t101b("symlinked private home: refused, victim untouched", () => {
 		withRealHome((real) => {
 			seedFakeAuth(real);
 			const base = mktmp("t101b-symparent-");
@@ -262,7 +269,7 @@ describe("ensurePrivateHome", () => {
 			nodeFs.writeFileSync(victim, "victim-bytes\n");
 			const target = path.join(base, "real-target");
 			nodeFs.mkdirSync(target, { recursive: true });
-			const priv = path.join(base, "muse-config");
+			const priv = path.join(base, "priv");
 			nodeFs.symlinkSync(target, priv);
 			expect(() => ensurePrivateHome({ privateHome: priv })).toThrow(
 				/symlink/i,
@@ -285,23 +292,23 @@ describe("withSeedLock", () => {
 	});
 });
 
-describe("unionWorkspaceHosts", () => {
-	test("union over roots: normalized, deduped, missing roots skipped", () => {
+describe("workspaceHosts", () => {
+	test("this root's hosts: normalized, deduped, missing roots skipped", () => {
 		const a = makeWs(["h1", "shared"]);
-		const b = makeWs(["shared", "h2"]);
+		expect(workspaceHosts(a)).toEqual(["h1", "shared"]);
 		const gone = path.join(mktmp("t101b-gone-"), "nope");
-		expect(unionWorkspaceHosts([a, b, gone])).toEqual(["h1", "shared", "h2"]);
+		expect(workspaceHosts(gone)).toEqual([]);
 	});
 
 	test("unparseable router.toml contributes nothing", () => {
 		const dir = mktmp("t101b-bad-");
 		nodeFs.writeFileSync(path.join(dir, "router.toml"), "{not toml");
-		expect(unionWorkspaceHosts([dir])).toEqual([]);
+		expect(workspaceHosts(dir)).toEqual([]);
 	});
 });
 
-describe("network union ownership (D44)", () => {
-	test("union change prunes the dropped host, keeps the shared one once", () => {
+describe("per-workspace host ownership (D45)", () => {
+	test("host change prunes the dropped host, keeps the shared one once", () => {
 		withRealHome(() => {
 			const priv = mktmp("t101b-union-");
 			const ws = mktmp("t101b-union-ws-");
@@ -312,7 +319,7 @@ describe("network union ownership (D44)", () => {
 				enabled: true,
 			});
 			expect(taggedHosts(priv).sort()).toEqual(["h1", "shared"]);
-			// A later seed with the recomputed union drops h1.
+			// A later seed with the recomputed host set drops h1.
 			ensurePreallowReads({
 				configHome: priv,
 				workspaceRoot: ws,
@@ -323,35 +330,41 @@ describe("network union ownership (D44)", () => {
 		});
 	});
 
-	test("two workspaces sharing a host: one tagged rule, survives either seed", () => {
+	test("two workspaces sharing a host seed it in separate homes (no union)", () => {
 		withRealHome(() => {
-			const priv = mktmp("t101b-shared-");
-			const a = mktmp("t101b-shared-a-");
-			const b = mktmp("t101b-shared-b-");
-			const union = ["shared", "ha", "hb"];
+			const dh = mktmp("t101b-shared-dh-");
+			const a = makeWs(["shared", "ha"]);
+			const b = makeWs(["shared", "hb"]);
+			const pa = privateConfigHome(dh, a);
+			const pb = privateConfigHome(dh, b);
+			expect(pa).not.toBe(pb);
 			ensurePreallowReads({
-				configHome: priv,
+				configHome: pa,
 				workspaceRoot: a,
-				hosts: union,
+				hosts: workspaceHosts(a),
 				enabled: true,
 			});
 			ensurePreallowReads({
-				configHome: priv,
+				configHome: pb,
 				workspaceRoot: b,
-				hosts: union,
+				hosts: workspaceHosts(b),
 				enabled: true,
 			});
-			const hosts = taggedHosts(priv);
-			expect(hosts.filter((h) => h === "shared")).toHaveLength(1);
-			expect([...hosts].sort()).toEqual(["ha", "hb", "shared"]);
-			// Both workspaces drop the host: the next union prunes it.
+			expect(taggedHosts(pa).sort()).toEqual(["ha", "shared"]);
+			expect(taggedHosts(pb).sort()).toEqual(["hb", "shared"]);
+			// Workspace a drops the host: only its own home prunes it.
+			nodeFs.writeFileSync(
+				path.join(a, "router.toml"),
+				'[[device]]\nid = "d0"\nhost = "ha"\n',
+			);
 			ensurePreallowReads({
-				configHome: priv,
+				configHome: pa,
 				workspaceRoot: a,
-				hosts: ["ha", "hb"],
+				hosts: workspaceHosts(a),
 				enabled: true,
 			});
-			expect(taggedHosts(priv).sort()).toEqual(["ha", "hb"]);
+			expect(taggedHosts(pa)).toEqual(["ha"]);
+			expect(taggedHosts(pb).sort()).toEqual(["hb", "shared"]);
 		});
 	});
 
@@ -595,7 +608,7 @@ describe("T101b server wiring (D44)", () => {
 			await withT50Env(log, async () => {
 				const srv = await startT50Srv(bin, { workspace: ws });
 				try {
-					const priv = privateConfigHome(srv.dataHome);
+					const priv = privateConfigHome(srv.dataHome, ws);
 					expect(
 						nodeFs.existsSync(path.join(priv, "muse", "settings.json")),
 					).toBe(true);
@@ -658,7 +671,7 @@ describe("T101b server wiring (D44)", () => {
 	});
 
 	t101b(
-		"union spans registered workspaces; drop + prune converges",
+		"separate policies per workspace; prune touches neither host set",
 		async () => {
 			const real = mktmp("t101b-union-real-");
 			seedFakeAuth(real);
@@ -670,23 +683,23 @@ describe("T101b server wiring (D44)", () => {
 				const b = makeWs(["shared.lan", "b.lan"]);
 				const { bin, log } = stubT50Bin();
 				await withT50Env(log, async () => {
-					const priv = privateConfigHome(dh);
+					const pa = privateConfigHome(dh, a);
+					const pb = privateConfigHome(dh, b);
 					const s1 = await startT50Srv(bin, { dataHome: dh, workspace: a });
 					await s1.stop();
 					const s2 = await startT50Srv(bin, { dataHome: dh, workspace: b });
 					try {
-						expect(taggedHosts(priv).sort()).toEqual([
-							"a.lan",
-							"b.lan",
-							"shared.lan",
-						]);
-						// Workspace a goes away; prune re-seeds the union.
+						expect(taggedHosts(pa).sort()).toEqual(["a.lan", "shared.lan"]);
+						expect(taggedHosts(pb).sort()).toEqual(["b.lan", "shared.lan"]);
+						// Workspace a goes away; prune drops the
+						// registry entry but neither host set moves
+						// (D45: no union to recompute).
 						nodeFs.rmSync(a, { recursive: true, force: true });
 						const pruned = await postJson(`${s2.url}api/workspaces`, {
 							action: "prune",
 						});
 						expect(pruned.json["removed"]).toBe(1);
-						expect(taggedHosts(priv).sort()).toEqual(["b.lan", "shared.lan"]);
+						expect(taggedHosts(pb).sort()).toEqual(["b.lan", "shared.lan"]);
 					} finally {
 						await s2.stop();
 					}
@@ -698,7 +711,7 @@ describe("T101b server wiring (D44)", () => {
 		},
 	);
 
-	t101b("router.toml edits re-seed the union", async () => {
+	t101b("router.toml edits re-seed this workspace's hosts", async () => {
 		const real = mktmp("t101b-edit-real-");
 		seedFakeAuth(real);
 		const saved = process.env["XDG_CONFIG_HOME"];
@@ -709,7 +722,7 @@ describe("T101b server wiring (D44)", () => {
 			await withT50Env(log, async () => {
 				const srv = await startT50Srv(bin, { workspace: ws });
 				try {
-					const priv = privateConfigHome(srv.dataHome);
+					const priv = privateConfigHome(srv.dataHome, ws);
 					expect(taggedHosts(priv)).toEqual(["old.lan"]);
 					const saved = await postJson(`${srv.url}api/file`, {
 						path: "router.toml",
@@ -778,7 +791,7 @@ describe("trilogy config reachable from agent tools (D44)", () => {
 		const real = mktmp("t101b-realcfg-");
 		nodeFs.mkdirSync(path.join(real, "muse"));
 		nodeFs.writeFileSync(path.join(real, "muse", "auth.json"), "{}");
-		const priv = path.join(mktmp("t101b-privcfg-"), "muse-config");
+		const priv = path.join(mktmp("t101b-privcfg-"), "priv");
 		return { real, priv };
 	}
 

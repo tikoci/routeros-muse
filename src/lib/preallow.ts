@@ -1,11 +1,20 @@
-// Approval-policy pre-seeding (T101, D43/D44): our designed read
-// set as `shell_command_argv_prefix` allow rules in OUR OWN muse
-// approval-policy.json (schema v2, inside the private config home),
-// scoped to the workspace's absolute root, plus network allow rules
-// for the union of router.toml device hosts over every registered
-// workspace (network rules are global, so ownership is the union —
-// derived from registry.toml + router.toml files, never separate
-// state).
+// Approval-policy pre-seeding (T101, D43/D44/D45): our designed
+// read set as `shell_command_argv_prefix` allow rules in OUR OWN
+// muse approval-policy.json (schema v2, inside this workspace's
+// private config home), scoped to the workspace's absolute root,
+// plus network allow rules for THIS workspace's router.toml device
+// hosts only.
+//
+// Each workspace gets its own private home (D45):
+// <dataHome>/routeros-muse/.muse-config/<workspace-id>/, holding
+// its own approval-policy.json, settings.json, auth.json link and
+// tikoci link. The leading dot marks the dir as managed, not for
+// user editing (it is not a security measure). A moved workspace
+// gets a new home — accepted by design; seeding recreates its
+// rules from scratch. No-workspace mode gets the fixed
+// .muse-config/_no-workspace/ home. The round-2/3 flat
+// muse-config/muse/ layout is an orphan from development builds
+// (it never shipped): left alone, never migrated or deleted.
 //
 // The shared ~/.config/muse is never written: auth reaches our
 // workers through a symlink to the real auth.json, re-ensured on
@@ -17,12 +26,14 @@
 //
 // Write safety mirrors src/lib/settings.ts (T50): lstat the chain
 // and refuse symlinks; an exclusively created sibling temp,
-// written fully, then rename. Concurrent writers exist (our own
-// live muse sessions persisting "Always allow", plus our own
-// server processes), so the flow is: take the cross-process lock
-// (round 3, released in a finally), then read, merge, write-temp,
-// re-read, rename-or-retry (initial attempt plus up to 3 retries),
-// then an honest give-up that leaves the file alone.
+// written fully, then rename. Per-workspace homes removed the
+// cross-process seed lock (round 3, deleted in round 4 after a
+// re-review confirmed four defects in it): the only concurrent
+// writers left are our own live muse sessions persisting
+// "Always allow" into the same file, so the flow is the
+// in-process mutex plus read, merge, write-temp, re-read,
+// rename-or-retry (initial attempt plus up to 3 retries), then an
+// honest give-up that leaves the file alone.
 import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
@@ -58,10 +69,14 @@ export const READ_COMMANDS: string[][] = [
 	["quickchr", "doctor"],
 ];
 
-/** Explicit opt beats XDG_CONFIG_HOME beats ~/.config. */
+/**
+ * Explicit opt beats XDG_CONFIG_HOME beats ~/.config. An empty
+ * XDG_CONFIG_HOME falls back like an unset one (the muse launcher
+ * tests -n, so we match it).
+ */
 export function configHomeDir(explicit?: string): string {
 	if (explicit !== undefined) return explicit;
-	return process.env["XDG_CONFIG_HOME"] ?? path.join(os.homedir(), ".config");
+	return process.env["XDG_CONFIG_HOME"] || path.join(os.homedir(), ".config");
 }
 
 /** The muse approval-policy file under a config home. Pure. */
@@ -70,12 +85,82 @@ export function policyFile(configHome?: string): string {
 }
 
 /**
- * Our private muse config home (D44): the XDG_CONFIG_HOME our
- * workers spawn with. Pure. Derives from the data-home plumbing
- * (ServeOpts.dataHome) so tests isolate hermetically.
+ * The real muse auth file both the agent check and the
+ * private-home linker resolve: `$XDG_CONFIG_HOME/muse/auth.json`,
+ * else `~/.config/muse/auth.json` (the muse launcher's own order,
+ * verified in its script; the binary reads auth only from there).
+ * win32 keeps %APPDATA% — UNVERIFIED, no Windows probe; kept from
+ * the pre-D45 agent check rather than re-derived.
  */
-export function privateConfigHome(dataHome?: string): string {
-	return path.join(dataHomeDir(dataHome), "routeros-muse", "muse-config");
+export function museAuthFile(explicitConfigHome?: string): string {
+	if (process.platform === "win32") {
+		const base =
+			process.env["APPDATA"] ?? path.join(os.homedir(), "AppData", "Roaming");
+		return path.join(base, "muse", "auth.json");
+	}
+	return path.join(configHomeDir(explicitConfigHome), "muse", "auth.json");
+}
+
+/**
+ * Managed dir holding every per-workspace private home (D45). The
+ * leading dot marks it as managed, not for user editing — it is
+ * not a security measure.
+ */
+export const MUSE_CONFIG_DIR = ".muse-config";
+
+/** Fixed home id for no-workspace mode (D23). */
+export const NO_WORKSPACE_ID = "_no-workspace";
+
+/**
+ * Root holding every per-workspace private home:
+ * <dataHome>/routeros-muse/.muse-config. Pure.
+ */
+export function privateConfigRoot(dataHome?: string): string {
+	return path.join(dataHomeDir(dataHome), "routeros-muse", MUSE_CONFIG_DIR);
+}
+
+/**
+ * Stable, filesystem-safe id for a workspace root (D45):
+ * <sanitized-basename>-<hash12>, where the hash covers the
+ * canonical absolute root (realpath; path.resolve when the root
+ * cannot be resolved). Readable first, unique always. A moved
+ * workspace gets a new home — accepted by design; seeding
+ * recreates its rules. Pure.
+ */
+export function workspaceConfigId(workspaceRoot: string): string {
+	let canonical: string;
+	try {
+		canonical = nodeFs.realpathSync(workspaceRoot);
+	} catch {
+		canonical = path.resolve(workspaceRoot);
+	}
+	const base =
+		path.basename(canonical).replace(/[^A-Za-z0-9._-]+/g, "-") || "ws";
+	const hash = nodeCrypto
+		.createHash("sha256")
+		.update(canonical)
+		.digest("hex")
+		.slice(0, 12);
+	return `${base}-${hash}`;
+}
+
+/**
+ * This workspace's private muse config home (D45): the
+ * XDG_CONFIG_HOME our workers spawn with. Pure. Derives from the
+ * data-home plumbing (ServeOpts.dataHome) so tests isolate
+ * hermetically. An undefined root is no-workspace mode and gets
+ * the fixed _no-workspace home.
+ */
+export function privateConfigHome(
+	dataHome?: string,
+	workspaceRoot?: string,
+): string {
+	return path.join(
+		privateConfigRoot(dataHome),
+		workspaceRoot === undefined
+			? NO_WORKSPACE_ID
+			: workspaceConfigId(workspaceRoot),
+	);
 }
 
 /**
@@ -129,43 +214,20 @@ export type EnsureArgs = {
 	configHome?: string;
 	/**
 	 * The served workspace, or undefined in no-workspace mode (then
-	 * only the network union is seeded and dead-root shell pruning
-	 * still applies).
+	 * no shell rules are seeded and dead-root shell pruning still
+	 * applies).
 	 */
 	workspaceRoot?: string;
 	/**
-	 * The network-rule union (normalized): every registered
-	 * workspace's router.toml hosts when enabled, [] when disabled.
-	 * Tagged network rules outside this set are pruned.
+	 * This workspace's router.toml hosts (normalized): seeded when
+	 * enabled, [] when disabled. Tagged network rules outside this
+	 * set are pruned. There is no cross-workspace union (D45):
+	 * each workspace seeds only its own hosts into its own home.
 	 */
 	hosts?: string[];
 	/** False removes our tagged rules for this workspace instead. */
 	enabled: boolean;
-	/** Lock-acquire bound in ms (default SEED_LOCK_TIMEOUT_MS). */
-	lockTimeoutMs?: number;
-	/** Lock-stale age in ms (default SEED_LOCK_STALE_MS). */
-	lockStaleMs?: number;
 };
-
-/**
- * Cross-process seed lock (round 3): the in-process mutex cannot
- * serialize two server processes, and the reread guard alone still
- * loses one side's rules when both rereads land before either
- * rename. So the whole read-merge-write loop runs under a lock
- * file next to the policy (approval-policy.json.lock): O_EXCL
- * create holding {pid, started}, bounded backoff while a live
- * process holds it, stale locks (dead pid or older than
- * SEED_LOCK_STALE_MS) broken, always released in a finally.
- */
-export const SEED_LOCK_TIMEOUT_MS = 10_000;
-export const SEED_LOCK_STALE_MS = 30_000;
-
-/** Lock payload: the holding pid + the acquire timestamp. */
-type SeedLock = { pid: number; started: number };
-
-function lockFileFor(policyPath: string): string {
-	return `${policyPath}.lock`;
-}
 
 function pidAlive(pid: number): boolean {
 	try {
@@ -176,110 +238,63 @@ function pidAlive(pid: number): boolean {
 	}
 }
 
-type LockState =
-	| { status: "missing" }
-	| { status: "live" }
-	| { status: "stale"; raw: string };
-
 /**
- * Classify the lock file: missing (released under us), live (a
- * running pid holds it and it is fresh), or stale (dead pid, or
- * older than staleMs). An unparseable lock leans live — only its
- * mtime age can break it — so a reader racing the holder's write
- * can never delete a live lock.
+ * Same-workspace detection (D45): a pid file in the workspace's
+ * private home. WARN ONLY — correctness never depends on it: no
+ * blocking, a stale pid file is silently ignored, and a symlink
+ * is never followed (neither read nor replaced). Total: any fs
+ * error means no warning. Our own pid is recorded (best effort)
+ * so the next server sees us.
  */
-function readLockState(lockFile: string, staleMs: number): LockState {
-	let raw: string;
+export function checkServerPid(privateHome: string): {
+	warning: string | null;
+} {
+	const pidFile = path.join(privateHome, "server.pid");
+	let warning: string | null = null;
+	let homeLinked = false;
 	try {
-		raw = nodeFs.readFileSync(lockFile, "utf8");
+		homeLinked = nodeFs.lstatSync(privateHome).isSymbolicLink();
 	} catch {
-		return { status: "missing" };
+		// Absent: nothing to follow; creation follows below.
 	}
-	let pid = -1;
-	let started = Number.NaN;
 	try {
-		const parsed = JSON.parse(raw) as Partial<SeedLock>;
-		if (Number.isInteger(parsed.pid) && (parsed.pid as number) > 0) {
-			pid = parsed.pid as number;
+		if (!homeLinked) {
+			const st = nodeFs.lstatSync(pidFile);
+			if (!st.isSymbolicLink() && st.isFile()) {
+				const pid = Number(nodeFs.readFileSync(pidFile, "utf8").trim());
+				if (
+					Number.isInteger(pid) &&
+					pid > 0 &&
+					pid !== process.pid &&
+					pidAlive(pid)
+				) {
+					warning =
+						`another server (pid ${pid}) may already be serving this ` +
+						`workspace; both share the private home ${privateHome}`;
+				}
+			}
 		}
-		if (typeof parsed.started === "number") started = parsed.started;
 	} catch {
-		// Unparseable: fall through to the mtime age rule below.
+		// Missing, unreadable, or unparseable: no warning.
 	}
-	if (!Number.isFinite(started)) {
+	// Our own pid is recorded even when warning (so the other
+	// side warns back on its next check), but never through a
+	// symlink — a linked pid file is left entirely alone.
+	let linked = false;
+	try {
+		linked = nodeFs.lstatSync(pidFile).isSymbolicLink();
+	} catch {
+		// Absent: fall through and create it.
+	}
+	if (!linked && !homeLinked) {
 		try {
-			started = nodeFs.statSync(lockFile).mtimeMs;
+			nodeFs.mkdirSync(privateHome, { recursive: true });
+			nodeFs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o644 });
 		} catch {
-			return { status: "missing" };
+			// Warn-only state: never fail the caller.
 		}
 	}
-	const dead = pid > 0 ? !pidAlive(pid) : false;
-	if (dead || Date.now() - started > staleMs) {
-		return { status: "stale", raw };
-	}
-	return { status: "live" };
-}
-
-/**
- * Acquire the seed lock, or null after timeoutMs of bounded
- * exponential backoff (the caller warns and leaves the file
- * alone). Stale locks are broken, but only when the bytes are
- * unchanged since the read — never delete a lock a live process
- * just created. The returned thunk releases only what we still
- * hold; callers run it in a finally.
- */
-function acquireSeedLock(
-	policyPath: string,
-	timeoutMs: number,
-	staleMs: number,
-): (() => void) | null {
-	const lockFile = lockFileFor(policyPath);
-	const content = JSON.stringify({ pid: process.pid, started: Date.now() });
-	const deadline = Date.now() + timeoutMs;
-	let attempt = 0;
-	for (;;) {
-		try {
-			const fd = nodeFs.openSync(lockFile, "wx", 0o600);
-			try {
-				const buf = Buffer.from(content, "utf8");
-				let off = 0;
-				while (off < buf.length) {
-					const n = nodeFs.writeSync(fd, buf, off, buf.length - off, null);
-					if (n <= 0) throw new Error(`short write on ${lockFile}`);
-					off += n;
-				}
-				nodeFs.fsyncSync(fd);
-			} finally {
-				nodeFs.closeSync(fd);
-			}
-			return () => {
-				try {
-					if (nodeFs.readFileSync(lockFile, "utf8") === content) {
-						nodeFs.unlinkSync(lockFile);
-					}
-				} catch {
-					// Gone or unreadable: nothing to release.
-				}
-			};
-		} catch (err) {
-			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-		}
-		if (Date.now() >= deadline) return null;
-		const state = readLockState(lockFile, staleMs);
-		if (state.status === "stale") {
-			try {
-				if (nodeFs.readFileSync(lockFile, "utf8") === state.raw) {
-					nodeFs.unlinkSync(lockFile);
-				}
-			} catch {
-				// Lost the race or already gone: re-loop and retry.
-			}
-			continue;
-		}
-		if (state.status === "missing") continue; // Released under us: retry at once.
-		attempt++;
-		Bun.sleepSync(Math.min(200, 10 * 2 ** Math.min(attempt, 5)));
-	}
+	return { warning };
 }
 
 export type EnsureResult = {
@@ -450,16 +465,15 @@ export function normalizeHosts(hosts: string[]): string[] {
 }
 
 /**
- * Network-rule ownership (D44): the union of router.toml device
- * hosts over workspace roots. readDevices is total (missing or
- * unparseable router.toml contributes nothing), so dead or
- * half-written roots simply drop out of the union.
+ * Network-rule ownership (D45): this workspace's router.toml
+ * device hosts. readDevices is total (a missing or unparseable
+ * router.toml contributes nothing), so a dead or half-written
+ * root simply seeds no hosts. Each workspace seeds only its own
+ * hosts into its own home — there is no cross-workspace union.
  */
-export function unionWorkspaceHosts(roots: string[]): string[] {
+export function workspaceHosts(workspaceRoot: string): string[] {
 	const hosts: string[] = [];
-	for (const root of roots) {
-		for (const d of readDevices(root)) hosts.push(d.host ?? "");
-	}
+	for (const d of readDevices(workspaceRoot)) hosts.push(d.host ?? "");
 	return normalizeHosts(hosts);
 }
 
@@ -511,13 +525,17 @@ export function ensurePrivateHome(args: PrivateHomeArgs): PrivateHomeResult {
 		const museDir = path.join(args.privateHome, "muse");
 		const settings = path.join(museDir, "settings.json");
 		const policy = path.join(museDir, "approval-policy.json");
-		// Round 3: the whole chain from <dataHome>/routeros-muse
-		// down — routeros-muse, muse-config, muse, settings.json,
+		// The whole chain from <dataHome>/routeros-muse down —
+		// routeros-muse, .muse-config, <workspace-id> (the
+		// private home itself), muse, settings.json,
 		// approval-policy.json. (auth.json and the tikoci link are
 		// SUPPOSED to be symlinks, so they are never checked.)
+		// Parents above routeros-muse are never checked — a
+		// symlinked ~/.local is legit.
 		const chain: string[] = [args.privateHome, museDir, settings, policy];
 		if (args.dataHome !== undefined) {
-			chain.unshift(path.join(dataHomeDir(args.dataHome), "routeros-muse"));
+			const appDir = path.join(dataHomeDir(args.dataHome), "routeros-muse");
+			chain.unshift(appDir, path.join(appDir, MUSE_CONFIG_DIR));
 		}
 		for (const p of chain) {
 			try {
@@ -595,11 +613,9 @@ export function ensurePrivateHome(args: PrivateHomeArgs): PrivateHomeResult {
 			changed = true;
 		}
 		// auth.json: a symlink to the real one, re-ensured.
-		const realAuth = path.join(
-			configHomeDir(args.realConfigHome),
-			"muse",
-			"auth.json",
-		);
+		// Resolved through the shared helper so the agent check
+		// and the linker never disagree on the store.
+		const realAuth = museAuthFile(args.realConfigHome);
 		const privAuth = path.join(museDir, "auth.json");
 		if (path.resolve(realAuth) === path.resolve(privAuth)) {
 			return { changed, warnings };
@@ -668,19 +684,18 @@ function rulesEqual(a: unknown[], b: unknown[]): boolean {
  * tagged shell rules for roots that no longer exist are pruned,
  * our tagged rules for other live roots are kept, every foreign
  * entry is preserved in place, and the tagged network rules hold
- * exactly the host union (a host no live preallowed workspace
+ * exactly this workspace's hosts (a host this workspace no longer
  * needs is pruned). Disabled: our tagged rules for this root are
- * removed, plus every tagged network rule (the union is empty);
- * dead-root pruning still applies. With no workspace root
- * (no-workspace mode) only the network union is seeded.
+ * removed, plus every tagged network rule; dead-root pruning
+ * still applies. With no workspace root (no-workspace mode) no
+ * shell rules are seeded.
  *
  * No rewrite when nothing changed (order-insensitive compare
  * before writing). An unknown schema_version or unparseable file
  * skips with a warning and leaves the bytes alone — never rewrite
  * what we don't understand. A symlink in the chain throws
  * PolicySymlinkError. A file that changes under every attempt
- * gives up with a warning after MAX_ATTEMPTS, as does a lock held
- * past the acquire bound by another process.
+ * gives up with a warning after MAX_ATTEMPTS.
  */
 export function ensurePreallowReads(
 	args: EnsureArgs,
@@ -718,27 +733,10 @@ function ensurePreallowReadsLocked(
 		seededHosts: args.enabled ? [...hosts] : [],
 		warnings: [],
 	};
-	const release = acquireSeedLock(
-		file,
-		args.lockTimeoutMs ?? SEED_LOCK_TIMEOUT_MS,
-		args.lockStaleMs ?? SEED_LOCK_STALE_MS,
-	);
-	if (release === null) {
-		return {
-			...base,
-			warnings: [
-				`not seeding ${file}: another process holds the policy lock (leaving it alone)`,
-			],
-		};
-	}
-	try {
-		return ensurePreallowReadsUnderLock(args, fs, file, desired, base);
-	} finally {
-		release();
-	}
+	return ensurePreallowReadsWrite(args, fs, file, desired, base);
 }
 
-function ensurePreallowReadsUnderLock(
+function ensurePreallowReadsWrite(
 	args: EnsureArgs,
 	fs: PreallowFs | undefined,
 	file: string,
@@ -809,12 +807,12 @@ function ensurePreallowReadsUnderLock(
 			}
 			const host = networkHost(entry);
 			if (host !== null) {
-				// Union ownership (D44): tagged network rules are
-				// never kept — desired re-adds exactly the union
-				// (empty when disabled), so anything outside it
-				// belongs to no live preallowed workspace and is
-				// pruned. Untagged network rules never reach this
-				// branch: they are foreign and kept above.
+				// Per-workspace ownership (D45): tagged network
+				// rules are never kept — desired re-adds exactly
+				// this workspace's hosts (empty when disabled),
+				// so anything outside it is pruned. Untagged
+				// network rules never reach this branch: they are
+				// foreign and kept above.
 				continue;
 			}
 			// Tagged but neither a shell nor a network rule (a newer
