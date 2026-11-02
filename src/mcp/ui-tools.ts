@@ -16,7 +16,12 @@
 import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import { isArtifactPath, safeJoin } from "../lib/workspace";
+import {
+	ARTIFACT_MAX_BYTES,
+	isArtifactPath,
+	MAX_FILE_BYTES,
+	safeJoin,
+} from "../lib/workspace";
 import type { McpServerConfig } from "../msp/client";
 
 /** MCP server name (muse accepts underscores un-normalized; B2 normalized hyphens). */
@@ -136,9 +141,27 @@ export function resolveUiOpen(root: string, rel: string): UiOpenResult {
 			return { ok: false, why: `refused: ${rel} passes through a symlink` };
 		return { ok: false, why: "no such file" };
 	}
+	// The UI reads through one viewer per kind: doc panes fetch
+	// /api/file (512 KiB cap) and artifacts fetch /api/artifact
+	// (8 MiB cap); TOML panes fetch /api/toml, whose read path has
+	// no cap of its own — preflight applies the same 512 KiB order
+	// there. Over-limit reports the limit instead of an `opened`
+	// the viewer then refuses.
+	const kind: UiOpenKind = rel.endsWith(".toml")
+		? "toml"
+		: isArtifactPath(rel)
+			? "artifact"
+			: "doc";
+	const limit = kind === "artifact" ? ARTIFACT_MAX_BYTES : MAX_FILE_BYTES;
+	const limitName = kind === "artifact" ? "8 MiB" : "512 KiB";
 	try {
 		const st = nodeFs.fstatSync(fd);
 		if (!st.isFile()) return { ok: false, why: "not a file" };
+		if (st.size > limit)
+			return {
+				ok: false,
+				why: `too large for the ${kind} viewer (${limitName} limit)`,
+			};
 	} catch {
 		return { ok: false, why: "not a file" };
 	} finally {
@@ -148,7 +171,5 @@ export function resolveUiOpen(root: string, rel: string): UiOpenResult {
 			// Proven already; a close failure is not a gate failure.
 		}
 	}
-	if (rel.endsWith(".toml")) return { ok: true, kind: "toml" };
-	if (isArtifactPath(rel)) return { ok: true, kind: "artifact" };
-	return { ok: true, kind: "doc" };
+	return { ok: true, kind };
 }

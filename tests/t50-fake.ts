@@ -811,7 +811,12 @@ export type T50SrvOpts = {
 export async function startT50Srv(
 	bin: string,
 	extra?: T50SrvOpts,
-): Promise<{ url: string; dataHome: string; stop: () => Promise<void> }> {
+): Promise<{
+	url: string;
+	relayUrl: string;
+	dataHome: string;
+	stop: () => Promise<void>;
+}> {
 	const dataHome = extra?.dataHome ?? mktmp("t50-dh-");
 	const srv = await startServer({
 		dataHome,
@@ -830,6 +835,7 @@ export async function startT50Srv(
 	});
 	return {
 		url: srv.url,
+		relayUrl: srv.relayUrl,
 		dataHome,
 		stop: () => srv.stop(),
 	};

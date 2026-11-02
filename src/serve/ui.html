@@ -887,7 +887,7 @@
     }
     document.querySelectorAll(".ctab[data-pane]").forEach((x) => x.classList.remove("active"));
     document.querySelectorAll(".cpane").forEach((x) => x.classList.remove("active"));
-    const tab = document.querySelector('.ctab[data-pane="' + id + '"]');
+    const tab = document.querySelector('.ctab[data-pane="' + CSS.escape(id) + '"]');
     if (tab) tab.classList.add("active");
     document.getElementById(id).classList.add("active");
     if (id === "pane-chat") {
@@ -1234,8 +1234,8 @@
     if (id === "pane-artifact") bindArtTab(slot);
   }
   function topWorkspace(file) {
-    const row = document.querySelector('#wslist [data-path="' + file + '"]')
-      || document.querySelector('#wslist [data-file="' + file + '"]');
+    const row = document.querySelector('#wslist [data-path="' + CSS.escape(file) + '"]')
+      || document.querySelector('#wslist [data-file="' + CSS.escape(file) + '"]');
     if (row) row.parentNode.prepend(row);
   }
   function addTarget(id) {
@@ -1364,7 +1364,7 @@
       e.preventDefault();
       rightpanel.style.display = "";
       crail.classList.remove("show");
-      document.querySelector('.rbar button[data-rview="' + b.dataset.rgoto + '"]').click();
+      document.querySelector('.rbar button[data-rview="' + CSS.escape(b.dataset.rgoto) + '"]').click();
     }));
   // targeting pills + card × are handled in the delegated click above.
   // theme segmented control
@@ -1393,7 +1393,7 @@
     b.addEventListener("click", () => {
       rightpanel.style.display = "";
       crail.classList.remove("show");
-      document.querySelector('.rbar button[data-rview="' + b.dataset.crview + '"]').click();
+      document.querySelector('.rbar button[data-rview="' + CSS.escape(b.dataset.crview) + '"]').click();
     }));
   const picker = document.getElementById("picker");
   function openPicker() { picker.classList.add("open"); }
@@ -3059,7 +3059,9 @@
       const tw = j.trustWorkspace;
       $("set-trust").textContent = tw == null ? "no workspace" : (tw ? "on" : "off");
       $("set-trust-note").style.display = tw === false ? "" : "none";
-      // T101: pre-seed report. Null means no workspace to seed.
+      // T101: pre-seed report. No-workspace mode reports the
+      // seeded ui tools with empty commands/hosts (T106), so the
+      // toggle stays usable there.
       paintPreallow(j.preallow);
       if (NO_WS) {
         // No-workspace mode is picker-first: reveal the Workspaces tab

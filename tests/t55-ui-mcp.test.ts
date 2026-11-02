@@ -613,19 +613,19 @@ describe("relay route", () => {
 		await withT50Env(bin.log, async () => {
 			const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
 			try {
-				const wrong = await relayCall(srv.url, {
+				const wrong = await relayCall(srv.relayUrl, {
 					token: "nope",
 					tool: "ui_notify",
 					arguments: { text: "x" },
 				});
 				expect(wrong.status).toBe(401);
 				expect(String(wrong.json["why"])).toMatch(/token/);
-				const missing = await relayCall(srv.url, {
+				const missing = await relayCall(srv.relayUrl, {
 					tool: "ui_notify",
 					arguments: { text: "x" },
 				});
 				expect(missing.status).toBe(401);
-				const empty = await relayCall(srv.url, {
+				const empty = await relayCall(srv.relayUrl, {
 					token: "",
 					tool: "ui_notify",
 					arguments: { text: "x" },
@@ -662,13 +662,13 @@ describe("relay route", () => {
 			await withT50Env(bin.log, async () => {
 				const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
 				try {
-					const big = await relayCall(srv.url, {
+					const big = await relayCall(srv.relayUrl, {
 						token: TOKEN,
 						tool: "ui_notify",
 						arguments: { text: "x".repeat(70 * 1024) },
 					});
 					expect(big.status).toBe(413);
-					const notJson = await fetch(`${srv.url}api/mcp/relay`, {
+					const notJson = await fetch(`${srv.relayUrl}api/mcp/relay`, {
 						method: "POST",
 						headers: { "content-type": "application/json" },
 						body: "{not json",
@@ -686,7 +686,7 @@ describe("relay route", () => {
 		await withT50Env(bin.log, async () => {
 			const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
 			try {
-				const res = await relayCall(srv.url, {
+				const res = await relayCall(srv.relayUrl, {
 					token: TOKEN,
 					tool: "ui_nope",
 					arguments: {},
@@ -709,7 +709,7 @@ describe("relay route", () => {
 					srv.url,
 					['"method":"ui/notify"'],
 					async () => {
-						const res = await relayCall(srv.url, {
+						const res = await relayCall(srv.relayUrl, {
 							token: TOKEN,
 							tool: "ui_notify",
 							arguments: { text: "relay hello", level: "warn" },
@@ -746,7 +746,7 @@ describe("relay route", () => {
 					srv.url,
 					['"method":"ui/notify"'],
 					async () => {
-						const res = await relayCall(srv.url, {
+						const res = await relayCall(srv.relayUrl, {
 							token: TOKEN,
 							tool: "ui_notify",
 							arguments: { text: "plain" },
@@ -755,21 +755,21 @@ describe("relay route", () => {
 					},
 				);
 				expect(buf).toContain('"level":"info"');
-				const noText = await relayCall(srv.url, {
+				const noText = await relayCall(srv.relayUrl, {
 					token: TOKEN,
 					tool: "ui_notify",
 					arguments: {},
 				});
 				expect(noText.json["ok"]).toBe(false);
 				expect(String(noText.json["why"])).toMatch(/need \{text\}/);
-				const badLevel = await relayCall(srv.url, {
+				const badLevel = await relayCall(srv.relayUrl, {
 					token: TOKEN,
 					tool: "ui_notify",
 					arguments: { text: "x", level: "loud" },
 				});
 				expect(badLevel.json["ok"]).toBe(false);
 				expect(String(badLevel.json["why"])).toMatch(/info\|warn\|alert/);
-				const long = await relayCall(srv.url, {
+				const long = await relayCall(srv.relayUrl, {
 					token: TOKEN,
 					tool: "ui_notify",
 					arguments: { text: "y".repeat(NOTIFY_TEXT_MAX + 100) },
@@ -794,7 +794,7 @@ describe("relay route", () => {
 					srv.url,
 					['"method":"ui/open"'],
 					async () => {
-						const res = await relayCall(srv.url, {
+						const res = await relayCall(srv.relayUrl, {
 							token: TOKEN,
 							tool: "ui_open",
 							arguments: { path: "notes/hello.md" },
@@ -828,7 +828,7 @@ describe("relay route", () => {
 					["notes/nope.md", /no such file/],
 					["notes", /not a file/],
 				] as [string, RegExp][]) {
-					const res = await relayCall(srv.url, {
+					const res = await relayCall(srv.relayUrl, {
 						token: TOKEN,
 						tool: "ui_open",
 						arguments: { path: rel },
@@ -863,7 +863,7 @@ describe("relay route", () => {
 					srv.url,
 					['"method":"ui/select-device"'],
 					async () => {
-						const res = await relayCall(srv.url, {
+						const res = await relayCall(srv.relayUrl, {
 							token: TOKEN,
 							tool: "ui_select_device",
 							arguments: { id: "t55-gw" },
@@ -873,7 +873,7 @@ describe("relay route", () => {
 					},
 				);
 				expect(buf).toContain('"id":"t55-gw"');
-				const unknown = await relayCall(srv.url, {
+				const unknown = await relayCall(srv.relayUrl, {
 					token: TOKEN,
 					tool: "ui_select_device",
 					arguments: { id: "nope" },
@@ -905,7 +905,7 @@ describe("relay route", () => {
 						srv.url,
 						['"method":"ui/notify"'],
 						async () => {
-							const ok = await relayCall(srv.url, {
+							const ok = await relayCall(srv.relayUrl, {
 								token: TOKEN,
 								tool: "ui_notify",
 								arguments: { text: "nows" },
@@ -915,7 +915,7 @@ describe("relay route", () => {
 					);
 					expect(buf).toContain('"text":"nows"');
 					for (const tool of ["ui_open", "ui_select_device"]) {
-						const res = await relayCall(srv.url, {
+						const res = await relayCall(srv.relayUrl, {
 							token: TOKEN,
 							tool,
 							arguments: tool === "ui_open" ? { path: "x.md" } : { id: "x" },
@@ -1069,7 +1069,7 @@ describe("bridge MCP surface", () => {
 			await withT50Env(bin.log, async () => {
 				const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
 				try {
-					await withBridge(bridgeEnv(srv.url), async (b) => {
+					await withBridge(bridgeEnv(srv.relayUrl), async (b) => {
 						const init = await initBridge(b);
 						expect(typeof init["protocolVersion"]).toBe("string");
 						expect(init["capabilities"]).toEqual({ tools: {} });
@@ -1127,7 +1127,7 @@ describe("bridge MCP surface", () => {
 					workspace: bridgeWs(),
 				});
 				try {
-					await withBridge(bridgeEnv(srv.url), async (b) => {
+					await withBridge(bridgeEnv(srv.relayUrl), async (b) => {
 						await initBridge(b);
 						const buf = await collectSse(
 							srv.url,
@@ -1218,7 +1218,7 @@ describe("bridge MCP surface", () => {
 		await withT50Env(bin.log, async () => {
 			const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
 			try {
-				const env = bridgeEnv(srv.url);
+				const env = bridgeEnv(srv.relayUrl);
 				env[RELAY_TOKEN_ENV] = "wrong";
 				await withBridge(env, async (b) => {
 					await initBridge(b);
@@ -1259,7 +1259,7 @@ describe("bridge MCP surface", () => {
 		await withT50Env(bin.log, async () => {
 			const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
 			try {
-				await withBridge(bridgeEnv(srv.url), async (b) => {
+				await withBridge(bridgeEnv(srv.relayUrl), async (b) => {
 					await initBridge(b);
 					const r = await b.call("resources/list", {});
 					expect(r["result"]).toBeUndefined();

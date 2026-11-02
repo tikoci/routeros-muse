@@ -1427,15 +1427,18 @@ try {
 			((await page.locator("#set-trust").textContent()) ?? "").trim() ===
 				"no workspace",
 		);
-		// T101: no workspace, nothing to seed — the block says so and
-		// the toggle idles disabled.
+		// T106: no-workspace mode reports the seeded ui tools
+		// (empty commands/hosts) and the toggle stays usable, so
+		// the seeded rules can be seen and revoked there too.
+		const nwsTools =
+			(await page.locator("#preallow-tools").textContent()) ?? "";
 		check(
-			"t101 preallow idles in no-workspace mode",
-			((await page.locator("#preallow-cmds").textContent()) ?? "").trim() ===
-				"no workspace" &&
-				((await page.locator("#preallow-cfg").textContent()) ?? "").trim() ===
-					"no workspace" &&
-				(await page.locator("#preallow-toggle").isDisabled()),
+			"t106 preallow shows the seeded ui tools in no-workspace mode",
+			[...UI_TOOL_NAMES].map(mcpToolName).every((n) => nwsTools.includes(n)) &&
+				((await page.locator("#preallow-cmds").textContent()) ?? "").trim() ===
+					"—" &&
+				!(await page.locator("#preallow-toggle").isDisabled()),
+			nwsTools.slice(0, 200),
 		);
 		// A full echo turn must restore the no-workspace copy, not the
 		// workspace one (setRunning placeholder reset is mode-aware).
@@ -3307,14 +3310,18 @@ try {
 	// agent-visible results ride the turn text. Screenshot 44.
 	const t55 = stubT50Bin();
 	await withT50Env(t55.log, async () => {
+		// T106 keeps the workspace path: the quoted-file leg below
+		// drops a file with a quote in its name into it.
+		const ws55 = makeWorkspace();
 		const srv55 = await startServer({
 			dataHome: mktmp("ui-smoke-t55-dh-"),
 			configHome: SMOKE_CONFIG_HOME,
 			allowOpenCdb: true,
-			workspace: makeWorkspace(),
+			workspace: ws55,
 			provider: "echo",
 			museHome: makeHome(),
 			toolBinDir: t55.bin,
+			mcpToken: "smoke-t55-token",
 		});
 		try {
 			await page.goto(srv55.url, { waitUntil: "load" });
@@ -3395,6 +3402,46 @@ try {
 			await page.screenshot({
 				path: path.join(OUT, "45-t55-ui-tools-chat.png"),
 			});
+			// T106: a quoted workspace name opens through the relay
+			// into a doc tab (openSlot + topWorkspace interpolate it
+			// into attribute selectors — unescaped, the lookup throws
+			// and the open never lands). Relay POST from the script
+			// side (bun fetch has no CORS); the open lands in the
+			// page over SSE like any agent-driven open.
+			nodeFs.writeFileSync(
+				path.join(ws55, "operations", 'quo"te.md'),
+				"# quoted\n",
+			);
+			const qRelay = await fetch(`${srv55.relayUrl}api/mcp/relay`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					token: "smoke-t55-token",
+					tool: "ui_open",
+					arguments: { path: 'operations/quo"te.md' },
+				}),
+			});
+			const qj = (await qRelay.json()) as Record<string, unknown>;
+			check(
+				"t106 quoted file opens through the relay",
+				qj["ok"] === true,
+				String(qj["why"] ?? ""),
+			);
+			await page.waitForFunction(
+				() =>
+					(document.getElementById("doc-title")?.textContent ?? "").includes(
+						'quo"te.md',
+					),
+				undefined,
+				{ timeout: 10_000 },
+			);
+			check("t106 quoted file lands in the doc tab", true);
+			const qBody = (await page.locator("#doc-body").textContent()) ?? "";
+			check(
+				"t106 quoted file shows its body",
+				qBody.includes("# quoted"),
+				qBody.slice(0, 80),
+			);
 			// Quiescence before the stop (same T39-flake guard as the
 			// T50 leg above).
 			await page.evaluate(async () => {

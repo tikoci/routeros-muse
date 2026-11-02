@@ -799,13 +799,18 @@ describe("T101b server wiring (D44)", () => {
 							.isSymbolicLink(),
 					).toBe(true);
 					// T55: the ui tool set seeds (its tools exist in
-					// no-workspace sessions too); the report stays null.
+					// no-workspace sessions too). T106: the report
+					// carries them (empty commands/hosts), not null.
 					expect(taggedTools(priv)).toEqual(
 						[...UI_TOOL_NAMES].map(mcpToolName).sort(),
 					);
 					expect(readPolicy(priv).rules).toHaveLength(UI_TOOL_NAMES.length);
 					const status = await getJson(`${srv.url}api/status`);
-					expect(status["preallow"]).toBeNull();
+					const pre = status["preallow"] as Record<string, unknown>;
+					expect(pre["enabled"]).toBe(true);
+					expect(pre["tools"]).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+					expect(pre["commands"]).toEqual([]);
+					expect(pre["hosts"]).toEqual([]);
 				} finally {
 					await srv.stop();
 				}

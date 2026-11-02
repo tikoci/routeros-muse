@@ -36,7 +36,8 @@ export type TreeEntry = {
 };
 
 const MAX_TREE_ENTRIES = 500;
-const MAX_FILE_BYTES = 512 * 1024;
+/** Editor/doc viewer cap (GET /api/file shape; T106 ui_open preflights it). */
+export const MAX_FILE_BYTES = 512 * 1024;
 
 export function kindOf(name: string, isDir: boolean): TreeEntry["kind"] {
 	if (isDir) return "dir";
@@ -425,6 +426,16 @@ export function readTomlSections(root: string, rel: string): FileResult {
 			body: { ok: false, why: "need a workspace .toml path" },
 		};
 	}
+	let st: nodeFs.Stats;
+	try {
+		st = nodeFs.statSync(full);
+	} catch {
+		return { status: 404, body: { ok: false, why: "no such file" } };
+	}
+	// T106: the TOML viewer reads through this path with no other
+	// cap; apply the same 512 KiB viewer limit ui_open preflights.
+	if (st.size > MAX_FILE_BYTES)
+		return { status: 400, body: { ok: false, why: "file too large" } };
 	let text: string;
 	try {
 		text = nodeFs.readFileSync(full, "utf8");

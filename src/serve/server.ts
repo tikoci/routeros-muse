@@ -228,6 +228,12 @@ export type ServerHandle = {
 	urls: string[];
 	port: number;
 	hostname: string;
+	/**
+	 * T106: the dedicated ui_* relay listener (own 127.0.0.1
+	 * ephemeral port). Tests speak the relay here; the UI
+	 * listener no longer serves the route.
+	 */
+	relayUrl: string;
 	stop: () => Promise<void>;
 };
 
@@ -673,9 +679,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// `muse serve` spawn (worker + auth probes) carries the same args.
 	const trustWorkspace = !noWs && opts.trustWorkspace !== false;
 	const mspExtraArgs = trustWorkspace ? ["--trust-workspace"] : [];
-	// T55/D41: the per-session MCP relay credentials. The token is
-	// minted fresh per server run (tests override it); the bridge
-	// reaches the relay over loopback even when the UI is LAN-bound.
+	// T55/D41 + T106: the per-session MCP relay credentials. The
+	// token is minted fresh per server run (tests override it);
+	// the bridge reaches the DEDICATED relay listener below (its
+	// own 127.0.0.1 ephemeral port) over loopback even when the UI
+	// itself is LAN-bound.
 	const mcpToken = opts.mcpToken ? opts.mcpToken : mintMcpToken();
 	const mcpBridge = fileURLToPath(
 		new URL("../mcp/ui-bridge.ts", import.meta.url),
@@ -684,7 +692,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		return uiMcpServers({
 			bridge: mcpBridge,
 			bun: process.execPath,
-			url: `http://127.0.0.1:${server.port}/`,
+			url: `http://127.0.0.1:${relay.port}/`,
 			token: mcpToken,
 		});
 	}
@@ -766,7 +774,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	 * we refused) and the reason lands in homeError + warnings +
 	 * the boot log. Each workspace seeds only its own
 	 * router.toml hosts (D45, no union). No-workspace mode
-	 * seeds nothing and keeps the report null.
+	 * seeds only the ui_* tool rules (same toggle) and reports
+	 * them: commands/hosts stay empty, so the toggle can be seen
+	 * and revoked there too (T106).
 	 */
 	function refreshPreallow(enabled: boolean): void {
 		const warnings: string[] = [...homeWarnings];
@@ -803,11 +813,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				if (warning !== null) warnings.push(warning);
 			}
 		}
-		if (noWs) {
-			preallow = null;
-			return;
-		}
-		const commands = READ_COMMANDS.map((p) => p.join(" "));
+		const commands = noWs ? [] : READ_COMMANDS.map((p) => p.join(" "));
 		preallow = {
 			enabled,
 			commands,
@@ -1190,6 +1196,123 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		metaAuth = "authed";
 	}
 
+	// T106: the ui_* tools relay handler. The bridge POSTs
+	// {token, tool, arguments}; the token is the only credential
+	// (401 otherwise, never a tool result). Tool-level refusals
+	// stay 200 ok:false so the bridge returns them as isError
+	// results the agent can report back. Every accepted call fans
+	// out as a ui/* SSE event the UI renders.
+	async function relayResponse(
+		req: Request,
+		peer: string | undefined,
+	): Promise<Response> {
+		// Loopback peers only (defense in depth: the listener
+		// itself binds 127.0.0.1, so only loopback can dial it —
+		// the bind is the boundary, this check is not load-bearing).
+		if (!isLoopbackPeer(peer)) {
+			return json({ ok: false, why: "relay is loopback-only" }, 403);
+		}
+		// Bounded before parsing (and before the token
+		// check): a tool call is a few hundred bytes.
+		const raw = await readBodyCapped(req, RELAY_MAX_BYTES);
+		if (raw === null) {
+			return json({ ok: false, why: "relay body too large" }, 413);
+		}
+		let body: { token?: unknown; tool?: unknown; arguments?: unknown };
+		try {
+			body = JSON.parse(raw) as typeof body;
+		} catch {
+			return json({ ok: false, why: "relay body is not JSON" }, 400);
+		}
+		if (body === null || typeof body !== "object") {
+			return json({ ok: false, why: "relay body is not an object" }, 400);
+		}
+		if (typeof body.token !== "string" || !tokensEqual(body.token, mcpToken)) {
+			return json({ ok: false, why: "bad or missing relay token" }, 401);
+		}
+		const tool = stripMcpPrefix(typeof body.tool === "string" ? body.tool : "");
+		const args = (
+			body.arguments && typeof body.arguments === "object" ? body.arguments : {}
+		) as Record<string, unknown>;
+		if (tool === "ui_notify") {
+			const text = args["text"];
+			const level = args["level"];
+			if (typeof text !== "string" || !text) {
+				return json({ ok: false, why: "need {text}" });
+			}
+			if (
+				level !== undefined &&
+				level !== "info" &&
+				level !== "warn" &&
+				level !== "alert"
+			) {
+				return json({
+					ok: false,
+					why: `unknown level: ${String(level).slice(0, 40)} (want info|warn|alert)`,
+				});
+			}
+			const shown = level === "warn" || level === "alert" ? level : "info";
+			emit({
+				method: "ui/notify",
+				params: { text: text.slice(0, NOTIFY_TEXT_MAX), level: shown },
+			});
+			let cut = "";
+			if (text.length > NOTIFY_TEXT_MAX) {
+				cut = `… (truncated to ${NOTIFY_TEXT_MAX} chars)`;
+			} else if (text.length > 120) {
+				cut = "…";
+			}
+			return json({
+				ok: true,
+				result: `notified (${shown}): ${text.slice(0, 120)}${cut}`,
+			});
+		}
+		if (tool === "ui_open") {
+			if (noWs) return json({ ok: false, why: "no workspace attached" });
+			const rel = args["path"];
+			if (typeof rel !== "string" || !rel) {
+				return json({ ok: false, why: "need {path}" });
+			}
+			const checked = resolveUiOpen(root, rel);
+			if (!checked.ok) return json({ ok: false, why: checked.why });
+			emit({
+				method: "ui/open",
+				params: { path: rel, kind: checked.kind },
+			});
+			return json({ ok: true, result: `opened ${rel}` });
+		}
+		if (tool === "ui_select_device") {
+			if (noWs) return json({ ok: false, why: "no workspace attached" });
+			const id = args["id"];
+			if (typeof id !== "string" || !id) {
+				return json({ ok: false, why: "need {id}" });
+			}
+			const dev = readDevices(root).find((d) => d.id === id);
+			if (!dev) {
+				return json({
+					ok: false,
+					why: `unknown device id: ${id.slice(0, 120)}`,
+				});
+			}
+			emit({ method: "ui/select-device", params: { id } });
+			return json({ ok: true, result: `selected ${id}` });
+		}
+		return json({
+			ok: false,
+			why: `unknown ui tool: ${tool.slice(0, 120)}`,
+		});
+	}
+
+	// T106: the relay rides its OWN loopback listener (ephemeral
+	// port on 127.0.0.1), started and stopped with the main
+	// server. The UI listener no longer serves the route at all, so
+	// a --host 127.0.0.2 or LAN bind cannot break bridge calls and
+	// the relay is never exposed past loopback. This listener
+	// serves that one route only; everything else 404s here.
+	// Created after the main listener below (relayAfter) so a
+	// failed main bind cannot orphan it (codex re-review F1).
+	let relay: ReturnType<typeof Bun.serve>;
+
 	const host = opts.host ?? "127.0.0.1";
 	const server = Bun.serve({
 		hostname: host,
@@ -1197,10 +1320,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T45: the 10s default reaped quiet SSE streams and any slow route
 		// (60s doctor run, cold spawn). 120s covers every run budget below.
 		idleTimeout: 120,
-		async fetch(req, srv) {
+		async fetch(req) {
 			const url = new URL(req.url);
 			const p = url.pathname;
 			try {
+				// T106: the relay route does not exist on this listener
+				// at all (own 127.0.0.1 listener) — 404 before the auth
+				// gate, locked or not.
+				if (p === "/api/mcp/relay")
+					return json({ ok: false, why: "not found" }, 404);
 				// T39 whole-app gate: the shell and the state/unlock/lock
 				// routes stay public so a locked browser can unlock;
 				// everything else needs a session unless a passwordless
@@ -1210,15 +1338,14 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				const authBypass =
 					(cdbModeState.mode === "open" || cdbModeState.mode === "missing") &&
 					opts.allowOpenCdb === true;
+				// T106: the relay is gone from this listener (own
+				// 127.0.0.1 listener); nothing here stays public for it.
 				const publicPath =
 					p === "/" ||
 					p === "/index.html" ||
 					p === "/api/auth/state" ||
 					p === "/api/auth/unlock" ||
-					p === "/api/auth/lock" ||
-					// T55: the bridge carries no session cookie; the
-					// route enforces the per-session token itself.
-					p === "/api/mcp/relay";
+					p === "/api/auth/lock";
 				if (!authBypass && !authed && !publicPath) {
 					const code =
 						cdbModeState.mode === "open"
@@ -2335,118 +2462,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						throw err;
 					}
 				}
-				if (p === "/api/mcp/relay" && req.method === "POST") {
-					// T55: the ui_* tools relay. The bridge POSTs
-					// {token, tool, arguments}; the token is the only
-					// credential (401 otherwise, never a tool result).
-					// Tool-level refusals stay 200 ok:false so the
-					// bridge returns them as isError results the agent
-					// can report back. Every accepted call fans out as
-					// a ui/* SSE event the UI renders.
-					// Loopback peers only: the bridge always dials
-					// 127.0.0.1, so a LAN-bound UI (--host 0.0.0.0)
-					// never exposes the relay to the network.
-					if (!isLoopbackPeer(srv.requestIP(req)?.address)) {
-						return json({ ok: false, why: "relay is loopback-only" }, 403);
-					}
-					// Bounded before parsing (and before the token
-					// check): a tool call is a few hundred bytes.
-					const raw = await readBodyCapped(req, RELAY_MAX_BYTES);
-					if (raw === null) {
-						return json({ ok: false, why: "relay body too large" }, 413);
-					}
-					let body: { token?: unknown; tool?: unknown; arguments?: unknown };
-					try {
-						body = JSON.parse(raw) as typeof body;
-					} catch {
-						return json({ ok: false, why: "relay body is not JSON" }, 400);
-					}
-					if (body === null || typeof body !== "object") {
-						return json({ ok: false, why: "relay body is not an object" }, 400);
-					}
-					if (
-						typeof body.token !== "string" ||
-						!tokensEqual(body.token, mcpToken)
-					) {
-						return json({ ok: false, why: "bad or missing relay token" }, 401);
-					}
-					const tool = stripMcpPrefix(
-						typeof body.tool === "string" ? body.tool : "",
-					);
-					const args = (
-						body.arguments && typeof body.arguments === "object"
-							? body.arguments
-							: {}
-					) as Record<string, unknown>;
-					if (tool === "ui_notify") {
-						const text = args["text"];
-						const level = args["level"];
-						if (typeof text !== "string" || !text) {
-							return json({ ok: false, why: "need {text}" });
-						}
-						if (
-							level !== undefined &&
-							level !== "info" &&
-							level !== "warn" &&
-							level !== "alert"
-						) {
-							return json({
-								ok: false,
-								why: `unknown level: ${String(level).slice(0, 40)} (want info|warn|alert)`,
-							});
-						}
-						const shown =
-							level === "warn" || level === "alert" ? level : "info";
-						emit({
-							method: "ui/notify",
-							params: { text: text.slice(0, NOTIFY_TEXT_MAX), level: shown },
-						});
-						let cut = "";
-						if (text.length > NOTIFY_TEXT_MAX) {
-							cut = `… (truncated to ${NOTIFY_TEXT_MAX} chars)`;
-						} else if (text.length > 120) {
-							cut = "…";
-						}
-						return json({
-							ok: true,
-							result: `notified (${shown}): ${text.slice(0, 120)}${cut}`,
-						});
-					}
-					if (tool === "ui_open") {
-						if (noWs) return json({ ok: false, why: "no workspace attached" });
-						const rel = args["path"];
-						if (typeof rel !== "string" || !rel) {
-							return json({ ok: false, why: "need {path}" });
-						}
-						const checked = resolveUiOpen(root, rel);
-						if (!checked.ok) return json({ ok: false, why: checked.why });
-						emit({
-							method: "ui/open",
-							params: { path: rel, kind: checked.kind },
-						});
-						return json({ ok: true, result: `opened ${rel}` });
-					}
-					if (tool === "ui_select_device") {
-						if (noWs) return json({ ok: false, why: "no workspace attached" });
-						const id = args["id"];
-						if (typeof id !== "string" || !id) {
-							return json({ ok: false, why: "need {id}" });
-						}
-						const dev = readDevices(root).find((d) => d.id === id);
-						if (!dev) {
-							return json({
-								ok: false,
-								why: `unknown device id: ${id.slice(0, 120)}`,
-							});
-						}
-						emit({ method: "ui/select-device", params: { id } });
-						return json({ ok: true, result: `selected ${id}` });
-					}
-					return json({
-						ok: false,
-						why: `unknown ui tool: ${tool.slice(0, 120)}`,
-					});
-				}
+				// T106: the relay no longer shares this listener — it
+				// rides its own 127.0.0.1 listener (relayResponse
+				// above). A relay POST here is an unknown route.
 				if (p === "/api/chat/question/cancel" && req.method === "POST") {
 					const body = (await req.json()) as {
 						userInputId?: unknown;
@@ -2680,6 +2698,36 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		},
 	});
 
+	try {
+		relay = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			async fetch(req, srv) {
+				try {
+					const url = new URL(req.url);
+					if (url.pathname === "/api/mcp/relay" && req.method === "POST") {
+						return await relayResponse(req, srv.requestIP(req)?.address);
+					}
+					return json({ ok: false, why: "not found" }, 404);
+				} catch (err) {
+					return json(
+						{
+							ok: false,
+							why: err instanceof Error ? err.message : String(err),
+						},
+						500,
+					);
+				}
+			},
+		});
+	} catch (err) {
+		// Relay bind failed after the main listener started: do not
+		// orphan it (codex re-review round 2).
+		clearInterval(hb);
+		server.stop();
+		throw err;
+	}
+
 	// Meta probes in the background (a disposable turn —
 	// fast-fail when logged out). Fires after the bind: the probe
 	// spawn carries the ui MCP config whose relay URL needs the
@@ -2712,6 +2760,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const boundPort = server.port;
 	const boundHost = server.hostname;
 	if (boundPort === undefined || boundHost === undefined) {
+		clearInterval(hb);
+		relay.stop();
+		server.stop();
 		throw new Error("server started without an address");
 	}
 	const displayHost =
@@ -2721,8 +2772,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		urls: isLoopbackHost(host) ? [] : lanUrls(boundPort),
 		port: boundPort,
 		hostname: boundHost,
+		relayUrl: `http://127.0.0.1:${relay.port}/`,
 		stop: async () => {
 			clearInterval(hb);
+			relay.stop();
 			server.stop();
 			await stopWorker();
 		},

@@ -235,24 +235,50 @@ export class MspClient {
 		});
 		const client = new MspClient(proc, opts?.mcpServers ?? {});
 		const timeoutMs = opts?.timeoutMs ?? 30_000;
-		const init = (await client.call(
-			"initialize",
-			{
-				clientInfo: { name: "routeros_muse", version: "0.1" },
-				// T55: sessionMcp on every spawn (the host refuses
-				// config.mcpServers without it — B2's -32010).
-				capabilities: {
-					...(opts?.experimental ? { experimentalApi: true } : {}),
-					requestedCapabilities: ["sessionMcp"],
+		try {
+			const init = (await client.call(
+				"initialize",
+				{
+					clientInfo: { name: "routeros_muse", version: "0.1" },
+					// T55: sessionMcp on every spawn (the host refuses
+					// config.mcpServers without it — B2's -32010).
+					capabilities: {
+						...(opts?.experimental ? { experimentalApi: true } : {}),
+						requestedCapabilities: ["sessionMcp"],
+					},
 				},
-			},
-			timeoutMs,
-		)) as { grantedCapabilities?: unknown } | null;
-		const granted = init?.grantedCapabilities;
-		client.sessionMcpGranted =
-			Array.isArray(granted) && granted.includes("sessionMcp");
-		client.notify("initialized", {});
-		return client;
+				timeoutMs,
+			)) as { grantedCapabilities?: unknown } | null;
+			const granted = init?.grantedCapabilities;
+			client.sessionMcpGranted =
+				Array.isArray(granted) && granted.includes("sessionMcp");
+			client.notify("initialized", {});
+			return client;
+		} catch (err) {
+			// T106: a failed initialize must not orphan the child
+			// (predates T55 — a hung or crashed host kept running).
+			// SIGTERM first, escalate to SIGKILL when the bounded
+			// wait expires, then rethrow the original error as-is.
+			const exited = proc.exited.then(
+				() => true,
+				() => true,
+			);
+			try {
+				proc.kill();
+			} catch {
+				// already gone
+			}
+			const gone = await Promise.race([exited, Bun.sleep(2_000)]);
+			if (!gone) {
+				try {
+					proc.kill("SIGKILL");
+				} catch {
+					// already gone
+				}
+				await Promise.race([exited, Bun.sleep(2_000)]);
+			}
+			throw err;
+		}
 	}
 
 	/** T55: true when sessions on this host carry the ui_* tools. */
@@ -747,9 +773,18 @@ export class MspClient {
 				}
 			}
 		} catch {
-			// stream closed under us; pending calls fail via close()
+			// stream closed under us; pending calls fail below
 		} finally {
 			reader.releaseLock();
+			// EOF without close(): the host exited, so pending calls
+			// would otherwise hang until their own timeout (30s for
+			// initialize). Fail them at once; close() already
+			// rejected its own when closed is set.
+			if (!this.closed) {
+				for (const [, p] of this.pending)
+					p.reject(new Error("muse host exited"));
+				this.pending.clear();
+			}
 		}
 	}
 
