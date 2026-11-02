@@ -604,6 +604,7 @@ async function turnCmd(flags: Map<string, string>): Promise<void> {
 	const out = need(flags, "out");
 	const prompt = need(flags, "prompt");
 	const museHome = flags.get("muse-home");
+	const museConfigHome = flags.get("muse-config-home");
 	const approvalMode = flags.get("approval-mode") ?? "onRequest";
 	const approvalPolicy = (flags.get("approve") ?? "never") as string;
 	const userInputPolicy = (flags.get("answer") ?? "never") as UserInputPolicy;
@@ -618,11 +619,19 @@ async function turnCmd(flags: Map<string, string>): Promise<void> {
 	const mcpConfigPath = flags.get("mcp-config");
 	const caps = (flags.get("capabilities") ?? "").split(",").filter(Boolean);
 
+	// T101b: turn used to ignore --muse-config-home and spawn with
+	// ambient XDG_CONFIG_HOME (a persist landed in the real home).
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v !== undefined) env[k] = v;
+	}
+	if (museConfigHome) env["XDG_CONFIG_HOME"] = museConfigHome;
 	const cap = await Capture.spawn({
 		provider,
 		extraServeArgs,
 		museHome,
 		logPath: out,
+		env,
 	});
 	const agentTexts: string[] = [];
 	let turnId = "";
@@ -912,6 +921,7 @@ async function rawCmd(flags: Map<string, string>): Promise<void> {
 	const workspace = need(flags, "workspace");
 	const out = need(flags, "out");
 	const museHome = flags.get("muse-home");
+	const museConfigHome = flags.get("muse-config-home");
 	const approvalMode = flags.get("approval-mode") ?? "onRequest";
 	const experimental = flags.get("experimental") === "true";
 	const permissionProfile = flags.get("permission-profile");
@@ -929,11 +939,18 @@ async function rawCmd(flags: Map<string, string>): Promise<void> {
 	}
 	const calls = JSON.parse(callsSrc) as { method: string; params?: unknown }[];
 
+	// T101b: raw ignored --muse-config-home like turn did; same fix.
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v !== undefined) env[k] = v;
+	}
+	if (museConfigHome) env["XDG_CONFIG_HOME"] = museConfigHome;
 	const cap = await Capture.spawn({
 		provider,
 		extraServeArgs,
 		museHome,
 		logPath: out,
+		env,
 	});
 	try {
 		const init = (await cap.call("initialize", {

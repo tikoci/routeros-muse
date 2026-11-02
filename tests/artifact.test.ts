@@ -445,6 +445,7 @@ describe("artifact route", () => {
 				provider: "echo",
 				museHome: makeDir("t83-art-home-"),
 				dataHome: makeDir("t83-art-dh-"),
+				configHome: makeDir("t83-art-cfg-"),
 			});
 			try {
 				const base = `${srv.url}api/artifact?path=${encodeURIComponent("reports/r.html")}`;
@@ -497,6 +498,7 @@ describe("serve-time provenance (T83 followup 2)", () => {
 			provider: "echo",
 			museHome: makeDir("t83-fu2-home-"),
 			dataHome: dh,
+			configHome: makeDir("t83-art-cfg-"),
 		});
 		return { ws, dh, srv };
 	}

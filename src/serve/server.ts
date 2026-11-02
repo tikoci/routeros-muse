@@ -20,6 +20,15 @@ import {
 	showCdbDevice,
 } from "../lib/fleet";
 import {
+	checkServerPid,
+	ensurePreallowReads,
+	ensurePrivateHome,
+	privateConfigHome,
+	READ_COMMANDS,
+	workspaceHosts,
+} from "../lib/preallow";
+import {
+	dataHomeDir,
 	defaultWorkspacesDir,
 	pruneRegistry,
 	type RegistryEntry,
@@ -32,8 +41,10 @@ import { have, run } from "../lib/run";
 import {
 	isDefaultAccess,
 	readDefaultAccess,
+	readPreallowReads,
 	SettingsSymlinkError,
 	writeDefaultAccess,
+	writePreallowReads,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
 import {
@@ -68,6 +79,7 @@ import {
 	type ApprovalMode,
 	MspClient,
 	MspError,
+	type PermissionState,
 	type ReasoningEffort,
 	type TurnInput,
 	type ViewEvent,
@@ -136,6 +148,18 @@ export type ServeOpts = {
 	 * spawns untrusted. No-workspace mode never passes the flag.
 	 */
 	trustWorkspace?: boolean;
+	/**
+	 * Private muse config-home override (T101 round 4, D45):
+	 * tests isolate here (the override is the exact home, no
+	 * workspace id is appended). Defaults to this workspace's
+	 * home, <dataHome>/routeros-muse/.muse-config/<workspace-id>
+	 * (no-workspace mode: .muse-config/_no-workspace/).
+	 * Forwarded to worker spawns (museConfigHome) so the worker
+	 * reads the same policy file the server seeds; the shared
+	 * ~/.config/muse is never written (auth reaches the worker
+	 * as a symlink).
+	 */
+	configHome?: string;
 };
 
 /** Reachable LAN URLs for a port (external IPv4 only, no loopback/link-local). */
@@ -159,6 +183,19 @@ export function lanUrls(
 
 export function isLoopbackHost(host: string): boolean {
 	return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/**
+ * T101/D42: the permission profile for an access mode. Ask first
+ * (promptUnmatched) runs sandboxed under :ask-me; Allow all
+ * (allowAll, also --yolo) runs unsandboxed under :unrestricted.
+ * The legacy modes the access route still accepts (onRequest,
+ * denyUnmatched) map to the sandboxed profile: only an explicit
+ * Allow all lifts the sandbox. Never edits muse's settings.json —
+ * the profile rides the wire (session/start + setPermissionProfile).
+ */
+export function profileForAccess(mode: string): ":ask-me" | ":unrestricted" {
+	return mode === "allowAll" ? ":unrestricted" : ":ask-me";
 }
 
 /** Context percent from a usage event; null when the basis has no limit. */
@@ -524,6 +561,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// no-workspace picker lists real history. A registry write failure
 	// warns but never blocks the boot.
 	const regFile = registryFile(opts.dataHome);
+	// T101 round 4 (D45): this workspace's private muse config
+	// home — the XDG_CONFIG_HOME every worker spawns with, and
+	// the only approval-policy.json we seed. Per workspace
+	// (<dataHome>/routeros-muse/.muse-config/<workspace-id>);
+	// no-workspace mode gets the fixed _no-workspace home. Tests
+	// override it directly.
+	const museCfgHome =
+		opts.configHome ??
+		privateConfigHome(opts.dataHome, noWs ? undefined : root);
 	const defaultDir = defaultWorkspacesDir(opts.defaultWorkspaceDir);
 	// T93: the picker create flow offers these templates (minimal
 	// default); read once at boot from the package templates dir.
@@ -617,6 +663,106 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		);
 	}
 	let lastAccess: string | null = defaultAccess();
+	// T101: the profile in effect (or the next session starts in).
+	// Tracks session/start + setPermissionProfile responses and the
+	// permissionProfileChanged fold — never null, like lastAccess.
+	let lastProfile: string | null = profileForAccess(defaultAccess());
+	// T101/D43: pre-seed report for /api/status. Workspace mode
+	// fills this at boot; no-workspace mode stays null.
+	type PreallowReport = {
+		enabled: boolean;
+		commands: string[];
+		hosts: string[];
+		warnings: string[];
+		configHome: string;
+		/** Round 3: set when the private home itself was rejected. */
+		homeError: string | null;
+	};
+	let preallow: PreallowReport | null = null;
+	function preallowState(): PreallowReport | null {
+		return preallow;
+	}
+	// Spawn-time home warnings (re-link failures) stash here and
+	// drain into the next report; capped, workspace mode only.
+	let homeWarnings: string[] = [];
+	function stashHomeWarnings(more: string[]): void {
+		homeWarnings = [...homeWarnings, ...more].slice(-8);
+	}
+	/**
+	 * Run the D43/D45 seed and refresh the report. Never throws:
+	 * seeding failures (unreadable file, unknown schema, lost
+	 * races) land as warnings and the boot continues. Always
+	 * ensures the private home first (both modes: workers need
+	 * auth everywhere); fails closed — when the home itself is
+	 * rejected, the seed is SKIPPED (never write through a link
+	 * we refused) and the reason lands in homeError + warnings +
+	 * the boot log. Each workspace seeds only its own
+	 * router.toml hosts (D45, no union). No-workspace mode
+	 * seeds nothing and keeps the report null.
+	 */
+	function refreshPreallow(enabled: boolean): void {
+		const warnings: string[] = [...homeWarnings];
+		homeWarnings = [];
+		let homeError: string | null = null;
+		try {
+			const home = ensurePrivateHome({
+				privateHome: museCfgHome,
+				dataHome: dataHomeDir(opts.dataHome),
+			});
+			warnings.push(...home.warnings);
+		} catch (err) {
+			homeError = err instanceof Error ? err.message : String(err);
+			warnings.push(homeError);
+			console.error(`private muse home unsafe, seeding skipped: ${homeError}`);
+		}
+		const hosts = enabled && !noWs ? workspaceHosts(root) : [];
+		if (homeError === null) {
+			try {
+				const res = ensurePreallowReads({
+					configHome: museCfgHome,
+					...(noWs ? {} : { workspaceRoot: root }),
+					hosts,
+					enabled,
+				});
+				warnings.push(...res.warnings);
+			} catch (err) {
+				warnings.push(err instanceof Error ? err.message : String(err));
+			}
+			if (!noWs) {
+				// D45: warn-only same-workspace detection (never
+				// load-bearing; the check itself never throws).
+				const { warning } = checkServerPid(museCfgHome);
+				if (warning !== null) warnings.push(warning);
+			}
+		}
+		if (noWs) {
+			preallow = null;
+			return;
+		}
+		const commands = READ_COMMANDS.map((p) => p.join(" "));
+		preallow = {
+			enabled,
+			commands,
+			hosts,
+			warnings,
+			configHome: museCfgHome,
+			homeError,
+		};
+	}
+	/**
+	 * Re-ensure the private home (auth symlink) before a worker
+	 * spawn. THROWS on an unsafe home: the caller must not spawn
+	 * with it (fail closed — never fall back to the shared
+	 * ~/.config/muse). Benign warnings still stash for the report.
+	 */
+	function ensureHomeOrThrow(): void {
+		const home = ensurePrivateHome({
+			privateHome: museCfgHome,
+			dataHome: dataHomeDir(opts.dataHome),
+		});
+		stashHomeWarnings(home.warnings);
+	}
+	refreshPreallow(readPreallowReads(opts.dataHome));
 	let sessionStartedAt: number | null = null;
 	const sse = new Set<(line: string) => void>();
 
@@ -712,7 +858,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// the next session starts in (what /api/chat/stats reports
 		// pre-session) — never null, which the UI would read as the
 		// wrong fallback. ensureMain restores the live mode after.
+		// T101: same for the profile.
 		lastAccess = defaultAccess();
+		lastProfile = profileForAccess(defaultAccess());
 		sessionStartedAt = null;
 		if (prev) {
 			try {
@@ -766,9 +914,19 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					mspWhy = "muse not on PATH";
 					throw new Error(mspWhy);
 				}
+				try {
+					ensureHomeOrThrow();
+				} catch (err) {
+					mspWhy = err instanceof Error ? err.message : String(err);
+					throw new Error(
+						`refusing to spawn the muse worker: private config home is unsafe (${mspWhy})`,
+					);
+				}
 				const client = await MspClient.spawn({
 					provider,
 					museHome: opts.museHome,
+					museConfigHome: museCfgHome,
+					experimental: true,
 					extraArgs: mspExtraArgs,
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
 				});
@@ -811,6 +969,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// echoes every session/start + setApprovalMode).
 						const p = ev.params as Record<string, unknown>;
 						if (typeof p["mode"] === "string") lastAccess = p["mode"];
+					}
+					if (ev.method === "session/permissionProfileChanged") {
+						// T101: same fold for the profile (every
+						// accepted setPermissionProfile commit).
+						const p = ev.params as Record<string, unknown>;
+						if (typeof p["profileId"] === "string")
+							lastProfile = p["profileId"];
 					}
 					if (
 						(ev.method === "item/started" ||
@@ -875,9 +1040,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				return ensureMain(key);
 			}
 			const approvalMode = defaultAccess();
+			const permissionProfile = profileForAccess(approvalMode);
 			const { session } = await client.sessionStart({
 				workspaceRoot: root,
 				approvalMode,
+				permissionProfile,
 			});
 			if (!isMine() || mainOwner !== key || mspOwner !== key) {
 				const cur = mainPromise;
@@ -891,7 +1058,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			mainSession = session.sessionId;
 			// The session runs at this mode now; stopWorker cleared
 			// lastAccess on the way up, so restore the truth here.
+			// T101: the host's permissionState is the truth for the
+			// live profile; fall back to what we asked for when an
+			// older host reports none.
 			lastAccess = approvalMode;
+			const live = session["permissionState"] as PermissionState | undefined;
+			lastProfile =
+				typeof live?.profileId === "string"
+					? live.profileId
+					: permissionProfile;
 			sessionStartedAt = Date.now();
 			mainSettled = true;
 			return mainSession;
@@ -946,16 +1121,20 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	} else if (have("muse", tools)) {
 		void (async () => {
 			try {
-				const m = await probeMetaAuth(
-					() =>
-						MspClient.spawn({
-							provider,
-							museHome: opts.museHome,
-							extraArgs: mspExtraArgs,
-							env: tools,
-						}),
-					root,
-				);
+				const m = await probeMetaAuth(() => {
+					// Throws on an unsafe home: the probe never
+					// spawns with it (probeMetaAuth maps the
+					// throw to "unknown", same as any spawn failure).
+					ensureHomeOrThrow();
+					return MspClient.spawn({
+						provider,
+						museHome: opts.museHome,
+						museConfigHome: museCfgHome,
+						experimental: true,
+						extraArgs: mspExtraArgs,
+						env: tools,
+					});
+				}, root);
 				if (m !== "unknown") setMeta(m);
 			} catch {
 				// probe failure is not auth evidence; stays unknown
@@ -1118,16 +1297,20 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						setMeta("authed");
 						return json({ ok: true, meta: metaAuth });
 					}
-					const m = await probeMetaAuth(
-						() =>
-							MspClient.spawn({
-								provider,
-								museHome: opts.museHome,
-								extraArgs: mspExtraArgs,
-								env: tools,
-							}),
-						root,
-					);
+					const m = await probeMetaAuth(() => {
+						// Round 3: the recheck probe runs in the
+						// private home like every other spawn
+						// (never the shared ~/.config/muse), and
+						// never spawns with an unsafe one.
+						ensureHomeOrThrow();
+						return MspClient.spawn({
+							provider,
+							museHome: opts.museHome,
+							museConfigHome: museCfgHome,
+							extraArgs: mspExtraArgs,
+							env: tools,
+						});
+					}, root);
 					if (m !== "unknown") setMeta(m);
 					return json({ ok: true, meta: metaAuth });
 				}
@@ -1149,6 +1332,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						muse: museVersion,
 						msp: msp ? "connected" : mspWhy ? `unavailable: ${mspWhy}` : "lazy",
 						mainSession,
+						permissionProfile: lastProfile,
+						preallow: preallowState(),
 						tools: await toolInfo(),
 						trustWorkspace: noWs ? null : opts.trustWorkspace !== false,
 					});
@@ -1172,6 +1357,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					};
 					if (body.action === "prune") {
 						const { removed } = pruneRegistry(regFile);
+						// D45: no re-seed — this workspace's hosts
+						// are its own router.toml, untouched by the
+						// registry. (Each pruned workspace's own
+						// home keeps its last seed, harmless: that
+						// server is gone with it.)
 						return json({ ok: true, removed });
 					}
 					if (body.action === "create") {
@@ -1202,6 +1392,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 						if (!made.ok) return json({ ok: false, why: made.why }, 400);
 						const workspace = registerWorkspace(regFile, body.name, made.dir);
+						// D45: no re-seed — the new workspace gets
+						// its own home (and its own seed) when it
+						// is served; ours is unchanged.
 						return json({
 							ok: true,
 							workspace,
@@ -1295,6 +1488,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						body.text,
 						body.fromTomlEditor === true ? { fromTomlEditor: true } : undefined,
 					);
+					if (res.status === 200 && body.path === "router.toml") {
+						// D45: this workspace's hosts feed its own
+						// network rules — re-seed so dropped hosts
+						// are pruned.
+						refreshPreallow(readPreallowReads(opts.dataHome));
+					}
 					return json(res.body, res.status);
 				}
 				if (p === "/api/toml" && req.method === "GET") {
@@ -1781,6 +1980,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							// access selector shows it before any turn;
 							// null without one, exactly as before.
 							access: lastAccess,
+							profile: lastProfile,
 						});
 					}
 					const key = workerKey(req);
@@ -1810,6 +2010,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								? (row["reasoningEffort"] as string)
 								: null),
 						access: lastAccess,
+						profile: lastProfile,
 					});
 				}
 				if (p === "/api/chat/models") {
@@ -1905,8 +2106,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const client = await ensureMsp(key);
 					try {
 						await client.sessionSetApprovalMode(sid, body.mode as ApprovalMode);
-						lastAccess = body.mode;
-						return json({ ok: true, mode: body.mode });
 					} catch (err) {
 						if (err instanceof MspError) {
 							return json(
@@ -1916,6 +2115,33 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						}
 						throw err;
 					}
+					lastAccess = body.mode;
+					// T101: the profile follows the mode on the live
+					// session (verified mid-session method). A profile
+					// failure after a mode change reports both
+					// honestly: the mode moved, the profile did not.
+					const want = profileForAccess(body.mode);
+					try {
+						const res = await client.sessionSetPermissionProfile(sid, want);
+						lastProfile =
+							typeof res.permissionState?.profileId === "string"
+								? res.permissionState.profileId
+								: want;
+					} catch (err) {
+						if (err instanceof MspError) {
+							return json(
+								{
+									ok: false,
+									why: `${err.kind}: ${err.message}`,
+									mode: body.mode,
+									profile: lastProfile,
+								},
+								400,
+							);
+						}
+						throw err;
+					}
+					return json({ ok: true, mode: body.mode, profile: lastProfile });
 				}
 				// T50 approval/question surface: thin relays over the MSP
 				// decide/answer/cancel/listPending commands. Choice ids
@@ -2090,13 +2316,38 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				// default (what the next session starts in); POST stores
 				// one of the two selector modes. The live session mode is
 				// separate (/api/chat/access) and untouched here.
+				// T101: the same route carries the pre-seed switch
+				// ([agent] preallow_reads): POST applies it at once
+				// (reseed or removal), and GET reports it.
 				if (p === "/api/settings") {
 					if (req.method === "GET") {
-						return json({ ok: true, defaultAccess: defaultAccess() });
+						return json({
+							ok: true,
+							defaultAccess: defaultAccess(),
+							preallowReads: readPreallowReads(opts.dataHome),
+						});
 					}
 					if (req.method === "POST") {
-						const body = (await req.json()) as { defaultAccess?: unknown };
-						if (!isDefaultAccess(body.defaultAccess)) {
+						const body = (await req.json()) as {
+							defaultAccess?: unknown;
+							preallowReads?: unknown;
+						};
+						if (
+							body.defaultAccess === undefined &&
+							body.preallowReads === undefined
+						) {
+							return json(
+								{
+									ok: false,
+									why: "need {defaultAccess} and/or {preallowReads}",
+								},
+								400,
+							);
+						}
+						if (
+							body.defaultAccess !== undefined &&
+							!isDefaultAccess(body.defaultAccess)
+						) {
 							return json(
 								{
 									ok: false,
@@ -2105,8 +2356,23 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								400,
 							);
 						}
+						if (
+							body.preallowReads !== undefined &&
+							typeof body.preallowReads !== "boolean"
+						) {
+							return json(
+								{ ok: false, why: "need {preallowReads} boolean" },
+								400,
+							);
+						}
 						try {
-							writeDefaultAccess(opts.dataHome, body.defaultAccess);
+							if (body.defaultAccess !== undefined) {
+								writeDefaultAccess(opts.dataHome, body.defaultAccess);
+							}
+							if (typeof body.preallowReads === "boolean") {
+								writePreallowReads(opts.dataHome, body.preallowReads);
+								refreshPreallow(body.preallowReads);
+							}
 						} catch (err) {
 							// A symlinked settings chain is refused, not
 							// followed (409: the on-disk state conflicts).
@@ -2115,7 +2381,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							}
 							throw err;
 						}
-						return json({ ok: true, defaultAccess: body.defaultAccess });
+						return json({
+							ok: true,
+							defaultAccess: defaultAccess(),
+							preallowReads: readPreallowReads(opts.dataHome),
+						});
 					}
 					return json({ ok: false, why: "need GET or POST" }, 405);
 				}

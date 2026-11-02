@@ -396,6 +396,191 @@ boundary (`AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`,
 sandbox+approval with a cleared env; MCP servers run unsandboxed
 (child process / direct socket) with approval still applying.
 
+## D44: private muse config home (round 2)
+
+Our workers spawn with
+`XDG_CONFIG_HOME=<dataHome>/routeros-muse/.muse-config/<workspace-id>`
+(D44, T101 round 2; per-workspace layout and the leading dot are round
+4, D45 — see below). Inside each home, `muse/` holds our own
+`approval-policy.json` (schema v2, same tagged `reason:"routeros-muse:seed"`
+rules), our own minimal `settings.json` (`{"schema_version":1}` — unknown
+fields make muse exit 3, verified with a real boot), and an `auth.json`
+SYMLINK to the real `${XDG_CONFIG_HOME:-$HOME/.config}/muse/auth.json`,
+re-ensured on every spawn. The shared `~/.config/muse/` is never written.
+Dirs are 0700; symlinks at or below `<dataHome>/routeros-muse` are
+refused (round 4 also covers `.muse-config` and `<workspace-id>`).
+
+Why: muse persists approval-policy.json without a lock, so sharing the
+file with other agents on the box risks dropping a rule in the
+rename window (a foreign deny was lost in a probe); a malformed file
+bricks every muse on the box (exit 3); network host rules are
+machine-global and need owned state. The private home removes the
+shared-file race and the blast radius in one move.
+
+Auth shape (orchestrator probes 2026-11-02): auth.json holds a static
+token (no refresh token, no expiry field), so link-per-spawn carries
+no rotation risk; the muse binary reads auth only from
+`$XDG_CONFIG_HOME/muse/auth.json` (`MUSE_AUTH_PATH` is launcher-only).
+If the real auth.json is absent, sessions fail turns with
+`authRequired` (the existing boot-probe/banner path) and Settings
+carries a "not signed in" warning.
+
+Network-rule ownership: rounds 2–3 used the UNION of router.toml
+device hosts over registered workspaces (registry.toml), recomputed
+at boot, toggle, router.toml save, workspace create, and registry
+prune. REMOVED in round 4 (D45): each workspace seeds only its own
+hosts into its own home; tagged network rules outside that set are
+pruned. Untagged rules (the owner's own Always-allow choices) are
+never touched, in every round.
+
+Read set as amended 2026-11-02: exactly `centrs retrieve`,
+`quickchr list`, `quickchr doctor`. Dropped: find (-exec/-delete),
+rosetta browse (writes its DB), ls/cat/grep (not workspace-confined).
+On `centrs retrieve` (developer decision 2026-11-02): centrs is a
+helper, not routeros-muse's security layer — RouterOS only reveals
+RO/RW/policy at run time, so the seeded rule trusts centrs's
+read/write split (reads run, writes need --yes). The known
+fragment-path reboot bug is C19 (tikoci/centrs#586), open upstream. Anyone who
+needs "never reboot" should use a restricted RouterOS account —
+that is the real boundary for strict setups.
+Housekeeping, documented not alarming: `quickchr list`/`doctor`
+call refreshAllStatuses(), which rewrites stale LOCAL machine
+state (clears dead PIDs/frozen markers) — bookkeeping under
+`~/.config/quickchr`, no device contact, acceptable in the read set.
+
+Concurrency: all seeding serializes in-process (one mutex; the path
+is fully synchronous so run-to-completion does the work and the
+guard makes it explicit). Round 3 added a cross-process lock file
+next to the policy (`approval-policy.json.lock`); REMOVED in round
+4 (D45) after a re-review confirmed four defects in it — per-workspace
+homes made it unnecessary. What stays: the in-process mutex and the
+reread-before-rename guard with retries. Residual window: a live
+muse session persisting an Always-allow into our private file
+writes WITHOUT a lock and WITHOUT a re-read, so it can still
+clobber a seed (or a seed can clobber it) when the two land in the
+same instant — smaller than round 1 (only our own workers write
+this file now, not every agent on the box), but not zero.
+Convergence is eventual: the next boot/toggle/edit re-seeds our
+tagged set over whatever the file holds, and muse re-persists
+owner choices on next approval.
+
+Fail-closed (round 3): when the private home itself is rejected
+(symlink anywhere in the `<dataHome>/routeros-muse` down-chain),
+the seed is skipped — never write through a refused link — and no
+worker spawns with it (the session start fails with the reason;
+never falls back to the shared `~/.config/muse`). The reason
+lands in the status `preallow.homeError`, the warnings, and the
+boot log.
+
+Shell environment (probed 2026-11-02, muse 1.4.14): the agent's
+shell tools INHERIT the serve process environment, including
+XDG_CONFIG_HOME — verified live (`session/userShell` under a
+sandboxed profile echoed the fake home back). There is NO clean
+user-settable mechanism to restore/exclude it for tool execution:
+`session/start.config` admits only `mcpServers` (binary-exported
+MSP schema, both surfaces); `settings/readSchema` lists no env key;
+`serve -c environment_policy=...` (and execution./shell./sandbox.
+variants) refuse as unknown keys; `environment_policy`
+(inherit/include_only/exclude) is an internal executor field fed by
+the permission-profile definition, and profile definitions below
+the fixed native rows exist only via enterprise policy planes
+(`muse config status` here: both absent; managed files are
+root-owned system files). Blast radius, bounded by source reads:
+centrs CDB resolution is `$HOME`-based (unaffected), quickchr state
+is `$HOME/.config/quickchr` (unaffected), rosetta reads no
+XDG_CONFIG_HOME (unaffected) — only centrs' user-global
+`centrs.env` settings (resolved under XDG_CONFIG_HOME) do not apply
+to agent-run centrs commands (on orca that file carries
+CENTRS_SSH_KEY, so SSH transport would lose its key).
+
+Resolution (orchestrator, 2026-11-02): the private home links the
+trilogy's config dir through — `<private>/tikoci -> <real config
+home>/tikoci`, re-ensured on every spawn like auth.json
+(`LINKED_TOOL_CONFIG_DIRS`), skipped when the real dir is absent,
+and a real directory already there is kept with a warning. Live
+(`~/t101b-live/cap/tikoci-link.jsonl`, real muse 1.4.14, meta,
+:unrestricted): the tool shell's XDG_CONFIG_HOME is the private
+home, and `centrs settings print` reports CENTRS_SSH_KEY from the
+real centrs.env; ~/.config/muse mtimes unchanged.
+
+Rejected, with evidence: BASH_ENV restore scripts. The `muse`
+launcher is a bash script and sources BASH_ENV itself before
+exec'ing the binary (probed: the hook ran with $0 = the launcher),
+so an unguarded restore hands muse the shared config home; and
+muse's tool shells never source BASH_ENV at all (traced: only the
+launcher's line was logged), so a guarded one does nothing.
+
+Known residual: other XDG-aware tools the agent runs (gh's
+`$XDG_CONFIG_HOME/gh`, git's XDG config, mise) see the private home;
+git still reads ~/.gitconfig. Not linked: GitHub stays the
+developer's call (D34), and each extra link widens what the private
+home exposes. An upstream per-session env surface in MSP would
+remove the need for links.
+
+## D45: one private home per workspace (round 4)
+
+Rounds 2–3 kept ONE private home for every workspace
+(`<dataHome>/routeros-muse/muse-config/`), which needed the
+cross-workspace host union and the cross-process seed lock. Round 4
+(D45) gives each workspace its own home:
+
+`<dataHome>/routeros-muse/.muse-config/<workspace-id>/`
+
+- `<workspace-id>` is `<sanitized-basename>-<hash12>`: the
+  workspace dir's basename (readable, cut to 48 chars so the id
+  stays far below NAME_MAX) plus 12 hex chars of sha256
+  over the canonical absolute root (realpath; path.resolve when
+  unresolvable). Stable across spellings of the same root; a MOVED
+  workspace gets a NEW home — accepted by design, and seeding
+  recreates its rules from scratch on next boot. Symlink aliases of
+  one root share a home; bind-mount aliases may not (accepted).
+- Every tagged rule in a home is that workspace's: a seed replaces
+  all tagged shell rules (whatever root spelling wrote them) with
+  the current root's set, and disabling removes them all.
+- The leading dot marks the dir as managed, not for user editing;
+  it is not a security measure.
+- No-workspace mode (D23) gets the fixed
+  `.muse-config/_no-workspace/` home (settings + auth link; nothing
+  seeded — there is no router.toml to seed from).
+- Each home holds its own `muse/approval-policy.json`,
+  `muse/settings.json`, the `muse/auth.json` link and the `tikoci`
+  link, with round-2/3 semantics: re-ensured per spawn, 0600/0700,
+  dangling real auth warns.
+- The seed lock is GONE entirely: no lock file, no acquire/release,
+  no stale logic, no SEED_LOCK_* constants, no race worker. The
+  in-process mutex and the reread-before-rename guard stay.
+- The registry host union is GONE: each workspace seeds ONLY its
+  own router.toml hosts. Re-seed triggers are boot, the Settings
+  toggle, and router.toml saves. Cost accepted: an Always-allow
+  clicked in one workspace does not carry to another.
+- Two servers on the same workspace: WARN ONLY via a `server.pid`
+  file in that workspace's home. No blocking, a stale pid is
+  silently ignored, symlinks are never followed (neither read nor
+  replaced), and correctness never depends on it. The read is
+  O_NOFOLLOW|O_NONBLOCK and regular-files-only; the write is temp +
+  rename, so a FIFO or device at `server.pid` is replaced, never
+  opened. Simultaneous starts can still miss each other (advisory).
+- Chain safety: refuse a symlink at or below
+  `<dataHome>/routeros-muse`, now including `.muse-config` and
+  `<workspace-id>`; symlinks above it stay allowed. Fail closed:
+  no seeding and no spawn on an unsafe home, the reason in status
+  and session start, never a fallback to the shared
+  `~/.config/muse`.
+- Settings/status shows this workspace's private home path
+  (`preallow.configHome`).
+- The round-2/3 flat `muse-config/muse/` layout is an orphan from
+  development builds — it never shipped. Left alone: never
+  migrated, never deleted.
+
+Round-4 also fixed the agent auth check (`src/steps/agent.ts`):
+it hardcoded `~/.config/muse/auth.json` and now shares one
+`museAuthFile()` helper with the private-home linker
+(`$XDG_CONFIG_HOME/muse/auth.json`, else `~/.config` — the muse
+launcher's own order, verified in its script; an empty
+XDG_CONFIG_HOME falls back like the launcher's `-n` test). win32
+keeps `%APPDATA%`, unverified (no Windows probe; the Linux
+binary's strings show no APPDATA use for muse's own config).
+
 ## Option C verdict: FEASIBLE
 
 Pre-allowing our designed read set under promptUnmatched works via
@@ -419,6 +604,8 @@ Concrete read set (each its own two-word prefix; never the bare
 binary — `[quickchr]` would also free `quickchr remove`):
 `centrs retrieve`, `rosetta` (+ subcommand words as needed),
 `quickchr list`, `quickchr doctor`, `ls`, `cat`, `grep`, `find`.
+AMENDED in round 2 (see the D44 section above): the live set is
+`centrs retrieve`, `quickchr list`, `quickchr doctor`.
 Still prompting, live-verified: `centrs execute` (second word
 differs — P3 both directions), any write outside the workspace
 (shell approval under promptUnmatched; hard-blocked by the sandbox

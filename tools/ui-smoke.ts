@@ -11,7 +11,9 @@
 // the T50 approval/question surface (cards, waiting strip, selector,
 // settings default, late join — all on the scriptable T50 fake),
 // and the T49 trust row (on/off/no-workspace) plus device targeting
-// (pill targets become chips; the preamble lands in the turn input).
+// (pill targets become chips; the preamble lands in the turn input),
+// and the T101 profile row (live :ask-me/:unrestricted on echo),
+// pre-seed list + toggle (file-backed), and access flips both ways.
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -23,6 +25,7 @@ import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { chromium, type Page, type Request } from "playwright";
+import { READ_COMMANDS } from "../src/lib/preallow";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
@@ -89,6 +92,9 @@ function makeHome(): string {
 // T40 hermeticity: smoke boots share one temp data home (the picker
 // leg below uses its own), never the developer's real registry.
 const SMOKE_DATA_HOME = mktmp("ui-smoke-dh-");
+// T101 hermeticity: all smoke boots use this temp dir as their private
+// muse config home — never the developer's real ~/.config/muse.
+const SMOKE_CONFIG_HOME = mktmp("ui-smoke-cfg-");
 
 const failures: string[] = [];
 function check(name: string, cond: boolean, extra = ""): void {
@@ -115,6 +121,7 @@ function watchAppBatch(page: Page): Promise<unknown[]> {
 
 const srv = await startServer({
 	dataHome: SMOKE_DATA_HOME,
+	configHome: SMOKE_CONFIG_HOME,
 	allowOpenCdb: true,
 	workspace: makeWorkspace(),
 	provider: "echo",
@@ -231,6 +238,99 @@ try {
 		(await page.locator("#set-trust-note:visible").count()) === 0,
 	);
 	await page.screenshot({ path: path.join(OUT, "38-t49-trust-on.png") });
+
+	// T101: the settings pane reports the live profile (:ask-me
+	// under Ask first on the real echo wire) and the pre-seeded
+	// read set; the access selector flips the live profile both
+	// ways; the toggle removes and re-seeds our tagged rules.
+	await page.waitForFunction(
+		() => (document.getElementById("set-profile")?.textContent ?? "") !== "…",
+		undefined,
+		{ timeout: 10_000 },
+	);
+	check(
+		"t101 profile row shows :ask-me (Ask first default)",
+		((await page.locator("#set-profile").textContent()) ?? "").trim() ===
+			":ask-me",
+	);
+	const preCmds = (await page.locator("#preallow-cmds").textContent()) ?? "";
+	check(
+		"t101 preallow lists exactly the 3-command read set",
+		preCmds.trim() === "centrs retrieve, quickchr list, quickchr doctor",
+		preCmds.slice(0, 160),
+	);
+	const preCfg = (await page.locator("#preallow-cfg").textContent()) ?? "";
+	check(
+		"t101 preallow shows the private config home",
+		preCfg.trim() === SMOKE_CONFIG_HOME,
+		preCfg.slice(0, 160),
+	);
+	check(
+		"t101 preallow toggle defaults on",
+		await page.locator("#preallow-toggle").isChecked(),
+	);
+	const smokeWs = ((await page.locator("#set-ws").textContent()) ?? "").trim();
+	const readOurs = (): Record<string, unknown>[] => {
+		const doc = JSON.parse(
+			nodeFs.readFileSync(
+				path.join(SMOKE_CONFIG_HOME, "muse", "approval-policy.json"),
+				"utf8",
+			),
+		) as { rules: Record<string, unknown>[] };
+		return doc.rules.filter((r) => r["reason"] === "routeros-muse:seed");
+	};
+	const oursRoots = readOurs().map(
+		(r) => (r["rule"] as Record<string, unknown>)["workspace_root"],
+	);
+	check(
+		"t101 policy file holds our tagged shell set for this workspace",
+		readOurs().length === READ_COMMANDS.length &&
+			oursRoots.every((r) => r === smokeWs),
+		`n=${readOurs().length} ws=${smokeWs}`,
+	);
+	const pollOurs = async (want: number): Promise<number> => {
+		const deadline = Date.now() + 10_000;
+		for (;;) {
+			const n = readOurs().length;
+			if (n === want || Date.now() > deadline) return n;
+			await new Promise((r) => setTimeout(r, 100));
+		}
+	};
+	await page.locator("#preallow-toggle").uncheck();
+	check("t101 toggle off removes our rules", (await pollOurs(0)) === 0);
+	await page.locator("#preallow-toggle").check();
+	check(
+		"t101 toggle on re-seeds our rules",
+		(await pollOurs(READ_COMMANDS.length)) === READ_COMMANDS.length,
+	);
+	// Access selector flips the live profile (echo speaks
+	// session/setPermissionProfile for real).
+	await page.click("#sel-access-btn");
+	const allowOpt = page.locator("#selmenu .opt", { hasText: "Allow all" });
+	check(
+		"t101 Allow-all hint names the sandbox",
+		((await allowOpt.first().getAttribute("title")) ?? "").includes(
+			":unrestricted",
+		),
+	);
+	await allowOpt.first().click();
+	await page.waitForFunction(
+		() =>
+			document.getElementById("set-profile")?.textContent === ":unrestricted",
+		undefined,
+		{ timeout: 10_000 },
+	);
+	check("t101 Allow all flips the live profile", true);
+	await page.screenshot({ path: path.join(OUT, "42-t101-allow-all.png") });
+	await page.click("#sel-access-btn");
+	await page.locator("#selmenu .opt", { hasText: "Ask first" }).first().click();
+	await page.waitForFunction(
+		() => document.getElementById("set-profile")?.textContent === ":ask-me",
+		undefined,
+		{ timeout: 10_000 },
+	);
+	check("t101 Ask first re-sandboxes the live profile", true);
+	await page.screenshot({ path: path.join(OUT, "43-t101-ask-first.png") });
 	await page.click("#collapsebtn");
 
 	// Real chat roundtrip through the actual composer.
@@ -612,6 +712,7 @@ try {
 	);
 	const lockSrv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		workspace: lockWs,
 		provider: "echo",
 		museHome: makeHome(),
@@ -670,6 +771,7 @@ try {
 	}
 	const openSrv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		workspace: openWs,
 		provider: "echo",
@@ -710,6 +812,7 @@ try {
 	const missWs = makeWorkspace();
 	const missSrv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		workspace: missWs,
 		provider: "echo",
 		museHome: makeHome(),
@@ -746,6 +849,7 @@ try {
 	if (!cdbInit.error && cdbInit.status === 0) hermeticCdb = emptyCdb;
 	const nws = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		noWorkspace: true,
 		provider: "echo",
@@ -792,6 +896,16 @@ try {
 			((await page.locator("#set-trust").textContent()) ?? "").trim() ===
 				"no workspace",
 		);
+		// T101: no workspace, nothing to seed — the block says so and
+		// the toggle idles disabled.
+		check(
+			"t101 preallow idles in no-workspace mode",
+			((await page.locator("#preallow-cmds").textContent()) ?? "").trim() ===
+				"no workspace" &&
+				((await page.locator("#preallow-cfg").textContent()) ?? "").trim() ===
+					"no workspace" &&
+				(await page.locator("#preallow-toggle").isDisabled()),
+		);
 		// A full echo turn must restore the no-workspace copy, not the
 		// workspace one (setRunning placeholder reset is mode-aware).
 		await page.fill("#chatinput", "SMOKE-PROBE-NOWS");
@@ -828,6 +942,7 @@ try {
 	// off and the one-line note names what does not load.
 	const untrustedSrv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		workspace: makeWorkspace(),
 		provider: "echo",
@@ -886,6 +1001,7 @@ try {
 		museHome: makeHome(),
 		cdbFile: hermeticCdb,
 		dataHome: pickDh,
+		configHome: SMOKE_CONFIG_HOME,
 		defaultWorkspaceDir: pickNets,
 	});
 	try {
@@ -1048,6 +1164,7 @@ try {
 	}
 	const credSrv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		workspace: credWs,
 		provider: "echo",
@@ -1179,6 +1296,7 @@ try {
 	}
 	const t72Srv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		workspace: t72Ws,
 		provider: "echo",
@@ -1557,6 +1675,7 @@ try {
 	);
 	const t84Srv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		workspace: t84Ws,
 		provider: "echo",
@@ -1686,6 +1805,7 @@ try {
 	);
 	const t83Srv = await startServer({
 		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
 		allowOpenCdb: true,
 		workspace: t83Ws,
 		provider: "echo",
@@ -2096,6 +2216,7 @@ try {
 		async () => {
 			const srvA = await startServer({
 				dataHome: SMOKE_DATA_HOME,
+				configHome: SMOKE_CONFIG_HOME,
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -2159,6 +2280,7 @@ try {
 	await withT71Env(stopB.log, { mode: "ignoring" }, async () => {
 		const srvB = await startServer({
 			dataHome: SMOKE_DATA_HOME,
+			configHome: SMOKE_CONFIG_HOME,
 			allowOpenCdb: true,
 			workspace: makeWorkspace(),
 			provider: "echo",
@@ -2228,6 +2350,7 @@ try {
 	await withT50Env(t50.log, async () => {
 		const srvT = await startServer({
 			dataHome: mktmp("ui-smoke-t50-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
 			allowOpenCdb: true,
 			workspace: makeWorkspace(),
 			provider: "echo",
@@ -2643,6 +2766,7 @@ try {
 	await withT50Env(t50b.log, async () => {
 		const srvU = await startServer({
 			dataHome: mktmp("ui-smoke-t50u-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
 			allowOpenCdb: true,
 			workspace: makeWorkspace(),
 			provider: "echo",
