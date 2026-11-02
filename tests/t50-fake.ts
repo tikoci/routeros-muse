@@ -484,7 +484,20 @@ rl.on("line", (text) => {
 		return;
 	}
 	if (method === "session/list") {
-		send({ jsonrpc: "2.0", id: id, result: { sessions: [{ sessionId: SESSION, turnCount: turnN }] } });
+		// T49 follow-up: one canned past chat whose first prompt went
+		// out targeted, so the /api/past title strip is exercised.
+		const pastPrompt =
+			"[routeros-muse context] target device: {\"id\":\"gw\",\"name\":\"gw\",\"host\":\"192.168.88.1\"}\n\nWhat did the past decide?";
+		send({
+			jsonrpc: "2.0",
+			id: id,
+			result: {
+				sessions: [
+					{ sessionId: SESSION, turnCount: turnN },
+					{ sessionId: "t50-past1", turnCount: 1, firstUserPrompt: pastPrompt },
+				],
+			},
+		});
 		return;
 	}
 	if (method === "model/list") {

@@ -526,9 +526,7 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 			});
 			try {
 				await fetch(`${srv.url}api/chat/history`);
-				const p = (await (
-					await fetch(`${srv.url}api/past`)
-				).json()) as {
+				const p = (await (await fetch(`${srv.url}api/past`)).json()) as {
 					pasts: { id: string; name: string }[];
 				};
 				const past = p.pasts.find((s) => s.id === "t50-past1");

@@ -2143,7 +2143,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								typeof s.name === "string" && s.name
 									? s.name
 									: typeof s["firstUserPrompt"] === "string"
-										? (s["firstUserPrompt"] as string).slice(0, 60)
+										? stripTargetPreamble(s["firstUserPrompt"] as string).slice(
+												0,
+												60,
+											)
 										: "untitled session",
 							age:
 								typeof s["updatedAt"] === "string"
