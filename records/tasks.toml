@@ -1034,11 +1034,11 @@ updated = "2026-11-02"
 [[task]]
 id = "T105"
 title = "Ship the trilogy's MCP servers (centrs and rosetta) in the session config"
-status = "active"
+status = "done"
 detail = "T55 made config.mcpServers ours, and D44 gave sessions a private settings.json. As a result, MCP servers the owner configures in their own muse settings no longer reach routeros-muse sessions. Add the package-pinned rosetta MCP server (D26 tool bundle, stdio) next to routeros_muse in the session config. Seed tagged tool_action allow rules for its read-only tools, under the preallow toggle. Consider centrs mcp the same way. Ground each server's tool names and approval behavior from a live capture first. Priority raised by the developer test drive 2026-11-02: asked to add a device, the agent ran many shell tool calls and still fell back to terminal instructions. centrs mcp is needed, not optional."
-evidence = "developer question 2026-11-02; T55 merged 1e16df0 (multi-server config.mcpServers machinery); D44/D45 private settings.json carries no user mcpServers"
+evidence = "developer question 2026-11-02; T55 merged 1e16df0; D44/D45 private settings.json carries no user mcpServers; merged 752c9e8 (e45753d) + critic fixes 02839c0. Live captures out/t105-*.jsonl (local): seeded routeros_search + centrs_explain prompt-free, unseeded centrs_devices gated, no process-env inheritance (config env is the only CDB channel; CENTRS_CDB_PASSWORD never rides config, so validate/retrieve against an encrypted CDB fail honestly until the password channel exists). Seeded validate/retrieve contact CDB-registered devices prompt-free; retrieve is unscoped across menus the CDB account can see (boundary = CDB allowlist + restricted RouterOS account, centrs is helper not policy). routeros_current_versions unseeded (per-call fetch to upgrade server). Codex quota out; fallback wonder review fix-first (all fixed) + spark critic post-merge stands; bundle drift guard test; main gate green SMOKE GREEN"
 blocked_by = []
-agent = "muse-wonder-1.0 (orch)"
+agent = "muse-spark-1.3 (orch muse-wonder-1.0)"
 updated = "2026-11-02"
 
 [[task]]
@@ -1094,9 +1094,9 @@ updated = "2026-11-02"
 [[task]]
 id = "T110"
 title = "Add-device with credentials: hand off to the UI's credential dialog, not the terminal"
-status = "needed"
+status = "active"
 detail = "Developer test drive 2026-11-02, prompt: add 192.168.74.1 to devices, user robot-admin, how can I get you the password securely? The agent ran many tool calls, then said secrets must never enter chat and told the developer to seed the CDB from their own terminal. The secret rule is right, but the UI already has a device card with Set credentials. Give the agent a path that keeps the password out of chat and out of argv: a ui_* tool (e.g. ui_add_device / ui_request_credentials) that opens the Add Device or credentials dialog prefilled with host and user, so the owner types the password in the UI; centrs mcp (T105) for the CDB write; and a workspace skill for the add-device flow so it doesn't fumble through shell calls. Needs the encrypted-CDB story (centrs#558) for the real login path."
 evidence = "developer test drive 2026-11-02"
 blocked_by = []
-agent = ""
+agent = "muse-wonder-1.0 (orch)"
 updated = "2026-11-02"
