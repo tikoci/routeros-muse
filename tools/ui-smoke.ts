@@ -2500,11 +2500,23 @@ try {
 			});
 			const pageF = await ctxU.newPage();
 			const pageG = await ctxU.newPage();
+			// R2 aborts F's SSE at the route: Chromium logs the failed
+			// EventSource request. Excused only for that exact shape on
+			// the events endpoint (location-scoped, like the artifact
+			// blocks) — any other console error still fails the gate.
+			const sseAbortNoise: string[] = [];
 			for (const p of [pageF, pageG]) {
 				p.on("console", (msg) => {
-					if (msg.type() === "error") {
-						consoleErrors.push(msg.text().slice(0, 300));
+					if (msg.type() !== "error") return;
+					const text = msg.text().slice(0, 300);
+					if (
+						msg.location().url.includes("/api/chat/events") &&
+						text.includes("net::ERR_FAILED")
+					) {
+						sseAbortNoise.push(text);
+						return;
 					}
+					consoleErrors.push(text);
 				});
 				p.on("response", (res) => {
 					if (res.status() >= 400) {
@@ -2672,12 +2684,18 @@ try {
 				"t50 waiting strip clears after settled-elsewhere reconcile",
 				(await pageF.locator("#waiting:visible").count()) === 0,
 			);
-			await pageF.screenshot({ path: path.join(OUT, "36-t50-elsewhere.png") });
+			check(
+				"t50 offline phase really dropped SSE requests",
+				sseAbortNoise.length >= 1,
+				`aborts=${sseAbortNoise.length}`,
+			);
+			await pageF.screenshot({
+				path: path.join(OUT, "36-t50-elsewhere.png"),
+			});
 			// Leg D6 (differing rulePreview): the subtitle stays when it
 			// differs from the label — the pending snapshot is rewritten
 			// on the way in, so the card renders the different text. Runs
-			// on G: F missed t50-t2's completion while offline and sits
-			// running, while G idled normally.
+			// on G, the tab that stayed connected through R2.
 			await pageG.fill("#chatinput", "NEED-APPROVAL rule differs");
 			await pageG.click("#sendbtn");
 			await pageG.waitForSelector(".appr-card.hold-pending", {

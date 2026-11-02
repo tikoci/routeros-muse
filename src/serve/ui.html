@@ -1986,6 +1986,12 @@
   // off decision (Reject is just the abort choice).
   const pendingApprovals = new Map(); // approvalId -> {params, el, resolved}
   const pendingQuestions = new Map(); // userInputId -> {params, el, resolved, busy, picks}
+  // Snapshot reconcile: recovery sequence (stale snapshots never win)
+  // plus the last SSE-event timestamp per prompt, so a reconnect can
+  // tell a prompt settled elsewhere from one whose events are in flight.
+  let recoverSeq = 0;
+  let recoverApplied = 0;
+  const lastEventAt = new Map(); // "a:"+approvalId / "q:"+userInputId -> ms
 
   function pendingTallies() {
     let approvals = 0, questions = 0;
@@ -2083,7 +2089,11 @@
       const lab = document.createElement("span");
       lab.textContent = c.label || c.choiceId;
       b.appendChild(lab);
-      if (typeof c.rulePreview === "string" && c.rulePreview) {
+      // The rule subtitle hides when it repeats the shown label (live
+      // meta sends identical strings) and stays when it differs.
+      const shown = c.label || c.choiceId;
+      if (typeof c.rulePreview === "string" && c.rulePreview &&
+          c.rulePreview.trim() !== String(shown).trim()) {
         const r = document.createElement("span");
         r.className = "rule";
         r.textContent = c.rulePreview;
@@ -2414,22 +2424,70 @@
     updateWaiting();
   }
 
-  // Late join / reload / reconnect: re-render whatever is still
-  // pending. listPending returns only unsettled items, and the
-  // resolved maps above refuse to resurrect — so a resolved item can
-  // never show as pending through here.
+  // A prompt settled in another tab while this tab was
+  // disconnected: resolve the card with the settled-elsewhere label
+  // (the resolvers still refuse to resurrect).
+  function settleApprovalElsewhere(approvalId) {
+    onApprovalResolved({ approvalId, decision: "settled elsewhere", resolvedBy: "elsewhere" });
+  }
+  function settleQuestionElsewhere(userInputId) {
+    onQuestionSettled({ userInputId, outcome: "settled elsewhere" });
+  }
+
+  // Late join / reload / reconnect: reconcile the live prompt set
+  // against the server snapshot. listPending returns only unsettled
+  // items: snapshot members add or refresh (never resurrect), and a
+  // locally pending item missing from the snapshot — with no SSE
+  // event since this recovery started — was settled elsewhere.
+  // Concurrent recoveries apply in start order: a snapshot older
+  // than the latest applied is ignored.
   async function recoverPending() {
+    const mySeq = ++recoverSeq;
+    const startedAt = Date.now();
+    let j;
     try {
-      const j = await getJSON("/api/chat/pending");
-      if (!j.ok) return;
-      for (const a of j.approvals || []) onApprovalRequested(a);
-      for (const q of j.userInputs || []) onQuestionRequested(q);
-    } catch { /* pending stays empty when the server is unreachable */ }
+      j = await getJSON("/api/chat/pending");
+    } catch { return; /* pending stays as-is when the server is unreachable */ }
+    if (!j.ok) return;
+    if (mySeq < recoverApplied) return;
+    recoverApplied = mySeq;
+    const approvals = j.approvals || [];
+    const inputs = j.userInputs || [];
+    for (const a of approvals) onApprovalRequested(a);
+    for (const q of inputs) onQuestionRequested(q);
+    const liveA = new Set();
+    for (const a of approvals) {
+      if (a && typeof a.approvalId === "string") liveA.add(a.approvalId);
+    }
+    for (const [id, rec] of pendingApprovals) {
+      if (rec.resolved || liveA.has(id)) continue;
+      if ((lastEventAt.get("a:" + id) || 0) < startedAt) settleApprovalElsewhere(id);
+    }
+    const liveQ = new Set();
+    for (const q of inputs) {
+      if (q && typeof q.userInputId === "string") liveQ.add(q.userInputId);
+    }
+    for (const [id, rec] of pendingQuestions) {
+      if (rec.resolved || liveQ.has(id)) continue;
+      if ((lastEventAt.get("q:" + id) || 0) < startedAt) settleQuestionElsewhere(id);
+    }
+  }
+
+  // Stamp every approval/question SSE event: recovery reconciles
+  // against these times (never against its own snapshot adds).
+  function stampPromptEvent(m) {
+    const p = (m && m.params) || {};
+    if (m.method === "approval/requested" || m.method === "approval/updated" || m.method === "approval/resolved") {
+      if (typeof p.approvalId === "string") lastEventAt.set("a:" + p.approvalId, Date.now());
+    } else if (m.method === "userInput/requested" || m.method === "userInput/settled") {
+      if (typeof p.userInputId === "string") lastEventAt.set("q:" + p.userInputId, Date.now());
+    }
   }
 
   function onStream(ev) {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
+    stampPromptEvent(m);
     if (m.method === "approval/requested") { onApprovalRequested(m.params); return; }
     if (m.method === "approval/updated") { onApprovalUpdated(m.params); return; }
     if (m.method === "approval/resolved") { onApprovalResolved(m.params); return; }
@@ -3449,14 +3507,17 @@
     es.onmessage = onStream;
     // T45: stream drops used to be silent (stale Stop, no rows). Native
     // retry reconnects; the chip says so until it succeeds. T50: a
-    // reconnect also re-recovers pending holds (frames may have been
-    // lost in the gap); onopen fires on first connect too, when there
-    // is nothing to recover (recoverPending is a no-op then anyway).
+    // Every open recovers — reconnects (frames may have been lost
+    // in the gap) AND the first connect: the history-triggered
+    // pending fetch can finish before SSE connects, and a prompt
+    // emitted in between is missed by both paths unless the first
+    // open recovers too.
     let sseDown = false;
     es.onerror = () => { sseDown = true; $("ssestate").style.display = ""; };
     es.onopen = () => {
       $("ssestate").style.display = "none";
-      if (sseDown) { sseDown = false; recoverPending(); }
+      sseDown = false;
+      recoverPending();
     };
   }
 
