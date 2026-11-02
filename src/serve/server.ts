@@ -265,8 +265,7 @@ export function transcriptItems(events: ViewEvent[]): TranscriptItem[] {
 			out.push({
 				kind,
 				role: kind === "userMessage" ? "user" : "agent",
-				text:
-					kind === "userMessage" ? stripTargetPreamble(text) : text,
+				text: kind === "userMessage" ? stripTargetPreamble(text) : text,
 			});
 			continue;
 		}
