@@ -437,7 +437,7 @@ On `centrs retrieve` (developer decision 2026-11-02): centrs is a
 helper, not routeros-muse's security layer — RouterOS only reveals
 RO/RW/policy at run time, so the seeded rule trusts centrs's
 read/write split (reads run, writes need --yes). The known
-fragment-path reboot bug is C19, being fixed upstream. Anyone who
+fragment-path reboot bug is C19 (tikoci/centrs#586), open upstream. Anyone who
 needs "never reboot" should use a restricted RouterOS account —
 that is the real boundary for strict setups.
 Housekeeping, documented not alarming: `quickchr list`/`doctor`

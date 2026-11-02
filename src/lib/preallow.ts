@@ -47,7 +47,7 @@ export const POLICY_SCHEMA_VERSION = 2;
  * (runs -exec/-delete), rosetta browse/--help/--version (browse
  * writes its DB). The seeded retrieve rule trusts centrs's
  * read/write split (reads run, writes need --yes); the known
- * fragment-path bug is C19, fixed upstream. Housekeeping note:
+ * fragment-path bug is C19 (centrs#586), open upstream. Housekeeping:
  * quickchr list/doctor call refreshAllStatuses(), which rewrites
  * stale local machine state (clears dead PIDs/frozen markers) —
  * local bookkeeping, no device contact, acceptable in the read set.
