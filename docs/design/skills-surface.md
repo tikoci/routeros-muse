@@ -413,3 +413,30 @@ never-overwrite rule. The deeper K30 redesign (one managed source)
 should treat the plugin channel as the machine-level cache and the
 workspace copy as the session-level truth — matching exactly how
 muse itself layers plugin cache over project files.
+
+## T55 part 1 — D39/D40 re-verified on an init-ed template (2026-11-02)
+
+No new code: a live re-verification that `--trust-workspace`
+still routes AGENTS.md and `.agents/skills/` on the binary that
+matters (1.4.14, the same build as the B1/B2/P campaigns), this
+time over a workspace the current `init` actually produces
+(`--template network`, 55 skill dirs + a README in
+`.agents/skills/`).
+
+- `skill/list` on a trusted session reports 90 rows: **55
+  project** (every skill dir, exact set match — the 56th
+  `.agents/skills` entry is README.md, not a skill), 12
+  bundled, 21 user, 2 plugin. Row key is `source`
+  (`project`/`bundled`/`user`/`plugin`), same shape as S2.
+- One model turn ("list the project instructions file and the
+  project skills you can see") answers `AGENTS.md` first, then
+  all 55 project skill names — exact set match both directions,
+  no extras, no shell calls needed.
+- The probes ran with temp muse/config homes; the config home
+  carried only an `auth.json` symlink (read-only, the private-home
+  mechanism), and the shared `~/.config/muse` listing was
+  byte-identical before and after.
+
+Verdict: D39/D40 route correctly on init-ed workspaces; nothing
+to fix. Captures are local-only (`out/t55-live/skills-probe.jsonl`,
+`out/t55-live/skills-turn.jsonl` — never committed).
