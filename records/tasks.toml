@@ -1004,9 +1004,9 @@ updated = "2026-11-01"
 [[task]]
 id = "T101"
 title = "Option C: pre-allowed reads plus explicit permission profile"
-status = "active"
+status = "done"
 detail = "Implement D42 and D43 once decided: session/start sends permissionProfile per access mode; start ensures the workspace's read allow rules in approval-policy.json (merge-safe, tagged, re-keyed on move); Settings shows the profile and the pre-allowed list with an off switch. Verify the sandboxed-profile quirks first (cwd seen as /, read-only /dev/shm workspaces) with a live turn on a twin-free temp workspace under $HOME. Round 2 (sol request-changes 2026-11-01, D44 decided 2026-11-02): private muse config home under <dataHome>/routeros-muse/muse-config, read set cut to centrs retrieve + quickchr list/doctor, tools keep the real config home, network-grant ownership tracked in our own state. Round 3 (sol request-changes 2026-11-02): centrs retrieve KEPT in the seed set (developer: centrs is not the policy layer; C19 is an upstream bug); fail closed on unsafe private homes; cross-process seed lock."
-evidence = "docs/design/permissions.md (merged 53bee58), captures out/wire-capture/perm-20261102T000756Z/; branch t3-cc121d2e cbbab76..6bad788; sol review 2026-11-01 request-changes"
+evidence = "docs/design/permissions.md (merged 53bee58), captures out/wire-capture/perm-20261102T000756Z/; branch t3-cc121d2e cbbab76..6bad788; sol review 2026-11-01 request-changes; merged 8dde635 (rounds 1-4 + orchestrator review fixes 636d4c7; per-workspace .muse-config homes, D45); main gate 521 pass / 0 fail, smoke green, tmpdir clean; live: quickchr list under :ask-me+promptUnmatched 0 approval frames, ~/.config/muse byte-identical, agent-run centrs sees CENTRS_SSH_KEY via the tikoci link"
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-02"
