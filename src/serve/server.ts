@@ -533,6 +533,40 @@ export function stripTargetPreamble(text: string): string {
 	return parseTargetPreamble(text).text;
 }
 
+/** T55: max relay request body (a ui_* call is a few hundred bytes). */
+const RELAY_MAX_BYTES = 64 * 1024;
+
+/** True for 127.0.0.0/8, ::1, and their IPv4-mapped forms. */
+export function isLoopbackPeer(address: string | undefined): boolean {
+	if (!address) return false;
+	const a = address.startsWith("::ffff:") ? address.slice(7) : address;
+	return a === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
+}
+
+/** Read a request body as text, or null once it exceeds max bytes. */
+async function readBodyCapped(
+	req: Request,
+	max: number,
+): Promise<string | null> {
+	const declared = Number(req.headers.get("content-length") ?? "");
+	if (Number.isFinite(declared) && declared > max) return null;
+	if (!req.body) return "";
+	const reader = req.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > max) {
+			await reader.cancel();
+			return null;
+		}
+		chunks.push(value);
+	}
+	return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const noWs = opts.noWorkspace === true;
 	if (noWs && opts.workspace !== undefined) {
@@ -1163,7 +1197,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T45: the 10s default reaped quiet SSE streams and any slow route
 		// (60s doctor run, cold spawn). 120s covers every run budget below.
 		idleTimeout: 120,
-		async fetch(req) {
+		async fetch(req, srv) {
 			const url = new URL(req.url);
 			const p = url.pathname;
 			try {
@@ -1324,7 +1358,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							provider,
 							museHome: opts.museHome,
 							museConfigHome: museCfgHome,
-							mcpServers: mcpServers(),
+							// Disposable probe: no ui tools (a probe turn must
+							// never emit a real UI action).
+							mcpServers: {},
 							extraArgs: mspExtraArgs,
 							env: tools,
 						});
@@ -2307,11 +2343,27 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// bridge returns them as isError results the agent
 					// can report back. Every accepted call fans out as
 					// a ui/* SSE event the UI renders.
-					const body = (await req.json()) as {
-						token?: unknown;
-						tool?: unknown;
-						arguments?: unknown;
-					};
+					// Loopback peers only: the bridge always dials
+					// 127.0.0.1, so a LAN-bound UI (--host 0.0.0.0)
+					// never exposes the relay to the network.
+					if (!isLoopbackPeer(srv.requestIP(req)?.address)) {
+						return json({ ok: false, why: "relay is loopback-only" }, 403);
+					}
+					// Bounded before parsing (and before the token
+					// check): a tool call is a few hundred bytes.
+					const raw = await readBodyCapped(req, RELAY_MAX_BYTES);
+					if (raw === null) {
+						return json({ ok: false, why: "relay body too large" }, 413);
+					}
+					let body: { token?: unknown; tool?: unknown; arguments?: unknown };
+					try {
+						body = JSON.parse(raw) as typeof body;
+					} catch {
+						return json({ ok: false, why: "relay body is not JSON" }, 400);
+					}
+					if (body === null || typeof body !== "object") {
+						return json({ ok: false, why: "relay body is not an object" }, 400);
+					}
 					if (
 						typeof body.token !== "string" ||
 						!tokensEqual(body.token, mcpToken)
@@ -2644,7 +2696,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						provider,
 						museHome: opts.museHome,
 						museConfigHome: museCfgHome,
-						mcpServers: mcpServers(),
+						mcpServers: {}, // Disposable probe: no ui tools.
 						experimental: true,
 						extraArgs: mspExtraArgs,
 						env: tools,

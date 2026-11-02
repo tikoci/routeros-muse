@@ -1105,7 +1105,7 @@
         ["Version", esc(res.version || "—"), ""],
       ];
       statsEl.innerHTML = rows.map((s) => '<div class="stat"><div class="k">' + s[0] + '</div><div class="v">' + s[1] + "</div></div>").join("");
-      const inChat = !!document.querySelector('.tpill[data-dev="' + id + '"]');
+      const inChat = !!document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]');
       if (inChat) { addEl.style.display = "none"; noteEl.textContent = "in this chat ✓ · via centrs · just now"; }
       else { addEl.style.display = ""; noteEl.textContent = "via centrs · just now · Add marks clear intent"; }
     } catch (e) {
@@ -1214,7 +1214,7 @@
   }
   document.querySelectorAll(".ctab.working").forEach(wireWorkingTab);
   function openSlot(id, key, name) {
-    const open = document.querySelector('.ctab[data-pane="' + id + '"][data-key="' + key + '"]');
+    const open = document.querySelector('.ctab[data-pane="' + CSS.escape(id) + '"][data-key="' + CSS.escape(key) + '"]');
     if (open) { showPane(id); if (id === "pane-artifact") bindArtTab(open); return; }
     let slot = document.querySelector(".ctab.working:not(.pinned)");
     if (!slot) {
@@ -1239,7 +1239,7 @@
     if (row) row.parentNode.prepend(row);
   }
   function addTarget(id) {
-    if (document.querySelector('.tpill[data-dev="' + id + '"]')) return;
+    if (document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]')) return;
     const pill = document.createElement("span");
     pill.className = "tpill";
     pill.dataset.dev = id;
@@ -1249,7 +1249,7 @@
     x.textContent = "×";
     pill.appendChild(x);
     document.getElementById("targets").prepend(pill);
-    const card = document.querySelector('.dev[data-key="dev-' + id + '"]');
+    const card = document.querySelector('.dev[data-key="' + CSS.escape('dev-' + id) + '"]');
     if (card) {
       card.classList.add("targeted");
       card.querySelector(".chat").innerHTML = "";
@@ -1267,9 +1267,9 @@
     refreshStatpop();
   }
   function dropTarget(id) {
-    const pill = document.querySelector('.tpill[data-dev="' + id + '"]');
+    const pill = document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]');
     if (pill) pill.remove();
-    const card = document.querySelector('.dev[data-key="dev-' + id + '"]');
+    const card = document.querySelector('.dev[data-key="' + CSS.escape('dev-' + id) + '"]');
     if (card) {
       card.classList.remove("targeted");
       card.querySelector(".chat").innerHTML = '<span class="gone">not in this chat</span>';

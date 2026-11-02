@@ -391,14 +391,19 @@ describe("sessionMcp negotiation (T55)", () => {
 	// A stub `muse serve` that records initialize + session/start
 	// params: proves the client negotiates sessionMcp and carries
 	// the servers on every session start, structurally.
-	test("initialize requests sessionMcp; session/start carries mcpServers", async () => {
-		const dir = mktmp("t55-caps-");
-		const seen = path.join(dir, "seen.jsonl");
-		const stub = path.join(dir, "muse");
-		// Sync append per line: truncated writers would keep only the tail.
-		nodeFs.writeFileSync(
-			stub,
-			`#!/usr/bin/env bun
+	for (const deny of [false, true])
+		test(
+			deny
+				? "a host withholding sessionMcp gets no config, so chat keeps working"
+				: "initialize requests sessionMcp; session/start carries mcpServers",
+			async () => {
+				const dir = mktmp("t55-caps-");
+				const seen = path.join(dir, "seen.jsonl");
+				const stub = path.join(dir, "muse");
+				// Sync append per line: truncated writers would keep only the tail.
+				nodeFs.writeFileSync(
+					stub,
+					`#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 const dec = new TextDecoder();
 let buf = "";
@@ -414,56 +419,61 @@ for await (const chunk of Bun.stdin.stream()) {
 		appendFileSync(process.env["STUB_OUT"], line + "\\n");
 		if (m.method === "session/start") {
 			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { session: { sessionId: "s-1" }, viewCursor: "" } }) + "\\n");
+		} else if (m.method === "initialize") {
+			const grant = process.env["STUB_DENY_SESSION_MCP"] === "1" ? [] : ["sessionMcp"];
+			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { grantedCapabilities: grant } }) + "\\n");
 		} else {
 			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: {} }) + "\\n");
 		}
 	}
 }
 `,
+				);
+				nodeFs.chmodSync(stub, 0o755);
+				const env = toolEnv(dir, {
+					...process.env,
+					STUB_OUT: seen,
+					STUB_DENY_SESSION_MCP: deny ? "1" : "0",
+				} as NodeJS.ProcessEnv);
+				const c = await MspClient.spawn({
+					provider: "echo",
+					env,
+					mcpServers: testMcp(),
+					timeoutMs: 5_000,
+				});
+				try {
+					await c.sessionStart({ workspaceRoot: mktmp("t55-caps-ws-") });
+					const lines = nodeFs
+						.readFileSync(seen, "utf8")
+						.split("\n")
+						.filter((l) => l.trim())
+						.map((l) => JSON.parse(l) as Record<string, unknown>);
+					const init = lines.find(
+						(m) => m["method"] === "initialize",
+					) as Record<string, unknown>;
+					expect(
+						(
+							(init["params"] as Record<string, unknown>)[
+								"capabilities"
+							] as Record<string, unknown>
+						)["requestedCapabilities"],
+					).toEqual(["sessionMcp"]);
+					const start = lines.find(
+						(m) => m["method"] === "session/start",
+					) as Record<string, unknown>;
+					const config = (start["params"] as Record<string, unknown>)[
+						"config"
+					] as Record<string, unknown> | undefined;
+					if (deny) {
+						expect(config).toBeUndefined();
+						expect(c.uiTools).toBe(false);
+					} else {
+						expect(config?.["mcpServers"]).toEqual(testMcp());
+						expect(c.uiTools).toBe(true);
+					}
+				} finally {
+					await c.close();
+				}
+			},
 		);
-		nodeFs.chmodSync(stub, 0o755);
-		const env = toolEnv(dir, {
-			...process.env,
-			STUB_OUT: seen,
-		} as NodeJS.ProcessEnv);
-		const c = await MspClient.spawn({
-			provider: "echo",
-			env,
-			mcpServers: testMcp(),
-			timeoutMs: 5_000,
-		});
-		try {
-			await c.sessionStart({ workspaceRoot: mktmp("t55-caps-ws-") });
-			const lines = nodeFs
-				.readFileSync(seen, "utf8")
-				.split("\n")
-				.filter((l) => l.trim())
-				.map((l) => JSON.parse(l) as Record<string, unknown>);
-			const init = lines.find((m) => m["method"] === "initialize") as Record<
-				string,
-				unknown
-			>;
-			expect(
-				(
-					(init["params"] as Record<string, unknown>)["capabilities"] as Record<
-						string,
-						unknown
-					>
-				)["requestedCapabilities"],
-			).toEqual(["sessionMcp"]);
-			const start = lines.find(
-				(m) => m["method"] === "session/start",
-			) as Record<string, unknown>;
-			expect(
-				(
-					(start["params"] as Record<string, unknown>)["config"] as Record<
-						string,
-						unknown
-					>
-				)["mcpServers"],
-			).toEqual(testMcp());
-		} finally {
-			await c.close();
-		}
-	});
 });

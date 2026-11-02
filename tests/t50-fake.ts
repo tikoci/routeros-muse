@@ -396,9 +396,17 @@ rl.on("line", (text) => {
 		const rc = Array.isArray(caps.requestedCapabilities)
 			? caps.requestedCapabilities
 			: [];
-		sessionMcp = rc.includes("sessionMcp");
+		// Real muse grants what it supports (B2: grantedCapabilities
+		// ["sessionMcp"]); FAKE_DENY_SESSION_MCP=1 plays a host that
+		// withholds it.
+		sessionMcp =
+			rc.includes("sessionMcp") && process.env.FAKE_DENY_SESSION_MCP !== "1";
 		logLine("CAPS requestedCapabilities=" + JSON.stringify(rc));
-		send({ jsonrpc: "2.0", id: id, result: {} });
+		send({
+			jsonrpc: "2.0",
+			id: id,
+			result: { grantedCapabilities: sessionMcp ? ["sessionMcp"] : [] },
+		});
 		return;
 	}
 	if (method === "session/start") {

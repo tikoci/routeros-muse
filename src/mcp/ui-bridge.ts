@@ -77,6 +77,9 @@ const TOOLS: ToolDef[] = [
 	},
 ];
 
+/** Relay round-trip cap per tool call. */
+const RELAY_TIMEOUT_MS = 30_000;
+
 function textResult(text: string, isError?: boolean): Record<string, unknown> {
 	return {
 		content: [{ type: "text", text }],
@@ -100,6 +103,8 @@ async function relay(
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ token, tool, arguments: args ?? {} }),
+			// A wedged server must not hang the agent's tool call.
+			signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
 		});
 	} catch (err) {
 		return {

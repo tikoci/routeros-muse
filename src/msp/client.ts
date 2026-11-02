@@ -147,13 +147,14 @@ export type MspSpawnOpts = {
 	/** Isolate the config home too (auth.json lives there, not in museHome). */
 	museConfigHome?: string;
 	/**
-	 * T55/D41: the per-session MCP servers for this worker. Required
-	 * and unconditional: every spawn negotiates sessionMcp at
-	 * initialize and every sessionStart carries this config, so the
-	 * agent always has the ui_* tools and Ask first never prompts
-	 * for them while preallow seeds their rules.
+	 * T55/D41: the per-session MCP servers for this worker. Every
+	 * spawn requests sessionMcp at initialize; sessionStart carries
+	 * this config only when the host granted it (a host that
+	 * withholds the grant refuses the config with -32010, and chat
+	 * must keep working without the ui_* tools). Disposable probe
+	 * sessions pass none.
 	 */
-	mcpServers: Record<string, McpServerConfig>;
+	mcpServers?: Record<string, McpServerConfig>;
 	extraArgs?: string[];
 	/**
 	 * T101: opt into experimentalApi at initialize. The server
@@ -177,6 +178,7 @@ export type MspSpawnOpts = {
 export class MspClient {
 	private proc: ReturnType<typeof Bun.spawn>;
 	private mcpServers: Record<string, McpServerConfig>;
+	private sessionMcpGranted = false;
 	private nextId = 1;
 	private pending = new Map<number, Pending>();
 	private notifyHandlers = new Set<(ev: ViewEvent) => void>();
@@ -233,7 +235,7 @@ export class MspClient {
 		});
 		const client = new MspClient(proc, opts?.mcpServers ?? {});
 		const timeoutMs = opts?.timeoutMs ?? 30_000;
-		await client.call(
+		const init = (await client.call(
 			"initialize",
 			{
 				clientInfo: { name: "routeros_muse", version: "0.1" },
@@ -245,9 +247,17 @@ export class MspClient {
 				},
 			},
 			timeoutMs,
-		);
+		)) as { grantedCapabilities?: unknown } | null;
+		const granted = init?.grantedCapabilities;
+		client.sessionMcpGranted =
+			Array.isArray(granted) && granted.includes("sessionMcp");
 		client.notify("initialized", {});
 		return client;
+	}
+
+	/** T55: true when sessions on this host carry the ui_* tools. */
+	get uiTools(): boolean {
+		return this.sessionMcpGranted && Object.keys(this.mcpServers).length > 0;
 	}
 
 	onNotification(handler: (ev: ViewEvent) => void): () => void {
@@ -272,8 +282,9 @@ export class MspClient {
 			...(opts.permissionProfile
 				? { permissionProfile: opts.permissionProfile }
 				: {}),
-			// T55: every session carries the ui MCP servers.
-			config: { mcpServers: this.mcpServers },
+			// T55: the ui MCP servers, when the host granted
+			// sessionMcp and there is something to send.
+			...(this.uiTools ? { config: { mcpServers: this.mcpServers } } : {}),
 		})) as { session: MspSession; viewCursor: string };
 	}
 

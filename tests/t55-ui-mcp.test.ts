@@ -35,7 +35,7 @@ import {
 	UI_TOOL_NAMES,
 	uiMcpServers,
 } from "../src/mcp/ui-tools";
-import { startServer } from "../src/serve/server";
+import { isLoopbackPeer, startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import {
 	makeT50Workspace,
@@ -519,6 +519,70 @@ describe("worker spawn negotiation", () => {
 	);
 });
 
+describe("probe sessions carry no ui tools", () => {
+	t55(
+		"boot probe and oauth recheck send no mcpServers; the worker does",
+		async () => {
+			const ws = mktmp("t55-probe-ws-");
+			nodeFs.writeFileSync(
+				path.join(ws, "workspace.toml"),
+				"canonical = true\n",
+			);
+			const real = mktmp("t55-probe-real-");
+			nodeFs.mkdirSync(path.join(real, "muse"), { recursive: true });
+			nodeFs.writeFileSync(
+				path.join(real, "muse", "auth.json"),
+				'{"fake":true}\n',
+			);
+			const saved = process.env["XDG_CONFIG_HOME"];
+			process.env["XDG_CONFIG_HOME"] = real;
+			try {
+				const bin = stubT50Bin();
+				await withT50Env(bin.log, async () => {
+					const srv = await startT50Srv(bin.bin, {
+						provider: "meta",
+						workspace: ws,
+						mcpToken: "t55-probe-token",
+					});
+					try {
+						const recheck = await fetch(`${srv.url}api/auth/oauth-recheck`, {
+							method: "POST",
+						});
+						expect(recheck.status).toBe(200);
+						const sent = await postJson(`${srv.url}api/chat/send`, {
+							text: "hello",
+						});
+						expect(sent.status).toBe(200);
+						const deadline = Date.now() + 20_000;
+						let log = "";
+						for (;;) {
+							log = nodeFs.existsSync(bin.log)
+								? nodeFs.readFileSync(bin.log, "utf8")
+								: "";
+							const starts = log
+								.split("\n")
+								.filter((l) => l.startsWith("CAPS ")).length;
+							if (starts >= 3 || Date.now() > deadline) break;
+							await Bun.sleep(100);
+						}
+						const lines = log.split("\n");
+						expect(
+							lines.filter((l) => l.startsWith("CAPS ")).length,
+						).toBeGreaterThanOrEqual(3);
+						expect(lines.filter((l) => l.startsWith("MCPCFG ")).length).toBe(1);
+					} finally {
+						await srv.stop();
+					}
+				});
+			} finally {
+				if (saved === undefined) delete process.env["XDG_CONFIG_HOME"];
+				else process.env["XDG_CONFIG_HOME"] = saved;
+			}
+		},
+		60_000,
+	);
+});
+
 describe("relay route", () => {
 	const TOKEN = "t55-relay-token";
 
@@ -572,6 +636,50 @@ describe("relay route", () => {
 			}
 		});
 	});
+
+	t55("only loopback peers count as the bridge", () => {
+		for (const a of ["127.0.0.1", "127.8.9.10", "::1", "::ffff:127.0.0.1"]) {
+			expect(isLoopbackPeer(a)).toBe(true);
+		}
+		for (const a of [
+			undefined,
+			"",
+			"192.168.74.157",
+			"10.0.0.1",
+			"::ffff:192.168.1.2",
+			"fe80::1",
+			"127.0.0.1.evil",
+			"1127.0.0.1",
+		]) {
+			expect(isLoopbackPeer(a)).toBe(false);
+		}
+	});
+
+	t55(
+		"an oversized body is refused before parsing or the token check",
+		async () => {
+			const bin = stubT50Bin();
+			await withT50Env(bin.log, async () => {
+				const srv = await startT50Srv(bin.bin, { mcpToken: TOKEN });
+				try {
+					const big = await relayCall(srv.url, {
+						token: TOKEN,
+						tool: "ui_notify",
+						arguments: { text: "x".repeat(70 * 1024) },
+					});
+					expect(big.status).toBe(413);
+					const notJson = await fetch(`${srv.url}api/mcp/relay`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: "{not json",
+					});
+					expect(notJson.status).toBe(400);
+				} finally {
+					await srv.stop();
+				}
+			});
+		},
+	);
 
 	t55("unknown tool is a tool error, not an HTTP error", async () => {
 		const bin = stubT50Bin();
