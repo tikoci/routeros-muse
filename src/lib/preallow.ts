@@ -94,7 +94,7 @@ export type PreallowFs = {
 export type EnsureArgs = {
 	configHome?: string;
 	workspaceRoot: string;
-	/** Phase 1.5 wires these into network rules; until then reported only. */
+	/** Router hosts to cover with network rules (normalized). */
 	hosts?: string[];
 	/** False removes our tagged rules for this workspace instead. */
 	enabled: boolean;
@@ -197,6 +197,14 @@ function shellRoot(entry: PolicyEntry): string | null {
 		: null;
 }
 
+/** The covered host of a tagged network rule, else null. */
+function networkHost(entry: PolicyEntry): string | null {
+	const rule = entry["rule"];
+	if (!isRecord(rule)) return null;
+	if (rule["kind"] !== "network") return null;
+	return typeof rule["host"] === "string" ? (rule["host"] as string) : null;
+}
+
 /** A workspace root counts as live when it is still a directory. */
 function rootAlive(root: string): boolean {
 	try {
@@ -204,6 +212,31 @@ function rootAlive(root: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * A network allow rule for one device host (D43): host-only, no
+ * port, no protocol, no workspace scope. Grounded live (T101 probe
+ * 82): this exact shape, seeded, let an https egress to
+ * 127.0.0.1:3443 through with zero approval frames under :ask-me +
+ * promptUnmatched, and boots clean (unknown fields would brick the
+ * store — verified fatal on a probe). Muse's own persister writes
+ * the narrower {host, port, protocol} variant; the host-only form
+ * matches at least as broadly (every port, every protocol).
+ *
+ * Key order matches muse's writer (kind first, then host).
+ */
+export function networkRuleForHost(host: string): PolicyEntry {
+	return { kind: "network", host };
+}
+
+function networkEntry(host: string): PolicyEntry {
+	return {
+		effect: "allow",
+		durability: "local_persistent",
+		rule: networkRuleForHost(host),
+		reason: PREALLOW_TAG,
+	};
 }
 
 function shellEntry(prefix: string[], workspaceRoot: string): PolicyEntry {
@@ -241,9 +274,15 @@ const MAX_ATTEMPTS = 4; // Initial attempt plus up to 3 retries.
  * Enabled: the current root holds exactly our shell set (stale
  * entries from older seed sets are replaced, never merged), our
  * tagged shell rules for roots that no longer exist are pruned,
- * our tagged rules for other live roots are kept, and every
- * foreign entry is preserved in place. Disabled: our tagged rules
- * for this root are removed (dead-root pruning still applies).
+ * our tagged rules for other live roots are kept, every foreign
+ * entry is preserved in place, and missing network rules for the
+ * current hosts are added. Network rules are global (no
+ * workspace_root — the persisted shape carries none), so they are
+ * never pruned by content: another workspace may share the host,
+ * and only it can re-seed. Disabled: our tagged rules for this
+ * root are removed, plus our tagged network rules for the current
+ * hosts (a workspace sharing a host re-seeds at its next boot);
+ * dead-root pruning still applies.
  *
  * No rewrite when nothing changed (byte-compare before writing).
  * An unknown schema_version or unparseable file skips with a
@@ -264,15 +303,20 @@ export function ensurePreallowReads(
 		fs?.readFileSync ?? ((f, e) => nodeFs.readFileSync(f, e));
 	const renameSync = fs?.renameSync ?? nodeFs.renameSync;
 	const unlinkSync = fs?.unlinkSync ?? nodeFs.unlinkSync;
+	const hosts = normalizeHosts(args.hosts ?? []);
+	const hostSet = new Set(hosts);
 	const desired: PolicyEntry[] = args.enabled
-		? READ_COMMANDS.map((p) => shellEntry(p, args.workspaceRoot))
+		? [
+				...READ_COMMANDS.map((p) => shellEntry(p, args.workspaceRoot)),
+				...hosts.map((h) => networkEntry(h)),
+			]
 		: [];
 	const seededCommands = args.enabled ? READ_COMMANDS.map((p) => [...p]) : [];
 	const base: EnsureResult = {
 		changed: false,
 		enabled: args.enabled,
 		seededCommands,
-		seededHosts: [],
+		seededHosts: args.enabled ? [...hosts] : [],
 		warnings: [],
 	};
 	for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -328,14 +372,24 @@ export function ensurePreallowReads(
 				continue;
 			}
 			const root = shellRoot(entry);
-			if (root === null) {
-				// Tagged but not a shell rule (a newer seed kind):
-				// keep, never destroy data from a newer writer.
-				kept.push(entry);
+			if (root !== null) {
+				if (root === args.workspaceRoot) continue; // Replaced.
+				if (rootAlive(root)) kept.push(entry); // Else pruned.
 				continue;
 			}
-			if (root === args.workspaceRoot) continue; // Replaced by desired.
-			if (rootAlive(root)) kept.push(entry); // Else pruned.
+			const host = networkHost(entry);
+			if (host !== null) {
+				// Current hosts are replaced by desired (added when
+				// enabled, removed when disabled); any other tagged
+				// network rule belongs to another workspace's set
+				// and is kept — network rules are never pruned by
+				// content.
+				if (!hostSet.has(host)) kept.push(entry);
+				continue;
+			}
+			// Tagged but neither a shell nor a network rule (a newer
+			// seed kind): keep, never destroy data from a newer writer.
+			kept.push(entry);
 		}
 		const next = [...kept, ...desired];
 		if (JSON.stringify(next) === JSON.stringify(rules)) {

@@ -11,6 +11,7 @@ import * as path from "node:path";
 import {
 	configHomeDir,
 	ensurePreallowReads,
+	networkRuleForHost,
 	POLICY_SCHEMA_VERSION,
 	PREALLOW_TAG,
 	policyFile,
@@ -538,6 +539,132 @@ describe("ensurePreallowReads", () => {
 					.readdirSync(path.dirname(policyFile(cfg)))
 					.filter((f) => f !== "approval-policy.json"),
 			).toEqual([]);
+		});
+	});
+});
+
+describe("network rules (probed shape)", () => {
+	test("rule is exactly the live-probed host-only shape, muse key order", () => {
+		expect(networkRuleForHost("192.168.88.1")).toEqual({
+			kind: "network",
+			host: "192.168.88.1",
+		});
+		expect(Object.keys(networkRuleForHost("h"))).toEqual(["kind", "host"]);
+	});
+
+	test("hosts seeded as tagged entries and reported", () => {
+		withCfgHome((cfg) => {
+			const ws = mktmp("t101-ws-");
+			const res = ensurePreallowReads({
+				configHome: cfg,
+				workspaceRoot: ws,
+				hosts: ["192.168.88.1", "router.lan"],
+				enabled: true,
+			});
+			expect(res.seededHosts).toEqual(["192.168.88.1", "router.lan"]);
+			const doc = readPolicy(cfg);
+			for (const h of ["192.168.88.1", "router.lan"]) {
+				expect(doc.rules).toContainEqual({
+					effect: "allow",
+					durability: "local_persistent",
+					rule: { kind: "network", host: h },
+					reason: PREALLOW_TAG,
+				});
+			}
+		});
+	});
+
+	test("host list: trims, drops empties, dedupes", () => {
+		withCfgHome((cfg) => {
+			const ws = mktmp("t101-ws-");
+			const res = ensurePreallowReads({
+				configHome: cfg,
+				workspaceRoot: ws,
+				hosts: [" h1 ", "", "h1", "h2"],
+				enabled: true,
+			});
+			expect(res.seededHosts).toEqual(["h1", "h2"]);
+			const doc = readPolicy(cfg);
+			expect(
+				doc.rules.filter(
+					(r) =>
+						(r["rule"] as Record<string, unknown>)["kind"] === "network",
+				),
+			).toHaveLength(2);
+		});
+	});
+
+	test("tagged network rules for other hosts are kept, never pruned by content", () => {
+		withCfgHome((cfg) => {
+			const ws = mktmp("t101-ws-");
+			nodeFs.mkdirSync(path.dirname(policyFile(cfg)), { recursive: true });
+			nodeFs.writeFileSync(
+				policyFile(cfg),
+				JSON.stringify({
+					schema_version: 2,
+					rules: [
+						{
+							effect: "allow",
+							durability: "local_persistent",
+							rule: { kind: "network", host: "other-ws-router" },
+							reason: PREALLOW_TAG,
+						},
+					],
+				}),
+			);
+			ensurePreallowReads({
+				configHome: cfg,
+				workspaceRoot: ws,
+				hosts: ["h1"],
+				enabled: true,
+			});
+			const doc = readPolicy(cfg);
+			const hosts = doc.rules
+				.filter((r) => r["reason"] === PREALLOW_TAG)
+				.map((r) => (r["rule"] as Record<string, unknown>)["host"]);
+			expect(hosts).toContain("other-ws-router");
+			expect(hosts).toContain("h1");
+		});
+	});
+
+	test("enabled:false removes current-host network rules, keeps others and foreign", () => {
+		withCfgHome((cfg) => {
+			const ws = mktmp("t101-ws-");
+			ensurePreallowReads({
+				configHome: cfg,
+				workspaceRoot: ws,
+				hosts: ["h1"],
+				enabled: true,
+			});
+			const doc = readPolicy(cfg);
+			const other = {
+				effect: "allow",
+				durability: "local_persistent",
+				rule: { kind: "network", host: "h2" },
+				reason: PREALLOW_TAG,
+			};
+			const foreign = {
+				effect: "allow",
+				durability: "local_persistent",
+				rule: { kind: "network", host: "h1", port: 3000, protocol: "http" },
+				reason: null,
+			};
+			nodeFs.writeFileSync(
+				policyFile(cfg),
+				JSON.stringify({ schema_version: 2, rules: [...doc.rules, other, foreign] }),
+			);
+			ensurePreallowReads({
+				configHome: cfg,
+				workspaceRoot: ws,
+				hosts: ["h1"],
+				enabled: false,
+			});
+			const after = readPolicy(cfg);
+			expect(after.rules).toContainEqual(other);
+			expect(after.rules).toContainEqual(foreign);
+			expect(
+				after.rules.filter((r) => r["reason"] === PREALLOW_TAG),
+			).toEqual([other]);
 		});
 	});
 });
