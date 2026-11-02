@@ -269,6 +269,6 @@ id = "K30"
 title = "One managed home for skills"
 status = "proposed"
 statement = "Skills should come from one managed source (likely tikoci/routeros-skills, organized by metadata, branches or Pages) rather than being copied per template; routeros-muse installs a declared set into .agents/skills with provenance, offers updates, and checks the loaded list via skill/list. Surfaced by D40; deeper round of work after the demo path."
-source = "developer design thinking 2026-11-01 (D40 follow-up)"
+source = "developer design thinking 2026-11-01 (D40 follow-up); skills-surface research 2026-11-01: plugin channel = machine-level cache, workspace copy = session truth"
 informs = ["T100"]
 updated = "2026-11-01"
