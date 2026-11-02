@@ -29,6 +29,7 @@ import { have, run } from "../lib/run";
 import {
 	isDefaultAccess,
 	readDefaultAccess,
+	SettingsSymlinkError,
 	writeDefaultAccess,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
@@ -1920,7 +1921,16 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								400,
 							);
 						}
-						writeDefaultAccess(opts.dataHome, body.defaultAccess);
+						try {
+							writeDefaultAccess(opts.dataHome, body.defaultAccess);
+						} catch (err) {
+							// A symlinked settings chain is refused, not
+							// followed (409: the on-disk state conflicts).
+							if (err instanceof SettingsSymlinkError) {
+								return json({ ok: false, why: err.message }, 409);
+							}
+							throw err;
+						}
 						return json({ ok: true, defaultAccess: body.defaultAccess });
 					}
 					return json({ ok: false, why: "need GET or POST" }, 405);
