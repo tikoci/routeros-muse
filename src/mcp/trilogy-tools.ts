@@ -247,10 +247,10 @@ export function seedToolNames(resolved: {
 
 /**
  * Every namespaced tool seeded as a tagged tool_action allow rule
- * under the preallow toggle, in seed order: the three ui_* tools
- * (T55) then the read-only centrs + rosetta tools (T105). This is
- * the fully-resolved set; server.ts narrows it via seedToolNames
- * when a bundle entry is missing.
+ * under the preallow toggle, in seed order: the four ui_* tools
+ * (T55 plus T110 ui_add_device) then the read-only centrs +
+ * rosetta tools (T105). This is the fully-resolved set; server.ts
+ * narrows it via seedToolNames when a bundle entry is missing.
  */
 export const SEED_TOOL_NAMES: string[] = seedToolNames({
 	centrs: true,

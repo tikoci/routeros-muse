@@ -15,7 +15,8 @@
 // and the T101 profile row (live :ask-me/:unrestricted on echo),
 // pre-seed list + toggle (file-backed), and access flips both ways,
 // and the T55 ui_* tools (fake-driven bridge calls: toast, opened
-// tab, selected chip, seeded tool rules), and the T56 failed-send
+// tab, selected chip, seeded tool rules), and the T110 add-device
+// dialog (relay-opened, prefilled, owner-typed save, new card), and the T56 failed-send
 // restore (forced 500/abort/ok:false/oauth failures restore text,
 // images and pills with the why toasted; restore-if-empty; a failed
 // second send leaves the live turn alone).
@@ -3456,6 +3457,155 @@ try {
 			await srv55.stop();
 		}
 	});
+
+	// T110: agent-driven add-device. The relay opens the SAME
+	// credentials modal in add mode (title, context, prefilled user,
+	// empty password, display-only host); the owner-typed save
+	// appends router.toml and creates the CDB record through a
+	// stateful fake centrs, and the new card appears. Screenshots
+	// 46-47.
+	const addBin = mktmp("ui-smoke-t110-bin-");
+	const addState = mktmp("ui-smoke-t110-state-");
+	nodeFs.writeFileSync(
+		path.join(addBin, "centrs"),
+		"#!/bin/sh\n" +
+			[
+				'log="$0-argv.log"; printf "%s\\n" "$*" >> "$log"',
+				'state_dir="$SMOKE_ADD_STATE"',
+				'rec="$state_dir/records.txt"',
+				'fail() { printf "%s\\n" "{\\"ok\\":false,\\"error\\":{\\"code\\":\\"$1\\",\\"summary\\":\\"$2\\"},\\"warnings\\":[],\\"tips\\":[],\\"meta\\":{}}" >&2; exit 0; }',
+				'entry() { printf "%s\\n" "{\\"ok\\":true,\\"data\\":{\\"action\\":\\"$3\\",\\"target\\":\\"$1\\",\\"entry\\":{\\"target\\":\\"$1\\",\\"recordType\\":5,\\"recordTypeName\\":\\"ipAdmin\\",\\"group\\":\\"\\",\\"user\\":\\"$2\\",\\"session\\":\\"\\",\\"comment\\":\\"\\",\\"commentMirror\\":\\"\\",\\"profile\\":\\"<none>\\",\\"savedPassword\\":true}},\\"warnings\\":[],\\"tips\\":[],\\"meta\\":{}}"; }',
+				'has_cdb=""; want=""; target=""; user=""; prev=""',
+				'for a in "$@"; do',
+				'  if [ "$prev" = "--cdb-file" ]; then has_cdb="$a";',
+				'  elif [ "$prev" = "--user" ]; then user="$a";',
+				'  elif [ "$a" = "show" ] || [ "$a" = "list" ] || [ "$a" = "add" ]; then want="$a";',
+				'  elif [ "$want" != "" ] && [ "$target" = "" ] && [ "$prev" != "--cdb-file" ]; then',
+				'    case "$a" in -*|ssh-key=*) ;; *) target="$a";; esac;',
+				"  fi",
+				'  prev="$a"',
+				"done",
+				'if [ "$1" != "devices" ]; then echo "stub-centrs 9.9.9-t110"; exit 0; fi',
+				'if [ -n "$has_cdb" ] && [ ! -f "$has_cdb" ]; then fail "cdb/not-found" "CDB file not found"; fi',
+				'if [ "$want" = "list" ]; then printf "%s\\n" "{\\"ok\\":true,\\"data\\":[],\\"warnings\\":[],\\"tips\\":[],\\"meta\\":{}}"; exit 0; fi',
+				'line="$(grep -F "$target	" "$rec" 2>/dev/null | head -1)"',
+				'if [ "$want" = "show" ]; then',
+				'  if [ -z "$line" ]; then fail "cdb/not-found-target" "No CDB entry matches"; fi',
+				'  u="$(printf "%s" "$line" | cut -f2)"; entry "$target" "$u" "show"; exit 0',
+				"fi",
+				'if [ "$want" = "add" ]; then',
+				'  if [ -n "$line" ]; then fail "cdb/already-exists" "already exists"; fi',
+				'  printf "%s\\t%s\\n" "$target" "$user" >> "$rec"; entry "$target" "$user" "add"; exit 0',
+				"fi",
+				'fail "cdb/bad-subcommand" "unknown"',
+			].join("\n") +
+			"\n",
+	);
+	nodeFs.chmodSync(path.join(addBin, "centrs"), 0o755);
+	const addWs = makeWorkspace();
+	nodeFs.writeFileSync(path.join(addWs, "device.cdb"), "t110-smoke-fake-cdb\n");
+	// The shim reads SMOKE_ADD_STATE from its spawn env, which the
+	// server snapshots at boot — so it is set before startServer.
+	const savedAddState = process.env["SMOKE_ADD_STATE"];
+	process.env["SMOKE_ADD_STATE"] = addState;
+	const addSrv = await startServer({
+		dataHome: mktmp("ui-smoke-t110-dh-"),
+		configHome: SMOKE_CONFIG_HOME,
+		allowOpenCdb: true,
+		workspace: addWs,
+		provider: "echo",
+		museHome: makeHome(),
+		toolBinDir: addBin,
+		mcpToken: "smoke-t110-token",
+	});
+	try {
+		await page.goto(addSrv.url, { waitUntil: "load" });
+		const addBatch = watchAppBatch(page);
+		await page.waitForFunction(
+			() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+			undefined,
+			{ timeout: 15_000 },
+		);
+		await addBatch;
+		const addRelay = await fetch(`${addSrv.relayUrl}api/mcp/relay`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				token: "smoke-t110-token",
+				tool: "ui_add_device",
+				arguments: { host: "192.0.2.99", user: "robot-admin" },
+			}),
+		});
+		const addj = (await addRelay.json()) as Record<string, unknown>;
+		check(
+			"t110 relay opens the add dialog",
+			addj["ok"] === true &&
+				String(addj["result"] ?? "").includes("192.0.2.99"),
+			String(addj["why"] ?? ""),
+		);
+		await page.waitForSelector("#credmodal.open", { timeout: 10_000 });
+		const addTitle = (await page.locator("#credtitle").textContent()) ?? "";
+		check(
+			"t110 dialog titles the new host",
+			addTitle === "Add device · 192.0.2.99",
+			addTitle,
+		);
+		const addCtx = (await page.locator("#credctx").textContent()) ?? "";
+		check(
+			"t110 dialog states the new-device save",
+			addCtx.includes("New device") &&
+				addCtx.includes("router.toml") &&
+				addCtx.includes("Host is shown, not edited"),
+			addCtx.slice(0, 160),
+		);
+		const addUser = await page.locator("#credf-user").inputValue();
+		const addPw = await page.locator("#credf-password").inputValue();
+		check(
+			"t110 dialog prefills user and leaves password empty",
+			addUser === "robot-admin" && addPw === "",
+			`user=${addUser} pwlen=${addPw.length}`,
+		);
+		const addSave = (await page.locator("#credsave").textContent()) ?? "";
+		check("t110 save button names the add", addSave === "Add device", addSave);
+		await page.screenshot({ path: path.join(OUT, "46-t110-add-dialog.png") });
+		await page.fill("#credf-password", "t110-smoke-secret");
+		await page.click("#credsave");
+		await page.waitForFunction(
+			() =>
+				document.getElementById("credmodal")?.classList.contains("open") ===
+				false,
+			undefined,
+			{ timeout: 15_000 },
+		);
+		await page.waitForSelector('.dev[data-key="dev-192-0-2-99"]', {
+			timeout: 15_000,
+		});
+		check("t110 new device card appears after save", true);
+		const addToml = nodeFs.readFileSync(
+			path.join(addWs, "router.toml"),
+			"utf8",
+		);
+		check(
+			"t110 router.toml gains the device block",
+			addToml.includes('id = "192-0-2-99"') &&
+				addToml.includes('cdb = "192.0.2.99"'),
+			addToml.slice(-160),
+		);
+		await page.screenshot({ path: path.join(OUT, "47-t110-add-card.png") });
+		// Quiescence before the stop (same T39-flake guard as the
+		// T50 leg above).
+		await page.evaluate(async () => {
+			await Promise.all(
+				["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+					fetch(p),
+				),
+			);
+		});
+	} finally {
+		await addSrv.stop();
+		if (savedAddState === undefined) delete process.env["SMOKE_ADD_STATE"];
+		else process.env["SMOKE_ADD_STATE"] = savedAddState;
+	}
 
 	// T50 follow-up: first-connect recovery, settled-elsewhere
 	// reconcile, and a differing rulePreview — on a second

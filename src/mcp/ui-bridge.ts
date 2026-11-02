@@ -75,6 +75,32 @@ const TOOLS: ToolDef[] = [
 			additionalProperties: false,
 		},
 	},
+	{
+		name: "ui_add_device",
+		description:
+			"Open the Add device dialog in the routeros-muse UI prefilled with host and user, so the owner types the password in the UI. USE THIS when the owner is asked to add a device: NEVER ask for or accept a password in chat. The dialog opens only; the owner may cancel, and saving is their click.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				host: {
+					type: "string",
+					description:
+						"Device address: IPv4, IPv6, or hostname. Displayed only, never edited into config by the tool.",
+				},
+				user: {
+					type: "string",
+					description: "Login user, prefilled in the dialog.",
+				},
+				id: {
+					type: "string",
+					description:
+						"Optional device id slug (lowercase letters, digits, dashes). Derived from the host when omitted.",
+				},
+			},
+			required: ["host"],
+			additionalProperties: false,
+		},
+	},
 ];
 
 /** Relay round-trip cap per tool call. */

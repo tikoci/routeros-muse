@@ -27,11 +27,17 @@ import type { McpServerConfig } from "../msp/client";
 /** MCP server name (muse accepts underscores un-normalized; B2 normalized hyphens). */
 export const UI_MCP_SERVER = "routeros_muse";
 
-/** The demo tool set. Each one drives real UI that already exists. */
+/**
+ * The demo tool set. Each one drives real UI that already exists.
+ * ui_add_device opens the existing Set-credentials modal in add mode
+ * (T110): the owner types the password in the UI, so it never enters
+ * chat or argv. Opening the dialog is owner-gated by the Save click.
+ */
 export const UI_TOOL_NAMES = [
 	"ui_notify",
 	"ui_open",
 	"ui_select_device",
+	"ui_add_device",
 ] as const;
 
 export type UiToolName = (typeof UI_TOOL_NAMES)[number];
@@ -48,6 +54,41 @@ export function mcpToolName(short: string): string {
 export function stripMcpPrefix(tool: string): string {
 	const prefix = `mcp__${UI_MCP_SERVER}__`;
 	return tool.startsWith(prefix) ? tool.slice(prefix.length) : tool;
+}
+
+/** T110 validators (shared by the relay and POST /api/devices/add). */
+
+/** IPv4/IPv6/hostname: letters, digits, dots, colons, dashes, underscores. */
+const HOST_RE = /^[A-Za-z0-9._:-]{1,255}$/;
+/** CDB login user: conservative handle charset. */
+const USER_RE = /^[A-Za-z0-9._-]{1,64}$/;
+/** router.toml device id slug: lowercase, dash-separated. */
+const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+export function validAddHost(host: unknown): host is string {
+	return typeof host === "string" && HOST_RE.test(host);
+}
+
+export function validAddUser(user: unknown): user is string {
+	return typeof user === "string" && USER_RE.test(user);
+}
+
+export function validAddId(id: unknown): id is string {
+	return typeof id === "string" && ID_RE.test(id);
+}
+
+/**
+ * Derive a device id slug from a host: lowercase, non [a-z0-9-] runs
+ * collapse to one dash, trimmed. Empty result (e.g. "::") falls back
+ * to "device".
+ */
+export function slugFromHost(host: string): string {
+	const slug = host
+		.toLowerCase()
+		.replace(/[^a-z0-9-]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 64);
+	return slug || "device";
 }
 
 /** Relay coordinates, passed to the bridge via the mcpServers env. */

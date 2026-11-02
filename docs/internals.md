@@ -254,6 +254,31 @@ created via `devices add`, never `--force`. The record `--password`
 rides argv (centrs offers no env channel for it): never logged, and
 transiently ps-visible on this local box only.
 
+## Add device (T110)
+
+The same credentials modal in add mode: the agent calls the
+`ui_add_device` MCP tool (host required, user/id optional —
+validated like the route, `ok:true` means the dialog opened, never
+that the device was added), the server emits `ui/add-device`, and
+the UI opens the modal titled `Add device · <host>` with the user
+prefilled, the host display-only (never an editable field), and a
+context line stating the save adds the `[device]` block to
+`router.toml` (workspace mode) plus creates the CDB record. The
+owner types the password there; the modal POSTs `POST
+/api/devices/add`, which re-validates, appends the block
+(idempotent on same id+host+cdb, 409 when the id or host belongs
+elsewhere, refuses on unparseable `router.toml` without writing),
+then creates the record through the T48 `{missing:true}` path —
+retrying under its own snapshot only when the existing record
+carries the same user, never overwriting a stranger's
+credentials. A CDB failure leaves the `router.toml` entry in
+place (the card's Set credentials is the recovery) and answers
+`ok:false` with the stage and device id. No-workspace mode skips
+`router.toml` and creates the CDB record only. On success the
+modal clears its fields first, closes, reloads the device list,
+and renders the new card. Encrypted-CDB creation may fail until
+upstream `tikoci/centrs#558` — surfaced, not worked around.
+
 ## Gaps (unrun on purpose, pending)
 
 - `muse` install attempt, trilogy align-install, auth walkthrough,

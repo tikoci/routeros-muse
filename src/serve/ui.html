@@ -1436,16 +1436,30 @@
     "need GET or POST",
     "auth required",
     "save failed",
+    // T110 add-device route whys (server.ts /api/devices/add): every
+    // why that route can return, enumerated exactly like the T48 set
+    // above. The interpolated id/host slots are agent-provided but
+    // charset-validated (no spaces/metachars), displayed read-only in
+    // the modal already, and never a typed secret — so echoing them
+    // cannot leak what the owner typed. Dynamic centrs strings stay
+    // generic + console.warn.
+    "need {host} (letters, digits, dot, colon, dash, underscore, 1-255 chars; no spaces or metacharacters)",
+    "need {user} (letters, digits, dot, dash, underscore, 1-64 chars)",
+    "need {password} or {sshKey} (one secret to save)",
+    "bad {id} (lowercase slug: [a-z0-9-], starts alnum, 1-64 chars)",
+    "router.toml is unparseable; edit the file by hand",
   ];
   function credSafeWhy(why, id, target) {
     if (typeof why !== "string" || why === "") return null;
     if (CRED_SAFE_WHY.includes(why)) return why;
     if (why === "no device " + id) return why;
     if (why === "device " + id + ' has no cdb link yet (add cdb = "<centrs-device>" to its [device])') return why;
+    if (why === "device id " + id + " already names a different host; pick another id") return why;
     if (typeof target === "string" && target !== "") {
       if (why === "record for " + target + " was created while the modal was open; review it before writing") return why;
       if (why === "record for " + target + " was deleted while the modal was open") return why;
       if (why === "record for " + target + " changed while the modal was open; review it before writing") return why;
+      if (why === "host " + target + " is already registered under another id; open that card instead") return why;
     }
     return null;
   }
@@ -1487,7 +1501,9 @@
     // Never swap the modal under an in-flight save (its completion would
     // re-base and close another device's modal and wipe typed input).
     if (credSaving) return;
-    credState = { id, expected: null };
+    credState = { id, expected: null, add: null };
+    document.getElementById("credsave").textContent = "Save to CDB";
+    document.getElementById("credf-password").placeholder = "unchanged (no-echo)";
     document.getElementById("credtitle").textContent = "Set credentials · " + id;
     document.getElementById("credctx").textContent = "loading…";
     document.getElementById("crederr").textContent = "";
@@ -1517,8 +1533,35 @@
       document.getElementById("credctx").textContent = "unavailable: " + e.message;
     }
   }
+  // T110 add mode: the SAME modal, no second dialog. credState
+  // carries an `add` branch ({host, user} — host display-only,
+  // never an editable field the agent could have poisoned beyond
+  // relay validation) instead of the T48 `expected` snapshot, and
+  // the title/context say so. All T72 hardening applies unchanged:
+  // busy guard, clear-on-success, retain-on-failure, whitelist.
+  async function openAddDevice(host, user, id) {
+    // Never swap the modal under an in-flight save (same guard as openCred).
+    if (credSaving) return;
+    credState = { id, expected: null, add: { host, user: user || "" } };
+    document.getElementById("credtitle").textContent = "Add device · " + host;
+    const routerLine = NO_WS
+      ? "saving creates the CDB record (no workspace attached: router.toml is skipped)."
+      : "saving adds it to router.toml (id " + id + ") and creates the CDB record.";
+    document.getElementById("credctx").textContent =
+      "New device " + host + " — " + routerLine + "\nHost is shown, not edited. Type the password below; it is never echoed.";
+    document.getElementById("crederr").textContent = "";
+    for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
+    document.getElementById("credf-user").value = user || "";
+    // "unchanged" is set-mode copy: in add mode an empty password is
+    // refused, so the placeholder says what is wanted instead.
+    document.getElementById("credf-password").placeholder = "type the password (never echoed)";
+    document.getElementById("credsave").textContent = "Add device";
+    document.getElementById("credmodal").classList.add("open");
+  }
   async function saveCred() {
-    if (!credState || !credState.expected) return;
+    if (!credState) return;
+    if (credState.add) return saveAddDevice();
+    if (!credState.expected) return;
     // T72 double-submit guard: synchronous in-flight flag, set before
     // the first await — a second dispatch while saving is dropped, not
     // queued. Save is also disabled while saving (visual + click block;
@@ -1560,6 +1603,60 @@
         document.getElementById("credctx").textContent = credCtxText(j.current, null);
       }
       credShowError(j.why || "save failed");
+    } catch (e) {
+      document.getElementById("crederr").textContent = "unavailable: " + e.message;
+    } finally {
+      credSaving = false;
+      document.getElementById("credsave").disabled = false;
+      document.getElementById("credcancel").disabled = false;
+      document.getElementById("credx").disabled = false;
+    }
+  }
+  // T110 add-mode save: same T72 guards as saveCred (double-submit,
+  // busy disables, clear-on-success, retain-on-failure, whitelist —
+  // the whitelist's add-route entries cover this POST). No expected
+  // snapshot: the record is new, so the server creates it via the
+  // T48 {missing:true} path and retries under its own snapshot when
+  // the same user already exists. On success the fields clear first,
+  // then the modal closes, the device list reloads, and the new card
+  // renders. On CDB failure the router.toml entry (if any) stays —
+  // the card's Set credentials affordance is the recovery.
+  async function saveAddDevice() {
+    if (!credState || !credState.add) return;
+    if (credSaving) return;
+    const v = (f) => document.getElementById(f).value;
+    const host = credState.add.host;
+    const id = credState.id;
+    const body = { host, id, user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session") };
+    if (!body.user) {
+      document.getElementById("crederr").textContent = "need a login user — fill the user field.";
+      return;
+    }
+    if (!body.password && !body.sshKey) {
+      document.getElementById("crederr").textContent = "need a password or an ssh-key path — fill one.";
+      return;
+    }
+    credSaving = true;
+    document.getElementById("credsave").disabled = true;
+    document.getElementById("credcancel").disabled = true;
+    document.getElementById("credx").disabled = true;
+    document.getElementById("crederr").textContent = "saving…";
+    try {
+      const r = await fetch("/api/devices/add", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (j.ok) {
+        const doneId = j.id || id;
+        for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
+        credSaving = false;
+        closeCred();
+        await window.__reloadDevices();
+        renderDevice(doneId);
+        return;
+      }
+      const safe = credSafeWhy(j.why, j.id || id, host);
+      if (safe !== null) { document.getElementById("crederr").textContent = safe; return; }
+      console.warn("add-device save failed:", j.why);
+      document.getElementById("crederr").textContent = "Couldn't add the device — see the browser console.";
     } catch (e) {
       document.getElementById("crederr").textContent = "unavailable: " + e.message;
     } finally {
@@ -2701,6 +2798,7 @@
     if (m.method === "ui/notify") { const p = m.params || {}; if (typeof p.text === "string" && p.text) showToast(p.text, p.level); return; }
     if (m.method === "ui/open") { onUiOpen(m.params || {}); return; }
     if (m.method === "ui/select-device") { const p = m.params || {}; if (typeof p.id === "string" && p.id) addTarget(p.id); return; }
+    if (m.method === "ui/add-device") { const p = m.params || {}; if (typeof p.host === "string" && p.host) openAddDevice(p.host, typeof p.user === "string" ? p.user : "", typeof p.id === "string" && p.id ? p.id : p.host); return; }
     if (m.method === "turn/completed") {
       // T71 late completions: only the live turn idles. A completion for
       // the stopped turn after a newer send only clears Stopping (back

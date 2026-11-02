@@ -697,15 +697,17 @@ reconciled, never assumed; interpreter allowlists are refused (good).
 Every worker spawn requests `sessionMcp` at initialize. When the
 host grants it, session/start carries one stdio MCP server,
 `routeros_muse` (`src/mcp/ui-bridge.ts`). It exposes three tools:
-`ui_notify`, `ui_open` and `ui_select_device`. A host that withholds
+`ui_notify`, `ui_open` and `ui_select_device` (T110 adds a fourth,
+`ui_add_device`: the Add-device dialog, same preallow toggle). A host that withholds
 the grant gets no config (it would refuse one with -32010), so chat
 keeps working without the tools. The disposable auth probes (boot
 probe, oauth recheck) never carry the tools, so a probe turn cannot
 emit a real UI action.
 
 Approval: muse asks for MCP tools even under onRequest (B2). Under the
-preallow toggle, the per-workspace policy carries three tagged
-`tool_action` rules naming exactly our tools. This is the shape muse
+preallow toggle, the per-workspace policy carries tagged
+`tool_action` rules naming exactly our tools (three at T55, four
+since T110). This is the shape muse
 writes for allow_local_mcp_tool, captured live. Any other MCP tool
 still prompts.
 
