@@ -11,14 +11,15 @@ smoke:
 lint:
 	bun run lint
 
-# The full pre-handoff gate: lint, then the suite + smoke under a fresh
-# private TMPDIR (T94). Fails if anything is left behind in it; the
-# checker lists the leftovers. All three stages run even when an early
-# one fails, so one gate shows lint/test/smoke/leak signal together.
+# The full pre-handoff gate: lint, then skills + suite + smoke under a
+# fresh private TMPDIR (T94). Fails if anything is left behind in it;
+# the checker lists the leftovers. All stages run even when an early
+# one fails, so one gate shows every signal together.
 gate: lint
 	@tmpdir=$$(mktemp -d); \
 	echo "gate TMPDIR: $$tmpdir"; \
 	fail=0; \
+	TMPDIR="$$tmpdir" bun tools/check-skills.ts || fail=1; \
 	TMPDIR="$$tmpdir" bun test || fail=1; \
 	TMPDIR="$$tmpdir" bun tools/ui-smoke.ts || fail=1; \
 	bun tools/check-tmpdir.ts "$$tmpdir" || fail=1; \
