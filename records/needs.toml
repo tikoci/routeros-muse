@@ -341,3 +341,14 @@ evidence = "developer report 2026-11-01; not yet reproduced"
 blocked_by = []
 agent = ""
 updated = "2026-11-01"
+
+[[need]]
+id = "C18"
+repo = "centrs"
+title = "centrs settings get <key> crashes"
+status = "needed"
+detail = "T101 round 2 live proof (muse-spark child, 2026-11-02): `centrs settings get <key>` fails with `[input/invalid-command] undefined is not an object (evaluating 'typed.source.key')` for both key spellings, while `centrs settings print` works. Reproduce on the pinned centrs, check open issues first, fix upstream."
+evidence = "T101b child report 2026-11-02; not yet reproduced by the orchestrator"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
