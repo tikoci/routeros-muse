@@ -1004,11 +1004,11 @@ updated = "2026-11-01"
 [[task]]
 id = "T101"
 title = "Option C: pre-allowed reads plus explicit permission profile"
-status = "needed"
+status = "active"
 detail = "Implement D42 and D43 once decided: session/start sends permissionProfile per access mode; start ensures the workspace's read allow rules in approval-policy.json (merge-safe, tagged, re-keyed on move); Settings shows the profile and the pre-allowed list with an off switch. Verify the sandboxed-profile quirks first (cwd seen as /, read-only /dev/shm workspaces) with a live turn on a twin-free temp workspace under $HOME."
 evidence = "docs/design/permissions.md (merged 53bee58), captures out/wire-capture/perm-20261102T000756Z/"
 blocked_by = []
-agent = ""
+agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
 
 [[task]]
