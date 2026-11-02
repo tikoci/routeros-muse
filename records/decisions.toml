@@ -344,3 +344,11 @@ status = "decided"
 detail = "Option C verdict FEASIBLE (permissions.md): allow rules live in $XDG_CONFIG_HOME/muse/approval-policy.json, scoped to the absolute workspace root, with argv-prefix matching that keeps centrs retrieve and centrs execute apart (sh -c cannot smuggle). Recommendation: start ensures one rule per read command for this workspace (centrs retrieve, rosetta <subcommands>, quickchr list, quickchr doctor, ls, cat, grep, find; never bare binaries; centrs execute stays unlisted because --yes cannot be excluded), merge-safe (never removes or rewrites rules it did not write, tags its own), re-keyed on workspace move, visible in Settings, with an off switch. It writes user-machine state outside the workspace, hence a decision."
 decided = "2026-11-01"
 outcome = "Developer 2026-11-01: OK to pre-seed, as recommended. FYI from the developer: other agents run on orca with the same muse config; rules are scoped to each workspace absolute root, so they only free reads inside routeros-muse workspaces, and anything else just prompts. The Morpheus machine (muse authed on the same meta account) is free for hands-on experiments."
+
+[[decision]]
+id = "D44"
+title = "routeros-muse sessions use a private muse config home (own approval-policy.json)"
+status = "open"
+detail = "T101 sol review 2026-11-01: muse writes ~/.config/muse/approval-policy.json without a lock, so our read-modify-rename can drop a rule another agent persists in the rename window (a foreign deny was lost in a probe); a malformed or unknown-field file makes every muse on the box exit 3 at boot; network host rules are machine-global, so ownership across workspaces needs separate state. Option: spawn our muse workers with XDG_CONFIG_HOME=<dataHome>/routeros-muse/muse-config holding our own approval-policy.json and settings.json plus the user's auth (T101 proved temp-config auth works with copies under $HOME; token refresh handling to verify). Pros: no shared-file race, no risk to other agents, our grants and the owner's routeros-muse Always-allow choices stay ours. Cons: auth must be linked or synced, and choices made in routeros-muse don't carry to other muse use."
+decided = ""
+outcome = ""
