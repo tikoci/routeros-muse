@@ -13,6 +13,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { PREALLOW_TAG, policyFile, READ_COMMANDS } from "../src/lib/preallow";
+import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { profileForAccess, startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
@@ -346,7 +347,7 @@ describe("T101 Part B: server pre-seed wiring", () => {
 		});
 	});
 
-	t101("no-workspace mode seeds nothing", async () => {
+	t101("no-workspace mode seeds only the tool set", async () => {
 		await withCfgHome(async (cfg) => {
 			const { bin, log } = stubT50Bin();
 			await withT50Env(log, async () => {
@@ -362,7 +363,21 @@ describe("T101 Part B: server pre-seed wiring", () => {
 				try {
 					const status = await getJson(`${srv.url}api/status`);
 					expect(status["preallow"]).toBeNull();
-					expect(nodeFs.existsSync(policyFile(cfg))).toBe(false);
+					// T55: the ui tool set seeds; the report stays null.
+					const rules = (
+						JSON.parse(nodeFs.readFileSync(policyFile(cfg), "utf8")) as {
+							rules: Record<string, unknown>[];
+						}
+					).rules;
+					expect(rules).toHaveLength(UI_TOOL_NAMES.length);
+					expect(
+						rules
+							.map(
+								(r) =>
+									(r["rule"] as Record<string, unknown>)["tool_name"] as string,
+							)
+							.sort(),
+					).toEqual([...UI_TOOL_NAMES].map(mcpToolName).sort());
 				} finally {
 					await srv.stop();
 				}

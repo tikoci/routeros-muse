@@ -22,6 +22,7 @@ import {
 	settingsFile,
 	writePreallowReads,
 } from "../src/lib/settings";
+import { UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 
 afterAll(cleanupTmpdirs);
@@ -164,13 +165,16 @@ describe("ensurePreallowReads", () => {
 			const doc = readPolicy(cfg);
 			expect(doc.schema_version).toBe(POLICY_SCHEMA_VERSION);
 			const ours = doc.rules.filter((r) => r["reason"] === PREALLOW_TAG);
-			expect(ours.length).toBe(READ_COMMANDS.length);
+			const shell = ours.filter(
+				(r) =>
+					(r["rule"] as Record<string, unknown>)["kind"] ===
+					"shell_command_argv_prefix",
+			);
+			expect(shell.length).toBe(READ_COMMANDS.length);
 			for (const prefix of READ_COMMANDS) {
 				expect(
-					ours.some(
+					shell.some(
 						(r) =>
-							(r["rule"] as Record<string, unknown>)["kind"] ===
-								"shell_command_argv_prefix" &&
 							JSON.stringify(
 								(r["rule"] as Record<string, unknown>)["argv_prefix"],
 							) === JSON.stringify(prefix) &&
@@ -178,6 +182,11 @@ describe("ensurePreallowReads", () => {
 					),
 				).toBe(true);
 			}
+			// T55: the ui tool set rides the same seed.
+			const tools = ours.filter(
+				(r) => (r["rule"] as Record<string, unknown>)["kind"] === "tool_action",
+			);
+			expect(tools.length).toBe(UI_TOOL_NAMES.length);
 			for (const r of ours) {
 				expect(r["effect"]).toBe("allow");
 				expect(r["durability"]).toBe("local_persistent");

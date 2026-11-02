@@ -14,6 +14,7 @@ import {
 } from "../src/lib/fleet";
 import { have, run } from "../src/lib/run";
 import { toolBinDir, toolEnv } from "../src/lib/tools";
+import { uiMcpServers } from "../src/mcp/ui-tools";
 import { MspClient } from "../src/msp/client";
 import {
 	createSessionStore,
@@ -1136,6 +1137,19 @@ describe("auth (T39)", () => {
 						provider: "meta",
 						museHome: home,
 						museConfigHome: config,
+						// T55: every spawn carries the ui config (the
+						// logged-out probe never reaches a tool call).
+						mcpServers: uiMcpServers({
+							bridge: path.join(
+								path.resolve(import.meta.dir, ".."),
+								"src",
+								"mcp",
+								"ui-bridge.ts",
+							),
+							bun: process.execPath,
+							url: "http://127.0.0.1:9/",
+							token: "t39-dummy-token",
+						}),
 					}),
 				ws,
 			);

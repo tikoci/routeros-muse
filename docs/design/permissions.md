@@ -691,3 +691,48 @@ reconciled, never assumed; interpreter allowlists are refused (good).
 `40`–`41` P4; `50` P5; `60`–`76` P6 (+`listener.log`);
 `80`–`88` P8; `90`–`91` P7 (+`mcp-config.json`,
 `mcp-server-p7.jsonl`, `p1-policy-file.json`, `p1-before/after.txt`).
+
+## T55: the ui_* MCP tools (D41)
+
+Every worker spawn requests `sessionMcp` at initialize. When the
+host grants it, session/start carries one stdio MCP server,
+`routeros_muse` (`src/mcp/ui-bridge.ts`). It exposes three tools:
+`ui_notify`, `ui_open` and `ui_select_device`. A host that withholds
+the grant gets no config (it would refuse one with -32010), so chat
+keeps working without the tools. The disposable auth probes (boot
+probe, oauth recheck) never carry the tools, so a probe turn cannot
+emit a real UI action.
+
+Approval: muse asks for MCP tools even under onRequest (B2). Under the
+preallow toggle, the per-workspace policy carries three tagged
+`tool_action` rules naming exactly our tools. This is the shape muse
+writes for allow_local_mcp_tool, captured live. Any other MCP tool
+still prompts.
+
+Relay: the bridge POSTs each call to `/api/mcp/relay` with a
+per-server-run token from its env.
+- The route skips the UI login, so it enforces its own gates:
+  - loopback peers only (403 otherwise), even when the UI binds
+    0.0.0.0 for remote dev;
+  - a 64 KiB body cap before parsing (413);
+  - a constant-time token compare (401).
+- The bridge times out relay calls at 30 s.
+
+Residuals, accepted:
+- **Token visible to same-uid processes.** Any process running as the
+  owner's uid can read the token from the bridge's
+  `/proc/<pid>/environ`.
+  - Under :unrestricted, the agent's shell can do this. It can then
+    call the relay without the tool approval prompt, as can every
+    session for the server run.
+  - What it gains is the three UI actions. Those are a toast, opening
+    a workspace file in the UI, and targeting a router.toml device.
+    Under :unrestricted the agent can already do far more.
+  - Under :ask-me the bubblewrap sandbox likely hides other pids'
+    /proc. This is not verified live.
+- **`ui_open` swap window for docs/TOML.** `ui_open` confines the path
+  at the gate: it refuses symlinks, traversal and special files. The
+  UI then fetches doc and TOML kinds through `/api/file`, which still
+  resolves by pathname. A swap between the gate and the fetch can show
+  an outside file. Artifacts are re-resolved fd-safely at serve time
+  (T83). The `/api/file` hardening is T98.

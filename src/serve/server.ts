@@ -7,6 +7,7 @@
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	type CdbCredentialDetails,
 	type Device,
@@ -76,7 +77,18 @@ import {
 	writeWorkspaceFile,
 } from "../lib/workspace";
 import {
+	mcpToolName,
+	mintMcpToken,
+	NOTIFY_TEXT_MAX,
+	resolveUiOpen,
+	stripMcpPrefix,
+	tokensEqual,
+	UI_TOOL_NAMES,
+	uiMcpServers,
+} from "../mcp/ui-tools";
+import {
 	type ApprovalMode,
+	type McpServerConfig,
 	MspClient,
 	MspError,
 	type PermissionState,
@@ -160,6 +172,11 @@ export type ServeOpts = {
 	 * as a symlink).
 	 */
 	configHome?: string;
+	/**
+	 * T55 relay-token override (tests only): fixes the per-session
+	 * MCP token instead of minting a fresh one per server run.
+	 */
+	mcpToken?: string;
 };
 
 /** Reachable LAN URLs for a port (external IPv4 only, no loopback/link-local). */
@@ -516,6 +533,40 @@ export function stripTargetPreamble(text: string): string {
 	return parseTargetPreamble(text).text;
 }
 
+/** T55: max relay request body (a ui_* call is a few hundred bytes). */
+const RELAY_MAX_BYTES = 64 * 1024;
+
+/** True for 127.0.0.0/8, ::1, and their IPv4-mapped forms. */
+export function isLoopbackPeer(address: string | undefined): boolean {
+	if (!address) return false;
+	const a = address.startsWith("::ffff:") ? address.slice(7) : address;
+	return a === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
+}
+
+/** Read a request body as text, or null once it exceeds max bytes. */
+async function readBodyCapped(
+	req: Request,
+	max: number,
+): Promise<string | null> {
+	const declared = Number(req.headers.get("content-length") ?? "");
+	if (Number.isFinite(declared) && declared > max) return null;
+	if (!req.body) return "";
+	const reader = req.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > max) {
+			await reader.cancel();
+			return null;
+		}
+		chunks.push(value);
+	}
+	return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const noWs = opts.noWorkspace === true;
 	if (noWs && opts.workspace !== undefined) {
@@ -622,6 +673,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// `muse serve` spawn (worker + auth probes) carries the same args.
 	const trustWorkspace = !noWs && opts.trustWorkspace !== false;
 	const mspExtraArgs = trustWorkspace ? ["--trust-workspace"] : [];
+	// T55/D41: the per-session MCP relay credentials. The token is
+	// minted fresh per server run (tests override it); the bridge
+	// reaches the relay over loopback even when the UI is LAN-bound.
+	const mcpToken = opts.mcpToken ? opts.mcpToken : mintMcpToken();
+	const mcpBridge = fileURLToPath(
+		new URL("../mcp/ui-bridge.ts", import.meta.url),
+	);
+	function mcpServers(): Record<string, McpServerConfig> {
+		return uiMcpServers({
+			bridge: mcpBridge,
+			bun: process.execPath,
+			url: `http://127.0.0.1:${server.port}/`,
+			token: mcpToken,
+		});
+	}
 
 	// MSP host: one client, one main session, lazy-started. Both inits
 	// are promise-gated (single-flight): page load fires history + past
@@ -673,6 +739,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		enabled: boolean;
 		commands: string[];
 		hosts: string[];
+		/** T55: the seeded ui_* tools (namespaced), empty when off. */
+		tools: string[];
 		warnings: string[];
 		configHome: string;
 		/** Round 3: set when the private home itself was rejected. */
@@ -744,6 +812,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			enabled,
 			commands,
 			hosts,
+			tools: enabled ? [...UI_TOOL_NAMES].map(mcpToolName) : [],
 			warnings,
 			configHome: museCfgHome,
 			homeError,
@@ -926,6 +995,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					provider,
 					museHome: opts.museHome,
 					museConfigHome: museCfgHome,
+					mcpServers: mcpServers(),
 					experimental: true,
 					extraArgs: mspExtraArgs,
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
@@ -1118,28 +1188,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	);
 	if (provider === "echo") {
 		metaAuth = "authed";
-	} else if (have("muse", tools)) {
-		void (async () => {
-			try {
-				const m = await probeMetaAuth(() => {
-					// Throws on an unsafe home: the probe never
-					// spawns with it (probeMetaAuth maps the
-					// throw to "unknown", same as any spawn failure).
-					ensureHomeOrThrow();
-					return MspClient.spawn({
-						provider,
-						museHome: opts.museHome,
-						museConfigHome: museCfgHome,
-						experimental: true,
-						extraArgs: mspExtraArgs,
-						env: tools,
-					});
-				}, root);
-				if (m !== "unknown") setMeta(m);
-			} catch {
-				// probe failure is not auth evidence; stays unknown
-			}
-		})();
 	}
 
 	const host = opts.host ?? "127.0.0.1";
@@ -1149,7 +1197,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T45: the 10s default reaped quiet SSE streams and any slow route
 		// (60s doctor run, cold spawn). 120s covers every run budget below.
 		idleTimeout: 120,
-		async fetch(req) {
+		async fetch(req, srv) {
 			const url = new URL(req.url);
 			const p = url.pathname;
 			try {
@@ -1167,7 +1215,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					p === "/index.html" ||
 					p === "/api/auth/state" ||
 					p === "/api/auth/unlock" ||
-					p === "/api/auth/lock";
+					p === "/api/auth/lock" ||
+					// T55: the bridge carries no session cookie; the
+					// route enforces the per-session token itself.
+					p === "/api/mcp/relay";
 				if (!authBypass && !authed && !publicPath) {
 					const code =
 						cdbModeState.mode === "open"
@@ -1307,6 +1358,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							provider,
 							museHome: opts.museHome,
 							museConfigHome: museCfgHome,
+							// Disposable probe: no ui tools (a probe turn must
+							// never emit a real UI action).
+							mcpServers: {},
 							extraArgs: mspExtraArgs,
 							env: tools,
 						});
@@ -2281,6 +2335,118 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						throw err;
 					}
 				}
+				if (p === "/api/mcp/relay" && req.method === "POST") {
+					// T55: the ui_* tools relay. The bridge POSTs
+					// {token, tool, arguments}; the token is the only
+					// credential (401 otherwise, never a tool result).
+					// Tool-level refusals stay 200 ok:false so the
+					// bridge returns them as isError results the agent
+					// can report back. Every accepted call fans out as
+					// a ui/* SSE event the UI renders.
+					// Loopback peers only: the bridge always dials
+					// 127.0.0.1, so a LAN-bound UI (--host 0.0.0.0)
+					// never exposes the relay to the network.
+					if (!isLoopbackPeer(srv.requestIP(req)?.address)) {
+						return json({ ok: false, why: "relay is loopback-only" }, 403);
+					}
+					// Bounded before parsing (and before the token
+					// check): a tool call is a few hundred bytes.
+					const raw = await readBodyCapped(req, RELAY_MAX_BYTES);
+					if (raw === null) {
+						return json({ ok: false, why: "relay body too large" }, 413);
+					}
+					let body: { token?: unknown; tool?: unknown; arguments?: unknown };
+					try {
+						body = JSON.parse(raw) as typeof body;
+					} catch {
+						return json({ ok: false, why: "relay body is not JSON" }, 400);
+					}
+					if (body === null || typeof body !== "object") {
+						return json({ ok: false, why: "relay body is not an object" }, 400);
+					}
+					if (
+						typeof body.token !== "string" ||
+						!tokensEqual(body.token, mcpToken)
+					) {
+						return json({ ok: false, why: "bad or missing relay token" }, 401);
+					}
+					const tool = stripMcpPrefix(
+						typeof body.tool === "string" ? body.tool : "",
+					);
+					const args = (
+						body.arguments && typeof body.arguments === "object"
+							? body.arguments
+							: {}
+					) as Record<string, unknown>;
+					if (tool === "ui_notify") {
+						const text = args["text"];
+						const level = args["level"];
+						if (typeof text !== "string" || !text) {
+							return json({ ok: false, why: "need {text}" });
+						}
+						if (
+							level !== undefined &&
+							level !== "info" &&
+							level !== "warn" &&
+							level !== "alert"
+						) {
+							return json({
+								ok: false,
+								why: `unknown level: ${String(level).slice(0, 40)} (want info|warn|alert)`,
+							});
+						}
+						const shown =
+							level === "warn" || level === "alert" ? level : "info";
+						emit({
+							method: "ui/notify",
+							params: { text: text.slice(0, NOTIFY_TEXT_MAX), level: shown },
+						});
+						let cut = "";
+						if (text.length > NOTIFY_TEXT_MAX) {
+							cut = `… (truncated to ${NOTIFY_TEXT_MAX} chars)`;
+						} else if (text.length > 120) {
+							cut = "…";
+						}
+						return json({
+							ok: true,
+							result: `notified (${shown}): ${text.slice(0, 120)}${cut}`,
+						});
+					}
+					if (tool === "ui_open") {
+						if (noWs) return json({ ok: false, why: "no workspace attached" });
+						const rel = args["path"];
+						if (typeof rel !== "string" || !rel) {
+							return json({ ok: false, why: "need {path}" });
+						}
+						const checked = resolveUiOpen(root, rel);
+						if (!checked.ok) return json({ ok: false, why: checked.why });
+						emit({
+							method: "ui/open",
+							params: { path: rel, kind: checked.kind },
+						});
+						return json({ ok: true, result: `opened ${rel}` });
+					}
+					if (tool === "ui_select_device") {
+						if (noWs) return json({ ok: false, why: "no workspace attached" });
+						const id = args["id"];
+						if (typeof id !== "string" || !id) {
+							return json({ ok: false, why: "need {id}" });
+						}
+						const dev = readDevices(root).find((d) => d.id === id);
+						if (!dev) {
+							return json({
+								ok: false,
+								why: `unknown device id: ${id.slice(0, 120)}`,
+							});
+						}
+						emit({ method: "ui/select-device", params: { id } });
+						return json({ ok: true, result: `selected ${id}` });
+					}
+					return json({
+						ok: false,
+						why: `unknown ui tool: ${tool.slice(0, 120)}`,
+					});
+				}
 				if (p === "/api/chat/question/cancel" && req.method === "POST") {
 					const body = (await req.json()) as {
 						userInputId?: unknown;
@@ -2513,6 +2679,35 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			}
 		},
 	});
+
+	// Meta probes in the background (a disposable turn —
+	// fast-fail when logged out). Fires after the bind: the probe
+	// spawn carries the ui MCP config whose relay URL needs the
+	// bound port (T55).
+	if (provider !== "echo" && have("muse", tools)) {
+		void (async () => {
+			try {
+				const m = await probeMetaAuth(() => {
+					// Throws on an unsafe home: the probe never
+					// spawns with it (probeMetaAuth maps the
+					// throw to "unknown", same as any spawn failure).
+					ensureHomeOrThrow();
+					return MspClient.spawn({
+						provider,
+						museHome: opts.museHome,
+						museConfigHome: museCfgHome,
+						mcpServers: {}, // Disposable probe: no ui tools.
+						experimental: true,
+						extraArgs: mspExtraArgs,
+						env: tools,
+					});
+				}, root);
+				if (m !== "unknown") setMeta(m);
+			} catch {
+				// probe failure is not auth evidence; stays unknown
+			}
+		})();
+	}
 
 	const boundPort = server.port;
 	const boundHost = server.hostname;

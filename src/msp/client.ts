@@ -128,11 +128,33 @@ type Pending = {
 	reject: (e: Error) => void;
 };
 
+/**
+ * One stdio MCP server entry for session/start config.mcpServers
+ * (T55/D41, B2 shape): muse spawns command+args and the server
+ * reaches back through env. Only stdio is grounded; nothing else
+ * is admitted here.
+ */
+export type McpServerConfig = {
+	transport: "stdio";
+	command: string;
+	args: string[];
+	env: Record<string, string>;
+};
+
 export type MspSpawnOpts = {
 	provider?: string;
 	museHome?: string;
 	/** Isolate the config home too (auth.json lives there, not in museHome). */
 	museConfigHome?: string;
+	/**
+	 * T55/D41: the per-session MCP servers for this worker. Every
+	 * spawn requests sessionMcp at initialize; sessionStart carries
+	 * this config only when the host granted it (a host that
+	 * withholds the grant refuses the config with -32010, and chat
+	 * must keep working without the ui_* tools). Disposable probe
+	 * sessions pass none.
+	 */
+	mcpServers?: Record<string, McpServerConfig>;
 	extraArgs?: string[];
 	/**
 	 * T101: opt into experimentalApi at initialize. The server
@@ -155,13 +177,19 @@ export type MspSpawnOpts = {
 
 export class MspClient {
 	private proc: ReturnType<typeof Bun.spawn>;
+	private mcpServers: Record<string, McpServerConfig>;
+	private sessionMcpGranted = false;
 	private nextId = 1;
 	private pending = new Map<number, Pending>();
 	private notifyHandlers = new Set<(ev: ViewEvent) => void>();
 	private closed = false;
 
-	private constructor(proc: ReturnType<typeof Bun.spawn>) {
+	private constructor(
+		proc: ReturnType<typeof Bun.spawn>,
+		mcpServers: Record<string, McpServerConfig>,
+	) {
 		this.proc = proc;
+		this.mcpServers = mcpServers;
 		void this.readLoop();
 	}
 
@@ -205,20 +233,31 @@ export class MspClient {
 			stderr: "pipe",
 			env,
 		});
-		const client = new MspClient(proc);
+		const client = new MspClient(proc, opts?.mcpServers ?? {});
 		const timeoutMs = opts?.timeoutMs ?? 30_000;
-		await client.call(
+		const init = (await client.call(
 			"initialize",
 			{
 				clientInfo: { name: "routeros_muse", version: "0.1" },
-				...(opts?.experimental
-					? { capabilities: { experimentalApi: true } }
-					: {}),
+				// T55: sessionMcp on every spawn (the host refuses
+				// config.mcpServers without it — B2's -32010).
+				capabilities: {
+					...(opts?.experimental ? { experimentalApi: true } : {}),
+					requestedCapabilities: ["sessionMcp"],
+				},
 			},
 			timeoutMs,
-		);
+		)) as { grantedCapabilities?: unknown } | null;
+		const granted = init?.grantedCapabilities;
+		client.sessionMcpGranted =
+			Array.isArray(granted) && granted.includes("sessionMcp");
 		client.notify("initialized", {});
 		return client;
+	}
+
+	/** T55: true when sessions on this host carry the ui_* tools. */
+	get uiTools(): boolean {
+		return this.sessionMcpGranted && Object.keys(this.mcpServers).length > 0;
 	}
 
 	onNotification(handler: (ev: ViewEvent) => void): () => void {
@@ -243,6 +282,9 @@ export class MspClient {
 			...(opts.permissionProfile
 				? { permissionProfile: opts.permissionProfile }
 				: {}),
+			// T55: the ui MCP servers, when the host granted
+			// sessionMcp and there is something to send.
+			...(this.uiTools ? { config: { mcpServers: this.mcpServers } } : {}),
 		})) as { session: MspSession; viewCursor: string };
 	}
 

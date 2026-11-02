@@ -1,9 +1,10 @@
-// Approval-policy pre-seeding (T101, D43/D44/D45): our designed
-// read set as `shell_command_argv_prefix` allow rules in OUR OWN
-// muse approval-policy.json (schema v2, inside this workspace's
-// private config home), scoped to the workspace's absolute root,
-// plus network allow rules for THIS workspace's router.toml device
-// hosts only.
+// Approval-policy pre-seeding (T101, D43/D44/D45; T55 ui tools):
+// our designed read set as `shell_command_argv_prefix` allow rules
+// in OUR OWN muse approval-policy.json (schema v2, inside this
+// workspace's private config home), scoped to the workspace's
+// absolute root, plus network allow rules for THIS workspace's
+// router.toml device hosts only, plus `tool_action` allow rules
+// for the three ui_* MCP tools (T55, same toggle).
 //
 // Each workspace gets its own private home (D45):
 // <dataHome>/routeros-muse/.muse-config/<workspace-id>/, holding
@@ -38,6 +39,7 @@ import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { mcpToolName, UI_TOOL_NAMES } from "../mcp/ui-tools";
 import { readDevices } from "./fleet";
 import { dataHomeDir } from "./registry";
 
@@ -476,6 +478,37 @@ function networkEntry(host: string): PolicyEntry {
 	};
 }
 
+/**
+ * A ui_* allow rule (T55/D41): kind tool_action naming the
+ * namespaced tool, with NO workspace scope (global to the home —
+ * grounded P7). The home itself is per-workspace (D45), so the
+ * rules stay workspace-scoped through it. Key order matches
+ * muse's writer (kind first, then tool_name).
+ */
+export function toolRuleForMcp(toolName: string): PolicyEntry {
+	return { kind: "tool_action", tool_name: toolName };
+}
+
+/** The covered tool of a tool_action rule, else null. */
+function toolActionName(entry: PolicyEntry): string | null {
+	const rule = entry["rule"];
+	if (!isRecord(rule)) return null;
+	if (rule["kind"] !== "tool_action") return null;
+	return typeof rule["tool_name"] === "string"
+		? (rule["tool_name"] as string)
+		: null;
+}
+
+function toolEntry(toolName: string): PolicyEntry {
+	// Key order matches muse's own writer (P7 capture).
+	return {
+		effect: "allow",
+		durability: "local_persistent",
+		rule: toolRuleForMcp(toolName),
+		reason: PREALLOW_TAG,
+	};
+}
+
 function shellEntry(prefix: string[], workspaceRoot: string): PolicyEntry {
 	// Key order matches muse's own writer (P1 capture).
 	return {
@@ -758,6 +791,11 @@ function ensurePreallowReadsLocked(
 	const desired: PolicyEntry[] = [
 		...shell,
 		...(args.enabled ? hosts.map((h) => networkEntry(h)) : []),
+		// The ui_* tools ride the same toggle (T55): seeded whenever
+		// preallow is on, in workspace and no-workspace homes alike.
+		...(args.enabled
+			? UI_TOOL_NAMES.map((t) => toolEntry(mcpToolName(t)))
+			: []),
 	];
 	const seededCommands =
 		args.enabled && wsRoot !== undefined
@@ -854,8 +892,18 @@ function ensurePreallowReadsWrite(
 				// foreign and kept above.
 				continue;
 			}
-			// Tagged but neither a shell nor a network rule (a newer
-			// seed kind): keep, never destroy data from a newer writer.
+			if (toolActionName(entry) !== null) {
+				// Per-workspace ownership (D45): tagged tool_action
+				// rules are never kept — desired re-adds exactly the
+				// current seed set (empty when disabled), so a stale
+				// tagged name is pruned. Untagged tool rules (the
+				// owner's own Always-allow choices, reason null) never
+				// reach this branch: they are foreign and kept above.
+				continue;
+			}
+			// Tagged but neither a shell, network, nor tool rule (a
+			// newer seed kind): keep, never destroy data from a newer
+			// writer.
 			kept.push(entry);
 		}
 		const next = [...kept, ...desired];

@@ -6,6 +6,7 @@ import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
 import { toolEnv } from "../src/lib/tools";
+import { uiMcpServers } from "../src/mcp/ui-tools";
 import { MspClient, MspError } from "../src/msp/client";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 
@@ -19,6 +20,24 @@ const PNG1 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const CATALOG_FIXTURE = path.join(import.meta.dir, "fixtures", "model-catalog");
+
+// T55: every spawn carries the ui MCP config. The relay URL is a
+// dummy (echo turns never call tools, so the bridge is never
+// dialed); the bridge path is real, so a broken bridge breaks the
+// session start loudly instead of shipping a dead tool.
+function testMcp(): ReturnType<typeof uiMcpServers> {
+	return uiMcpServers({
+		bridge: path.join(
+			path.resolve(import.meta.dir, ".."),
+			"src",
+			"mcp",
+			"ui-bridge.ts",
+		),
+		bun: process.execPath,
+		url: "http://127.0.0.1:9/",
+		token: "t31-dummy-token",
+	});
+}
 
 // A fresh muse home ships no model catalog, which also withholds live
 // contextUsage (no pressure basis). Seed the cache so echo tests see
@@ -44,7 +63,11 @@ describe("msp echo hello-world", () => {
 		"turn completes and echoes the prompt",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				const { session } = await c.sessionStart({
 					workspaceRoot: ws,
@@ -68,7 +91,11 @@ describe("msp echo hello-world", () => {
 		"image part is admitted and echoed as an attachment",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				const { session } = await c.sessionStart({
 					workspaceRoot: ws,
@@ -94,7 +121,11 @@ describe("msp echo hello-world", () => {
 		"malformed image is rejected invalidParams",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				const { session } = await c.sessionStart({
 					workspaceRoot: ws,
@@ -128,7 +159,11 @@ describe("msp echo hello-world", () => {
 		"steer after done is refused; interrupt when idle is missing_run",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				const { session } = await c.sessionStart({
 					workspaceRoot: ws,
@@ -169,7 +204,11 @@ describe("msp echo hello-world", () => {
 		"model catalog lists named models with defaults",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				await c.sessionStart({ workspaceRoot: ws, approvalMode: "allowAll" });
 				const catalog = await c.modelList();
@@ -189,7 +228,11 @@ describe("msp echo hello-world", () => {
 		"effort and access setters are accepted; model forwards host answer",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				const { session } = await c.sessionStart({
 					workspaceRoot: ws,
@@ -217,7 +260,11 @@ describe("msp echo hello-world", () => {
 		"past-chat store: list, page, read, rename",
 		async () => {
 			const { home, ws } = makeHome();
-			const c = await MspClient.spawn({ provider: "echo", museHome: home });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
 			try {
 				const { session } = await c.sessionStart({
 					workspaceRoot: ws,
@@ -269,7 +316,11 @@ describe("spawn environment", () => {
 				...process.env,
 				STUB_OUT: outFile,
 			} as NodeJS.ProcessEnv);
-			const c = await MspClient.spawn({ provider: "echo", env });
+			const c = await MspClient.spawn({
+				provider: "echo",
+				env,
+				mcpServers: testMcp(),
+			});
 			try {
 				const seen = nodeFs.readFileSync(outFile, "utf8").trim();
 				expect(seen.split(path.delimiter)[0]).toBe(dir);
@@ -319,6 +370,7 @@ for await (const chunk of Bun.stdin.stream()) {
 		const c = await MspClient.spawn({
 			provider: "echo",
 			env,
+			mcpServers: testMcp(),
 			timeoutMs: 5_000,
 		});
 		try {
@@ -333,4 +385,95 @@ for await (const chunk of Bun.stdin.stream()) {
 			await c.close();
 		}
 	});
+});
+
+describe("sessionMcp negotiation (T55)", () => {
+	// A stub `muse serve` that records initialize + session/start
+	// params: proves the client negotiates sessionMcp and carries
+	// the servers on every session start, structurally.
+	for (const deny of [false, true])
+		test(
+			deny
+				? "a host withholding sessionMcp gets no config, so chat keeps working"
+				: "initialize requests sessionMcp; session/start carries mcpServers",
+			async () => {
+				const dir = mktmp("t55-caps-");
+				const seen = path.join(dir, "seen.jsonl");
+				const stub = path.join(dir, "muse");
+				// Sync append per line: truncated writers would keep only the tail.
+				nodeFs.writeFileSync(
+					stub,
+					`#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+const dec = new TextDecoder();
+let buf = "";
+for await (const chunk of Bun.stdin.stream()) {
+	buf += dec.decode(chunk);
+	let i;
+	while ((i = buf.indexOf("\\n")) >= 0) {
+		const line = buf.slice(0, i);
+		buf = buf.slice(i + 1);
+		if (!line.trim()) continue;
+		const m = JSON.parse(line);
+		if (m.id === undefined) continue;
+		appendFileSync(process.env["STUB_OUT"], line + "\\n");
+		if (m.method === "session/start") {
+			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { session: { sessionId: "s-1" }, viewCursor: "" } }) + "\\n");
+		} else if (m.method === "initialize") {
+			const grant = process.env["STUB_DENY_SESSION_MCP"] === "1" ? [] : ["sessionMcp"];
+			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { grantedCapabilities: grant } }) + "\\n");
+		} else {
+			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: {} }) + "\\n");
+		}
+	}
+}
+`,
+				);
+				nodeFs.chmodSync(stub, 0o755);
+				const env = toolEnv(dir, {
+					...process.env,
+					STUB_OUT: seen,
+					STUB_DENY_SESSION_MCP: deny ? "1" : "0",
+				} as NodeJS.ProcessEnv);
+				const c = await MspClient.spawn({
+					provider: "echo",
+					env,
+					mcpServers: testMcp(),
+					timeoutMs: 5_000,
+				});
+				try {
+					await c.sessionStart({ workspaceRoot: mktmp("t55-caps-ws-") });
+					const lines = nodeFs
+						.readFileSync(seen, "utf8")
+						.split("\n")
+						.filter((l) => l.trim())
+						.map((l) => JSON.parse(l) as Record<string, unknown>);
+					const init = lines.find(
+						(m) => m["method"] === "initialize",
+					) as Record<string, unknown>;
+					expect(
+						(
+							(init["params"] as Record<string, unknown>)[
+								"capabilities"
+							] as Record<string, unknown>
+						)["requestedCapabilities"],
+					).toEqual(["sessionMcp"]);
+					const start = lines.find(
+						(m) => m["method"] === "session/start",
+					) as Record<string, unknown>;
+					const config = (start["params"] as Record<string, unknown>)[
+						"config"
+					] as Record<string, unknown> | undefined;
+					if (deny) {
+						expect(config).toBeUndefined();
+						expect(c.uiTools).toBe(false);
+					} else {
+						expect(config?.["mcpServers"]).toEqual(testMcp());
+						expect(c.uiTools).toBe(true);
+					}
+				} finally {
+					await c.close();
+				}
+			},
+		);
 });
