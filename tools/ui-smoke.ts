@@ -2387,6 +2387,18 @@ try {
 			);
 			// Selector: Ask first is the default, and the menu holds
 			// only the two honest options, each with its tooltip.
+			// The label starts as "…" and fills once settings load
+			// (settled, not raced: this read was flaky).
+			await page
+				.waitForFunction(
+					() =>
+						(
+							document.getElementById("selaccess")?.textContent ?? "…"
+						).trim() !== "…",
+					undefined,
+					{ timeout: 10_000 },
+				)
+				.catch(() => {});
 			check(
 				"t50 selector defaults to Ask first",
 				((await page.locator("#selaccess").textContent()) ?? "").trim() ===
