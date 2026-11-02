@@ -336,7 +336,9 @@ describe("picker template routes", () => {
 		}
 		expect(await statsAccess("allowAll")).toEqual(["allowAll", "allowAll"]);
 		const plain = await statsAccess();
-		expect(plain).toEqual([null, "onRequest"]);
+		// T50/D38: the default is promptUnmatched (Ask first), reported
+		// truthfully both before and after the session starts.
+		expect(plain).toEqual(["promptUnmatched", "promptUnmatched"]);
 	});
 
 	tposix("GET lists templates; create honors them", async () => {
