@@ -13,7 +13,9 @@
 // and the T49 trust row (on/off/no-workspace) plus device targeting
 // (pill targets become chips; the preamble lands in the turn input),
 // and the T101 profile row (live :ask-me/:unrestricted on echo),
-// pre-seed list + toggle (file-backed), and access flips both ways.
+// pre-seed list + toggle (file-backed), and access flips both ways,
+// and the T55 ui_* tools (fake-driven bridge calls: toast, opened
+// tab, selected chip, seeded tool rules).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -27,6 +29,7 @@ import * as path from "node:path";
 import { chromium, type Page, type Request } from "playwright";
 import { READ_COMMANDS } from "../src/lib/preallow";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
+import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
 import { stubT50Bin, withT50Env } from "../tests/t50-fake";
@@ -279,14 +282,30 @@ try {
 		) as { rules: Record<string, unknown>[] };
 		return doc.rules.filter((r) => r["reason"] === "routeros-muse:seed");
 	};
-	const oursRoots = readOurs().map(
+	const oursShell = readOurs().filter(
+		(r) =>
+			(r["rule"] as Record<string, unknown>)["kind"] ===
+			"shell_command_argv_prefix",
+	);
+	const oursRoots = oursShell.map(
 		(r) => (r["rule"] as Record<string, unknown>)["workspace_root"],
 	);
 	check(
 		"t101 policy file holds our tagged shell set for this workspace",
-		readOurs().length === READ_COMMANDS.length &&
+		oursShell.length === READ_COMMANDS.length &&
 			oursRoots.every((r) => r === smokeWs),
-		`n=${readOurs().length} ws=${smokeWs}`,
+		`n=${oursShell.length} ws=${smokeWs}`,
+	);
+	const oursTools = readOurs()
+		.filter(
+			(r) => (r["rule"] as Record<string, unknown>)["kind"] === "tool_action",
+		)
+		.map((r) => (r["rule"] as Record<string, unknown>)["tool_name"]);
+	check(
+		"t55 policy file holds our tagged ui tool set",
+		JSON.stringify([...oursTools].sort()) ===
+			JSON.stringify([...UI_TOOL_NAMES].map(mcpToolName).sort()),
+		oursTools.join(",") || "(none)",
 	);
 	const pollOurs = async (want: number): Promise<number> => {
 		const deadline = Date.now() + 10_000;
@@ -299,9 +318,10 @@ try {
 	await page.locator("#preallow-toggle").uncheck();
 	check("t101 toggle off removes our rules", (await pollOurs(0)) === 0);
 	await page.locator("#preallow-toggle").check();
+	const reseeded = READ_COMMANDS.length + UI_TOOL_NAMES.length;
 	check(
 		"t101 toggle on re-seeds our rules",
-		(await pollOurs(READ_COMMANDS.length)) === READ_COMMANDS.length,
+		(await pollOurs(reseeded)) === reseeded,
 	);
 	// Access selector flips the live profile (echo speaks
 	// session/setPermissionProfile for real).
@@ -2753,6 +2773,116 @@ try {
 			await batchT;
 		} finally {
 			await srvT.stop();
+		}
+	});
+
+	// T55: agent-driven UI on the scriptable fake. The fake acts as
+	// the MCP client the real host would be: NEED-UI-TOOLS spawns
+	// the transmitted bridge and calls each ui_* tool through it.
+	// The toast, the opened doc tab, and the selected chip are
+	// visible; the settings row lists the seeded tool rules; the
+	// agent-visible results ride the turn text. Screenshot 44.
+	const t55 = stubT50Bin();
+	await withT50Env(t55.log, async () => {
+		const srv55 = await startServer({
+			dataHome: mktmp("ui-smoke-t55-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: t55.bin,
+		});
+		try {
+			await page.goto(srv55.url, { waitUntil: "load" });
+			const batch55 = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await batch55;
+			const preTools =
+				(await page.locator("#preallow-tools").textContent()) ?? "";
+			check(
+				"t55 settings lists the seeded ui tools",
+				[...UI_TOOL_NAMES].map(mcpToolName).every((n) => preTools.includes(n)),
+				preTools.slice(0, 200),
+			);
+			await page.fill(
+				"#chatinput",
+				"NEED-UI-TOOLS path=operations/drift.md id=smoke-gw",
+			);
+			await page.click("#sendbtn");
+			await page.waitForSelector(".toast:visible", { timeout: 30_000 });
+			const toastText =
+				(await page.locator(".toast .tbody").first().textContent()) ?? "";
+			check(
+				"t55 toast shows the notified text",
+				toastText.includes("T55 smoke toast"),
+				toastText.slice(0, 120),
+			);
+			const toastLevel =
+				(await page.locator(".toast").first().getAttribute("data-level")) ?? "";
+			check(
+				"t55 toast carries the warn level",
+				toastLevel === "warn",
+				toastLevel,
+			);
+			await page.waitForSelector("#pane-doc.active", { timeout: 10_000 });
+			const docTitle = (await page.locator("#doc-title").textContent()) ?? "";
+			check(
+				"t55 opened tab shows the file name",
+				docTitle.trim() === "drift.md",
+				docTitle,
+			);
+			const docBody = (await page.locator("#doc-body").textContent()) ?? "";
+			check(
+				"t55 opened tab shows the file body",
+				docBody.includes("# drift"),
+				docBody.slice(0, 80),
+			);
+			// The pill lives in the chat pane, behind the opened doc
+			// tab: shot 44 shows the doc view, then back to Main for
+			// the pill and the turn text (shot 45).
+			await page.screenshot({ path: path.join(OUT, "44-t55-ui-tools.png") });
+			await page.click(".ctab.main");
+			await page.waitForSelector("#pane-chat.active", { timeout: 10_000 });
+			await page.waitForSelector('.tpill[data-dev="smoke-gw"]:visible', {
+				timeout: 10_000,
+			});
+			check("t55 target pill lands for the selected device", true);
+			const cardTargeted = await page
+				.locator('.dev[data-key="dev-smoke-gw"].targeted')
+				.count();
+			check(
+				"t55 device card marks targeted",
+				cardTargeted === 1,
+				`n=${cardTargeted}`,
+			);
+			await page.waitForFunction(
+				() =>
+					[...document.querySelectorAll("#pane-chat .msg.agent .body p")].some(
+						(p) => (p.textContent ?? "").includes("t55 ui tools:"),
+					),
+				undefined,
+				{ timeout: 30_000 },
+			);
+			check("t55 tool results ride the turn text", true);
+			await page.screenshot({
+				path: path.join(OUT, "45-t55-ui-tools-chat.png"),
+			});
+			// Quiescence before the stop (same T39-flake guard as the
+			// T50 leg above).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+		} finally {
+			await srv55.stop();
 		}
 	});
 

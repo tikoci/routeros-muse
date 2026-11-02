@@ -128,11 +128,32 @@ type Pending = {
 	reject: (e: Error) => void;
 };
 
+/**
+ * One stdio MCP server entry for session/start config.mcpServers
+ * (T55/D41, B2 shape): muse spawns command+args and the server
+ * reaches back through env. Only stdio is grounded; nothing else
+ * is admitted here.
+ */
+export type McpServerConfig = {
+	transport: "stdio";
+	command: string;
+	args: string[];
+	env: Record<string, string>;
+};
+
 export type MspSpawnOpts = {
 	provider?: string;
 	museHome?: string;
 	/** Isolate the config home too (auth.json lives there, not in museHome). */
 	museConfigHome?: string;
+	/**
+	 * T55/D41: the per-session MCP servers for this worker. Required
+	 * and unconditional: every spawn negotiates sessionMcp at
+	 * initialize and every sessionStart carries this config, so the
+	 * agent always has the ui_* tools and Ask first never prompts
+	 * for them while preallow seeds their rules.
+	 */
+	mcpServers: Record<string, McpServerConfig>;
 	extraArgs?: string[];
 	/**
 	 * T101: opt into experimentalApi at initialize. The server
@@ -155,13 +176,18 @@ export type MspSpawnOpts = {
 
 export class MspClient {
 	private proc: ReturnType<typeof Bun.spawn>;
+	private mcpServers: Record<string, McpServerConfig>;
 	private nextId = 1;
 	private pending = new Map<number, Pending>();
 	private notifyHandlers = new Set<(ev: ViewEvent) => void>();
 	private closed = false;
 
-	private constructor(proc: ReturnType<typeof Bun.spawn>) {
+	private constructor(
+		proc: ReturnType<typeof Bun.spawn>,
+		mcpServers: Record<string, McpServerConfig>,
+	) {
 		this.proc = proc;
+		this.mcpServers = mcpServers;
 		void this.readLoop();
 	}
 
@@ -205,15 +231,18 @@ export class MspClient {
 			stderr: "pipe",
 			env,
 		});
-		const client = new MspClient(proc);
+		const client = new MspClient(proc, opts?.mcpServers ?? {});
 		const timeoutMs = opts?.timeoutMs ?? 30_000;
 		await client.call(
 			"initialize",
 			{
 				clientInfo: { name: "routeros_muse", version: "0.1" },
-				...(opts?.experimental
-					? { capabilities: { experimentalApi: true } }
-					: {}),
+				// T55: sessionMcp on every spawn (the host refuses
+				// config.mcpServers without it — B2's -32010).
+				capabilities: {
+					...(opts?.experimental ? { experimentalApi: true } : {}),
+					requestedCapabilities: ["sessionMcp"],
+				},
 			},
 			timeoutMs,
 		);
@@ -243,6 +272,8 @@ export class MspClient {
 			...(opts.permissionProfile
 				? { permissionProfile: opts.permissionProfile }
 				: {}),
+			// T55: every session carries the ui MCP servers.
+			config: { mcpServers: this.mcpServers },
 		})) as { session: MspSession; viewCursor: string };
 	}
 

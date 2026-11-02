@@ -315,6 +315,12 @@
   .alert .alink:hover { color: var(--text); }
   .alert.warn { background: var(--amber-dim); border-bottom-color: rgba(210,153,34,.35); }
   .alert.warn .adot { background: var(--amber); }
+  #toasts { position: fixed; right: 16px; bottom: 16px; z-index: 300; display: flex; flex-direction: column; gap: 8px; max-width: 380px; }
+  .toast { display: flex; gap: 9px; align-items: flex-start; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; box-shadow: 0 6px 24px rgba(0,0,0,.35); cursor: pointer; overflow-wrap: anywhere; }
+  .toast .tdot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); margin-top: 5px; }
+  .toast[data-level="warn"] .tdot { background: var(--amber); }
+  .toast[data-level="alert"] .tdot { background: var(--red); }
+  .toast .tbody { flex: 1; white-space: pre-wrap; }
   .composer { padding: 8px 20px 16px; }
   .composer .box { display: flex; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; background: none; border: none; outline: none; color: var(--text); font: 13px/1.45 var(--sans); resize: none; min-height: 48px; max-height: 132px; padding: 4px 2px; }
@@ -656,12 +662,13 @@
           <div class="setnote">Model changes apply to the main chat after the current turn finishes.</div>
         </div>
         <div class="rblock" id="preallow-block">
-          <div class="rsect">Pre-allowed reads</div>
-          <div class="setrow"><label><input type="checkbox" id="preallow-toggle"> Pre-allow read commands for this workspace</label></div>
+          <div class="rsect">Pre-allowed</div>
+          <div class="setrow"><label><input type="checkbox" id="preallow-toggle"> Pre-allow reads and UI tools for this workspace</label></div>
           <div class="arow"><span class="k">Commands</span><span class="v" id="preallow-cmds">…</span></div>
           <div class="arow"><span class="k">Hosts</span><span class="v" id="preallow-hosts">…</span></div>
+          <div class="arow"><span class="k">UI tools</span><span class="v" id="preallow-tools">…</span></div>
           <div class="arow"><span class="k">Config home</span><span class="v" id="preallow-cfg">…</span></div>
-          <div class="setnote">Seeded into this workspace's private muse approval policy, tagged routeros-muse:seed. Shell and host rules cover this workspace only — an Always-allow here does not carry to other workspaces. Your own muse config is never touched.</div>
+          <div class="setnote">Seeded into this workspace's private muse approval policy, tagged routeros-muse:seed. Shell, host, and UI-tool rules cover this workspace only — an Always-allow here does not carry to other workspaces. Your own muse config is never touched.</div>
           <div class="setnote" id="preallow-warn" style="display:none"></div>
         </div>
         <div class="rblock">
@@ -1268,6 +1275,39 @@
       card.querySelector(".chat").innerHTML = '<span class="gone">not in this chat</span>';
     }
     refreshStatpop();
+  }
+  // T55: agent-driven UI over the ui/* SSE events. ui_notify posts a
+  // toast (auto-dismissed, click to dismiss, newest five kept);
+  // ui_open routes through the same openers as a picker click
+  // (doc/toml/artifact viewers with the T83 sandbox); the
+  // ui_select_device branch calls addTarget above.
+  function showToast(text, level) {
+    const box = document.getElementById("toasts");
+    const div = document.createElement("div");
+    div.className = "toast";
+    div.dataset.level = level === "warn" || level === "alert" ? level : "info";
+    const dot = document.createElement("span");
+    dot.className = "tdot";
+    const body = document.createElement("span");
+    body.className = "tbody";
+    body.textContent = text;
+    div.appendChild(dot);
+    div.appendChild(body);
+    div.title = "Dismiss";
+    div.addEventListener("click", () => div.remove());
+    box.appendChild(div);
+    setTimeout(() => div.remove(), 8000);
+    while (box.children.length > 5) box.firstChild.remove();
+  }
+  function onUiOpen(p) {
+    const rel = p && p.path;
+    const kind = p && p.kind;
+    if (typeof rel !== "string" || !rel) return;
+    const base = rel.split("/").pop();
+    if (kind === "toml") { renderToml(rel); openSlot("pane-toml", rel, base); }
+    else if (kind === "artifact") { renderArtifact(rel, false, null); openSlot("pane-artifact", rel, base); }
+    else { renderDoc(rel); openSlot("pane-doc", rel, base); }
+    topWorkspace(rel);
   }
   // LIVE: delegated so live-rendered rows work. Doc/toml openers carry
   // data-path (workspace-relative); past/device openers carry data-key
@@ -2585,6 +2625,9 @@
       return;
     }
     if (m.method === "meta/authChanged") { applyMeta(m.params && m.params.meta); return; }
+    if (m.method === "ui/notify") { const p = m.params || {}; if (typeof p.text === "string" && p.text) showToast(p.text, p.level); return; }
+    if (m.method === "ui/open") { onUiOpen(m.params || {}); return; }
+    if (m.method === "ui/select-device") { const p = m.params || {}; if (typeof p.id === "string" && p.id) addTarget(p.id); return; }
     if (m.method === "turn/completed") {
       // T71 late completions: only the live turn idles. A completion for
       // the stopped turn after a newer send only clears Stopping (back
@@ -3049,6 +3092,7 @@
       tog.disabled = true;
       $("preallow-cmds").textContent = "no workspace";
       $("preallow-hosts").textContent = "no workspace";
+      $("preallow-tools").textContent = "no workspace";
       $("preallow-cfg").textContent = "no workspace";
       $("preallow-warn").style.display = "none";
       return;
@@ -3057,6 +3101,7 @@
     tog.checked = pre.enabled === true;
     $("preallow-cmds").textContent = (pre.commands || []).join(", ") || "—";
     $("preallow-hosts").textContent = (pre.hosts || []).join(", ") || "—";
+    $("preallow-tools").textContent = (pre.tools || []).join(", ") || "—";
     $("preallow-cfg").textContent = pre.configHome || "—";
     const w = $("preallow-warn");
     if (pre.warnings && pre.warnings.length) {
@@ -3689,5 +3734,6 @@
   window.__reloadDevices = loadDevices;
 })();
 </script>
+<div id="toasts"></div>
 </body>
 </html>

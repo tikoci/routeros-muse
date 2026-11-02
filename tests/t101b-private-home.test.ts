@@ -26,6 +26,7 @@ import {
 	workspaceConfigId,
 	workspaceHosts,
 } from "../src/lib/preallow";
+import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
@@ -73,6 +74,18 @@ function taggedHosts(priv: string): unknown[] {
 				(r["rule"] as Record<string, unknown>)["kind"] === "network",
 		)
 		.map((r) => (r["rule"] as Record<string, unknown>)["host"]);
+}
+
+/** T55: sorted namespaced tool names of the tagged tool_action rules. */
+function taggedTools(priv: string): string[] {
+	return readPolicy(priv)
+		.rules.filter(
+			(r) =>
+				r["reason"] === PREALLOW_TAG &&
+				(r["rule"] as Record<string, unknown>)["kind"] === "tool_action",
+		)
+		.map((r) => (r["rule"] as Record<string, unknown>)["tool_name"] as string)
+		.sort();
 }
 
 function makeWs(hosts: string[]): string {
@@ -435,8 +448,13 @@ describe("per-workspace host ownership (D45)", () => {
 			const ours = readPolicy(priv).rules.filter(
 				(r) => r["reason"] === PREALLOW_TAG,
 			);
-			expect(ours).toHaveLength(READ_COMMANDS.length);
-			const prefixes = ours.map((r) =>
+			const shell = ours.filter(
+				(r) =>
+					(r["rule"] as Record<string, unknown>)["kind"] ===
+					"shell_command_argv_prefix",
+			);
+			expect(shell).toHaveLength(READ_COMMANDS.length);
+			const prefixes = shell.map((r) =>
 				JSON.stringify((r["rule"] as Record<string, unknown>)["argv_prefix"]),
 			);
 			expect(prefixes).not.toContain(JSON.stringify(["ls"]));
@@ -503,7 +521,7 @@ describe("reviewer small fixes", () => {
 });
 
 describe("no-workspace seeding", () => {
-	test("undefined root seeds the network union only, no shell rules", () => {
+	test("undefined root seeds hosts plus the tool set, no shell rules", () => {
 		withRealHome(() => {
 			const priv = mktmp("t101b-nows-");
 			const res = ensurePreallowReads({
@@ -515,11 +533,17 @@ describe("no-workspace seeding", () => {
 			expect(res.seededCommands).toEqual([]);
 			const rules = readPolicy(priv).rules;
 			expect(
-				rules.every(
-					(r) => (r["rule"] as Record<string, unknown>)["kind"] === "network",
+				rules.some(
+					(r) =>
+						(r["rule"] as Record<string, unknown>)["kind"] ===
+						"shell_command_argv_prefix",
 				),
-			).toBe(true);
+			).toBe(false);
 			expect(taggedHosts(priv)).toEqual(["h1"]);
+			// T55: the ui tool set seeds in no-workspace homes too.
+			expect(taggedTools(priv)).toEqual(
+				[...UI_TOOL_NAMES].map(mcpToolName).sort(),
+			);
 		});
 	});
 
@@ -562,7 +586,7 @@ describe("no-workspace seeding", () => {
 		});
 	});
 
-	test("undefined root with empty union and empty file writes nothing", () => {
+	test("undefined root with empty hosts seeds only the tool set", () => {
 		withRealHome(() => {
 			const priv = mktmp("t101b-nows-empty-");
 			const res = ensurePreallowReads({
@@ -570,8 +594,13 @@ describe("no-workspace seeding", () => {
 				hosts: [],
 				enabled: true,
 			});
-			expect(res.changed).toBe(false);
-			expect(nodeFs.existsSync(policyFile(priv))).toBe(false);
+			// T55: no shell or host rules, but the ui tool set still seeds.
+			expect(res.changed).toBe(true);
+			expect(nodeFs.existsSync(policyFile(priv))).toBe(true);
+			expect(taggedTools(priv)).toEqual(
+				[...UI_TOOL_NAMES].map(mcpToolName).sort(),
+			);
+			expect(readPolicy(priv).rules).toHaveLength(UI_TOOL_NAMES.length);
 		});
 	});
 });
@@ -742,7 +771,7 @@ describe("T101b server wiring (D44)", () => {
 	});
 
 	t101b(
-		"no-workspace boot ensures the home but seeds no policy file",
+		"no-workspace boot ensures the home and seeds only the tool policy",
 		async () => {
 			const real = mktmp("t101b-nows-real-");
 			seedFakeAuth(real);
@@ -769,7 +798,12 @@ describe("T101b server wiring (D44)", () => {
 							.lstatSync(path.join(priv, "muse", "auth.json"))
 							.isSymbolicLink(),
 					).toBe(true);
-					expect(nodeFs.existsSync(policyFile(priv))).toBe(false);
+					// T55: the ui tool set seeds (its tools exist in
+					// no-workspace sessions too); the report stays null.
+					expect(taggedTools(priv)).toEqual(
+						[...UI_TOOL_NAMES].map(mcpToolName).sort(),
+					);
+					expect(readPolicy(priv).rules).toHaveLength(UI_TOOL_NAMES.length);
 					const status = await getJson(`${srv.url}api/status`);
 					expect(status["preallow"]).toBeNull();
 				} finally {

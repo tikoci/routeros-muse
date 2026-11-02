@@ -16,6 +16,9 @@
 // - NEED-QUESTION: one single-select question (capture-12 Tabs/Spaces)
 // - NEED-MULTI: two questions, one single + one multiple-select
 // - NEED-BOTH: one approval plus one question
+// - NEED-UI-TOOLS path=<rel> id=<device>: the fake acts as the MCP
+//   client the real host would be — it spawns the transmitted ui
+//   bridge and calls each ui_* tool through it (T55).
 // Anything else completes immediately with an agentMessage echo.
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
@@ -27,6 +30,7 @@ import { mktmp } from "./helpers/tmp";
 // never linted. Runs under the bun binary (process.execPath).
 export const T50_FAKE_MUSE = String.raw`
 // T50 scriptable fake muse host: JSONL over stdio.
+import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as readline from "node:readline";
 
@@ -37,6 +41,11 @@ function logLine(line) {
 
 const SESSION = "t50-s1";
 let workspaceRoot = "";
+// T55: the negotiated sessionMcp flag plus the transmitted
+// config.mcpServers (the NEED-UI-TOOLS scenario drives the real
+// bridge through them, the way the real host would).
+let sessionMcp = false;
+let mcpConfig = null;
 // T101: the live profile id (canned permissionState per profile,
 // captured shapes: :ask-me sandboxed/off/human, :unrestricted open).
 let liveProfile = ":unrestricted";
@@ -211,16 +220,153 @@ function makeQuestion(turnId, multi) {
 	notify("userInput/requested", p);
 }
 
-function completeLive(terminal) {
+function completeLive(terminal, extra) {
 	if (!liveTurn) return;
 	const id = liveTurn;
 	liveTurn = null;
 	logLine("COMPLETE turnId=" + id + " terminal=" + terminal);
 	notify("item/completed", {
 		sessionId: SESSION,
-		item: { kind: "agentMessage", itemId: id + "-msg", text: "t50 done (" + terminal + ")" },
+		item: {
+			kind: "agentMessage",
+			itemId: id + "-msg",
+			text: "t50 done (" + terminal + ")" + (extra ? " | " + extra : ""),
+		},
 	});
 	notify("turn/completed", { sessionId: SESSION, turnId: id, terminal: terminal });
+}
+
+function uiArg(text, key) {
+	const m = new RegExp(key + "=(\\S+)").exec(text);
+	return m ? m[1] : "";
+}
+
+// T55: act as the MCP client the real host would be — spawn the
+// transmitted bridge and call each ui_* tool through it, reporting
+// the results back in the turn text. Errors (missing config,
+// spawn failure, rpc errors, 20s watchdog) fail the text loudly.
+function runUiTools(turnId, textIn) {
+	const pathArg = uiArg(textIn, "path");
+	const idArg = uiArg(textIn, "id");
+	(async () => {
+		try {
+			if (!pathArg || !idArg)
+				throw new Error("NEED-UI-TOOLS needs path=<rel> id=<device>");
+			const names = mcpConfig ? Object.keys(mcpConfig) : [];
+			if (names.length === 0)
+				throw new Error("no mcpServers in session/start config");
+			const cfg = mcpConfig[names[0]];
+			const out = await bridgeCallAll(cfg, { path: pathArg, id: idArg });
+			// Only our own turn: an interrupt (or a newer turn)
+			// meanwhile means completion belongs to someone else.
+			if (liveTurn === turnId)
+				completeLive("completed", "t55 ui tools: " + out.join(" | "));
+		} catch (err) {
+			const msg = String((err && err.message) || err);
+			logLine("UITOOLS-FAILED " + msg);
+			if (liveTurn === turnId)
+				completeLive("completed", "t55 ui tools FAILED: " + msg);
+		}
+	})();
+}
+
+function bridgeCallAll(cfg, args) {
+	return new Promise((resolve, reject) => {
+		let child;
+		try {
+			child = cp.spawn(cfg.command, cfg.args || [], {
+				env: { ...process.env, ...(cfg.env || {}) },
+				stdio: ["pipe", "pipe", "inherit"],
+			});
+		} catch (err) {
+			reject(err);
+			return;
+		}
+		let settled = false;
+		const done = (fn) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			fn();
+		};
+		const timer = setTimeout(() => {
+			done(() => {
+				try {
+					child.kill("SIGKILL");
+				} catch {}
+				reject(new Error("bridge timed out after 20000ms"));
+			});
+		}, 20000);
+		child.on("error", (err) => done(() => reject(err)));
+		child.on("exit", (code) => {
+			if (!settled)
+				done(() => reject(new Error("bridge exited code " + code + " mid-run")));
+		});
+		let bid = 0;
+		const pending = new Map();
+		const brl = readline.createInterface({ input: child.stdout });
+		brl.on("line", (line) => {
+			const t = line.trim();
+			if (!t) return;
+			let msg;
+			try {
+				msg = JSON.parse(t);
+			} catch {
+				return;
+			}
+			const p = pending.get(msg.id);
+			if (p) {
+				pending.delete(msg.id);
+				p(msg);
+			}
+		});
+		function call(method, params) {
+			return new Promise((resolveCall) => {
+				bid += 1;
+				pending.set(bid, resolveCall);
+				child.stdin.write(
+					JSON.stringify({ jsonrpc: "2.0", id: bid, method, params }) + "\n",
+				);
+			});
+		}
+		(async () => {
+			try {
+				await call("initialize", {
+					protocolVersion: "2024-11-05",
+					capabilities: {},
+					clientInfo: { name: "t50-fake", version: "0" },
+				});
+				child.stdin.write(
+					JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) +
+						"\n",
+				);
+				await call("tools/list", {});
+				const out = [];
+				const calls = [
+					["ui_notify", { text: "T55 smoke toast", level: "warn" }],
+					["ui_open", { path: args.path }],
+					["ui_select_device", { id: args.id }],
+				];
+				for (const [name, a] of calls) {
+					const r = await call("tools/call", { name, arguments: a });
+					if (r.error)
+						throw new Error(name + " rpc error: " + JSON.stringify(r.error));
+					const res = r.result || {};
+					const text = ((res.content || [])[0] || {}).text || "";
+					out.push(name + "=" + (res.isError ? "isError:" + text : text));
+				}
+				try {
+					child.stdin.end();
+				} catch {}
+				done(() => resolve(out));
+			} catch (err) {
+				try {
+					child.kill("SIGKILL");
+				} catch {}
+				done(() => reject(err));
+			}
+		})();
+	});
 }
 
 function maybeCompleteLive() {
@@ -247,13 +393,33 @@ rl.on("line", (text) => {
 	if (method === "initialize") {
 		const caps = params.capabilities ?? {};
 		logLine("EXP experimentalApi=" + String(caps.experimentalApi === true));
+		const rc = Array.isArray(caps.requestedCapabilities)
+			? caps.requestedCapabilities
+			: [];
+		sessionMcp = rc.includes("sessionMcp");
+		logLine("CAPS requestedCapabilities=" + JSON.stringify(rc));
 		send({ jsonrpc: "2.0", id: id, result: {} });
 		return;
 	}
 	if (method === "session/start") {
 		workspaceRoot = String(params.workspaceRoot ?? "");
 		liveProfile = String(params.permissionProfile ?? ":unrestricted");
+		mcpConfig =
+			(params.config && params.config.mcpServers) || null;
 		logLine("START session=" + SESSION + " approvalMode=" + String(params.approvalMode ?? "(none)") + " permissionProfile=" + String(params.permissionProfile ?? "(none)"));
+		// T55: the grounded B2 refusal — config without the
+		// capability is rejected before any durable byte, so a
+		// server that forgot sessionMcp breaks loudly here.
+		if (mcpConfig && !sessionMcp) {
+			errTo(
+				id,
+				-32010,
+				"session MCP configuration requires the sessionMcp capability",
+				"capabilityRequired",
+			);
+			return;
+		}
+		if (mcpConfig) logLine("MCPCFG " + JSON.stringify(mcpConfig));
 		send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: SESSION, permissionState: permState(liveProfile) }, viewCursor: "" } });
 		return;
 	}
@@ -306,6 +472,10 @@ rl.on("line", (text) => {
 		}
 		if (textIn.includes("NEED-MULTI")) {
 			makeQuestion(t, true);
+			held = true;
+		}
+		if (textIn.includes("NEED-UI-TOOLS")) {
+			runUiTools(t, textIn);
 			held = true;
 		}
 		if (!held) completeLive("completed");
@@ -625,6 +795,8 @@ export type T50SrvOpts = {
 	workspace?: string;
 	/** Round 3: provider override (default echo; meta runs the boot probe). */
 	provider?: string;
+	/** T55: fixed relay token instead of a minted one. */
+	mcpToken?: string;
 };
 
 /** Bypass-mode server on the fake worker (no CDB file, no centrs). */
@@ -643,6 +815,7 @@ export async function startT50Srv(
 		// Round 2: no override by default, so the server derives the
 		// private home from the temp data home (still hermetic).
 		...(extra?.configHome ? { configHome: extra.configHome } : {}),
+		...(extra?.mcpToken ? { mcpToken: extra.mcpToken } : {}),
 		...(extra?.defaultApprovalMode
 			? { defaultApprovalMode: extra.defaultApprovalMode }
 			: {}),
