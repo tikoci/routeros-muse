@@ -199,9 +199,10 @@ describe("D39: /api/status reports the trust state", () => {
 			...extra,
 		});
 		try {
-			return (await (
-				await fetch(`${srv.url}api/status`)
-			).json()) as Record<string, unknown>;
+			return (await (await fetch(`${srv.url}api/status`)).json()) as Record<
+				string,
+				unknown
+			>;
 		} finally {
 			await srv.stop();
 		}

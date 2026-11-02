@@ -1133,8 +1133,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				if (p === "/api/status") {
 					let museVersion: string | null = null;
-					if (have("muse")) {
-						const r = await run(["muse", "--version"], { timeoutMs: 10_000 });
+					// The probe resolves under the server's fronted
+					// tools env (T50 spawn gate), never ambient PATH.
+					if (have("muse", tools)) {
+						const r = await run(["muse", "--version"], {
+							timeoutMs: 10_000,
+							env: tools,
+						});
 						museVersion = r.stdout.trim().split("\n")[0] || null;
 					}
 					return json({
