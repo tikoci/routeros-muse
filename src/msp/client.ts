@@ -39,6 +39,14 @@ export type ImagePart = {
 };
 export type TurnInput = TextPart | ImagePart;
 
+export type UserInputAnswerInput = {
+	questionId: string;
+	selectedLabel?: string;
+	selectedLabels?: string[];
+	freeText?: string;
+	note?: string;
+};
+
 export type MspSession = {
 	sessionId: string;
 	name?: string | null;
@@ -355,6 +363,89 @@ export class MspClient {
 			commandId: uuid7(),
 			mode,
 			sessionId,
+		});
+	}
+
+	/**
+	 * Decide a pending approval (T50). The choiceId is echoed from the
+	 * request's own availableChoices (never invented) and the
+	 * requirementId is the approval's latest currentRequirementId (the
+	 * multi-stage race guard; a stale value is rejected by the host).
+	 * Wire shapes per docs/design/t50-t55-wire-shapes.md.
+	 */
+	async approvalDecide(opts: {
+		sessionId: string;
+		approvalId: string;
+		requirementId: { approvalId: string; sourceIndex: number };
+		choiceId: string;
+	}): Promise<{
+		commandId: string;
+		approvalId: string;
+		status: string;
+		terminal: boolean;
+	}> {
+		return (await this.call("approval/decide", {
+			commandId: uuid7(),
+			sessionId: opts.sessionId,
+			approvalId: opts.approvalId,
+			requirementId: opts.requirementId,
+			choiceId: opts.choiceId,
+		})) as {
+			commandId: string;
+			approvalId: string;
+			status: string;
+			terminal: boolean;
+		};
+	}
+
+	/**
+	 * Pull pending approvals + questions (T50 late join). Returns
+	 * exactly the approval/request and userInput/request params.
+	 */
+	async approvalListPending(sessionId: string): Promise<{
+		approvals: Record<string, unknown>[];
+		userInputs: Record<string, unknown>[];
+	}> {
+		return (await this.call("approval/listPending", {
+			sessionId,
+		})) as {
+			approvals: Record<string, unknown>[];
+			userInputs: Record<string, unknown>[];
+		};
+	}
+
+	/**
+	 * Answer every question of a pending prompt (T50). One entry per
+	 * question: selectedLabel (single), selectedLabels (multiple), or
+	 * freeText, plus an optional note.
+	 */
+	async userInputAnswer(opts: {
+		sessionId: string;
+		userInputId: string;
+		answers: UserInputAnswerInput[];
+	}): Promise<unknown> {
+		return this.call("userInput/answer", {
+			commandId: uuid7(),
+			sessionId: opts.sessionId,
+			userInputId: opts.userInputId,
+			answers: opts.answers,
+		});
+	}
+
+	/**
+	 * Decline a pending prompt (T50): the tool call resolves with a
+	 * cancelled result the model sees.
+	 */
+	async userInputCancel(opts: {
+		sessionId: string;
+		userInputId: string;
+		reason?: string;
+	}): Promise<unknown> {
+		return this.call("userInput/cancel", {
+			commandId: uuid7(),
+			sessionId: opts.sessionId,
+			userInputId: opts.userInputId,
+			...(opts.reason !== undefined ? { reason: opts.reason } : {}),
 		});
 	}
 

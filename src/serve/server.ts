@@ -28,6 +28,11 @@ import {
 import { have, run } from "../lib/run";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
 import {
+	isDefaultAccess,
+	readDefaultAccess,
+	writeDefaultAccess,
+} from "../lib/settings";
+import {
 	toolBinDir as defaultToolBinDir,
 	detectInstalled,
 	type Installed,
@@ -115,8 +120,10 @@ export type ServeOpts = {
 	defaultWorkspaceDir?: string;
 	/**
 	 * Default MSP approval mode for the main session (T93 --yolo:
-	 * allowAll). The access selector reads this same state, so the
-	 * UI shows it as it already would. Defaults to onRequest.
+	 * allowAll). Beats settings.toml for the run. The access
+	 * selector reads this same state, so the UI shows it as it
+	 * already would. Defaults to promptUnmatched (D38: Ask first),
+	 * or settings.toml [agent] default_access when stored.
 	 */
 	defaultApprovalMode?: ApprovalMode;
 };
@@ -469,7 +476,18 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	let totalTokens: number | null = null;
 	let lastModelId: string | null = null;
 	let lastEffort: string | null = null;
-	let lastAccess: string | null = opts.defaultApprovalMode ?? null;
+	// T50/D38: the mode new main sessions start in. --yolo (the opt)
+	// beats the stored setting for the run; without either, Ask
+	// first (promptUnmatched) is the default. Read fresh at each
+	// session start so a settings write applies to the next session.
+	function defaultAccess(): ApprovalMode {
+		return (
+			opts.defaultApprovalMode ??
+			readDefaultAccess(opts.dataHome) ??
+			"promptUnmatched"
+		);
+	}
+	let lastAccess: string | null = defaultAccess();
 	let sessionStartedAt: number | null = null;
 	const sse = new Set<(line: string) => void>();
 
@@ -654,6 +672,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						if (typeof total === "number") totalTokens = total;
 						if (typeof p["modelId"] === "string") lastModelId = p["modelId"];
 					}
+					if (ev.method === "session/approvalModeChanged") {
+						// T50: the host is the truth for the live mode (it
+						// echoes every session/start + setApprovalMode).
+						const p = ev.params as Record<string, unknown>;
+						if (typeof p["mode"] === "string") lastAccess = p["mode"];
+					}
 					if (
 						(ev.method === "item/started" ||
 							ev.method === "item/updated" ||
@@ -716,7 +740,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				return ensureMain(key);
 			}
-			const approvalMode = opts.defaultApprovalMode ?? "onRequest";
+			const approvalMode = defaultAccess();
 			const { session } = await client.sessionStart({
 				workspaceRoot: root,
 				approvalMode,
@@ -1703,6 +1727,197 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						}
 						throw err;
 					}
+				}
+				// T50 approval/question surface: thin relays over the MSP
+				// decide/answer/cancel/listPending commands. Choice ids
+				// and requirement ids are echoed from the host's own
+				// request frames (the UI renders them verbatim); the
+				// host validates them, and a rejection surfaces as
+				// ok:false (a stale requirementId is a normal race, not
+				// a 500). Main session only.
+				if (p === "/api/chat/pending") {
+					// Late join / reload / reconnect recovery. No
+					// session yet means nothing pending — and must not
+					// spawn one just to ask (a fresh session has no
+					// pending items by construction).
+					if (!mainSession) {
+						return json({ ok: true, approvals: [], userInputs: [] });
+					}
+					const key = workerKey(req);
+					const client = await ensureMsp(key);
+					try {
+						const list = await client.approvalListPending(mainSession);
+						return json({
+							ok: true,
+							approvals: list.approvals,
+							userInputs: list.userInputs,
+						});
+					} catch (err) {
+						if (err instanceof MspError) {
+							return json(
+								{ ok: false, why: `${err.kind}: ${err.message}` },
+								400,
+							);
+						}
+						throw err;
+					}
+				}
+				if (p === "/api/chat/approval/decide" && req.method === "POST") {
+					const body = (await req.json()) as {
+						approvalId?: unknown;
+						choiceId?: unknown;
+						requirementId?: unknown;
+					};
+					const reqId = body.requirementId as Record<string, unknown> | null;
+					if (
+						typeof body.approvalId !== "string" ||
+						typeof body.choiceId !== "string" ||
+						typeof reqId !== "object" ||
+						reqId === null ||
+						typeof reqId["approvalId"] !== "string" ||
+						typeof reqId["sourceIndex"] !== "number"
+					) {
+						return json(
+							{ ok: false, why: "need {approvalId, choiceId, requirementId}" },
+							400,
+						);
+					}
+					const key = workerKey(req);
+					const sid = await ensureMain(key);
+					const client = await ensureMsp(key);
+					try {
+						const res = await client.approvalDecide({
+							sessionId: sid,
+							approvalId: body.approvalId,
+							requirementId: {
+								approvalId: reqId["approvalId"] as string,
+								sourceIndex: reqId["sourceIndex"] as number,
+							},
+							choiceId: body.choiceId,
+						});
+						return json({ ok: true, terminal: res.terminal });
+					} catch (err) {
+						if (err instanceof MspError) {
+							return json(
+								{ ok: false, why: `${err.kind}: ${err.message}` },
+								400,
+							);
+						}
+						throw err;
+					}
+				}
+				if (p === "/api/chat/question/answer" && req.method === "POST") {
+					const body = (await req.json()) as {
+						userInputId?: unknown;
+						answers?: unknown;
+					};
+					const answers = body.answers;
+					const validAnswer = (a: unknown): boolean => {
+						if (typeof a !== "object" || a === null) return false;
+						const r = a as Record<string, unknown>;
+						if (typeof r["questionId"] !== "string") return false;
+						const shapes = [
+							typeof r["selectedLabel"] === "string",
+							Array.isArray(r["selectedLabels"]) &&
+								(r["selectedLabels"] as unknown[]).every(
+									(s) => typeof s === "string",
+								),
+							typeof r["freeText"] === "string",
+						].filter(Boolean).length;
+						return shapes === 1;
+					};
+					if (
+						typeof body.userInputId !== "string" ||
+						!Array.isArray(answers) ||
+						answers.length === 0 ||
+						!answers.every(validAnswer)
+					) {
+						return json(
+							{
+								ok: false,
+								why: "need {userInputId, answers:[{questionId, selectedLabel|selectedLabels|freeText}]}",
+							},
+							400,
+						);
+					}
+					const key = workerKey(req);
+					const sid = await ensureMain(key);
+					const client = await ensureMsp(key);
+					try {
+						await client.userInputAnswer({
+							sessionId: sid,
+							userInputId: body.userInputId,
+							answers: answers as {
+								questionId: string;
+								selectedLabel?: string;
+								selectedLabels?: string[];
+								freeText?: string;
+								note?: string;
+							}[],
+						});
+						return json({ ok: true });
+					} catch (err) {
+						if (err instanceof MspError) {
+							return json(
+								{ ok: false, why: `${err.kind}: ${err.message}` },
+								400,
+							);
+						}
+						throw err;
+					}
+				}
+				if (p === "/api/chat/question/cancel" && req.method === "POST") {
+					const body = (await req.json()) as {
+						userInputId?: unknown;
+						reason?: unknown;
+					};
+					if (typeof body.userInputId !== "string") {
+						return json({ ok: false, why: "need {userInputId}" }, 400);
+					}
+					const key = workerKey(req);
+					const sid = await ensureMain(key);
+					const client = await ensureMsp(key);
+					try {
+						await client.userInputCancel({
+							sessionId: sid,
+							userInputId: body.userInputId,
+							...(typeof body.reason === "string" ? { reason: body.reason } : {}),
+						});
+						return json({ ok: true });
+					} catch (err) {
+						if (err instanceof MspError) {
+							return json(
+								{ ok: false, why: `${err.kind}: ${err.message}` },
+								400,
+							);
+						}
+						throw err;
+					}
+				}
+				// T50/D38: the default access mode lives in settings.toml
+				// ([agent] default_access). GET reports the effective
+				// default (what the next session starts in); POST stores
+				// one of the two selector modes. The live session mode is
+				// separate (/api/chat/access) and untouched here.
+				if (p === "/api/settings") {
+					if (req.method === "GET") {
+						return json({ ok: true, defaultAccess: defaultAccess() });
+					}
+					if (req.method === "POST") {
+						const body = (await req.json()) as { defaultAccess?: unknown };
+						if (!isDefaultAccess(body.defaultAccess)) {
+							return json(
+								{
+									ok: false,
+									why: "need {defaultAccess} one of promptUnmatched|allowAll",
+								},
+								400,
+							);
+						}
+						writeDefaultAccess(opts.dataHome, body.defaultAccess);
+						return json({ ok: true, defaultAccess: body.defaultAccess });
+					}
+					return json({ ok: false, why: "need GET or POST" }, 405);
 				}
 				if (p === "/api/chat/events") {
 					let send: (line: string) => void = () => {};
