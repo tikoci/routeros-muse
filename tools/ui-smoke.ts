@@ -2225,6 +2225,24 @@ try {
 					(apprBtns[2] ?? "").includes("Reject"),
 				apprBtns.join(" | "),
 			);
+			// The live meta sends identical label/rulePreview strings for
+			// allow_local_prefix: the subtitle hides instead of doubling.
+			const allowLocalBtn = page
+				.locator(
+					'.appr-card.hold-pending .appr-btn[data-choice="allow_local_prefix"]',
+				)
+				.first();
+			const allowLocalText = (await allowLocalBtn.textContent()) ?? "";
+			const labelNeedle = "Always allow in this workspace: ls ...";
+			check(
+				"t50 rulePreview hides when it equals the label",
+				allowLocalText.split(labelNeedle).length - 1 === 1,
+				allowLocalText,
+			);
+			check(
+				"t50 equal rulePreview leaves no subtitle node",
+				(await allowLocalBtn.locator(".rule").count()) === 0,
+			);
 			const apprText =
 				(await page.locator(".appr-card.hold-pending").first().textContent()) ??
 				"";
@@ -2457,6 +2475,280 @@ try {
 			await batchT;
 		} finally {
 			await srvT.stop();
+		}
+	});
+
+	// T50 follow-up: first-connect recovery, settled-elsewhere
+	// reconcile, and a differing rulePreview — on a second
+	// fake-backed server with two tabs (one context) on one session.
+	// Screenshots 35-37. The behavior-under-test waits are soft
+	// (timeout becomes a FAIL line, not a thrown abort) so one run
+	// shows every new leg red before the fix and green after.
+	const t50b = stubT50Bin();
+	await withT50Env(t50b.log, async () => {
+		const srvU = await startServer({
+			dataHome: mktmp("ui-smoke-t50u-dh-"),
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: t50b.bin,
+		});
+		try {
+			const ctxU = await browser.newContext({
+				viewport: { width: 1600, height: 900 },
+			});
+			const pageF = await ctxU.newPage();
+			const pageG = await ctxU.newPage();
+			for (const p of [pageF, pageG]) {
+				p.on("console", (msg) => {
+					if (msg.type() === "error") {
+						consoleErrors.push(msg.text().slice(0, 300));
+					}
+				});
+				p.on("response", (res) => {
+					if (res.status() >= 400) {
+						const req = res.request();
+						failedResponses.push({
+							status: res.status(),
+							method: req.method(),
+							pathname: new URL(req.url()).pathname,
+						});
+					}
+				});
+				p.on("pageerror", (err) =>
+					pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+				);
+			}
+			const soft = async (fn: () => Promise<unknown>): Promise<boolean> => {
+				try {
+					await fn();
+					return true;
+				} catch {
+					return false;
+				}
+			};
+			// Leg F1 (first-connect gap): SSE held at the route while
+			// the initial pending fetch completes; the fake then emits
+			// an approval no path has seen; releasing SSE must render
+			// the card plus the waiting strip via first-onopen recovery.
+			let sseMode: "hold" | "live" | "abort" = "hold";
+			let releaseHold: () => void = () => {};
+			const holdGate = new Promise<void>((resolve) => {
+				releaseHold = resolve;
+			});
+			await pageF.route("**/api/chat/events", async (route) => {
+				if (sseMode === "abort") {
+					await route.abort();
+					return;
+				}
+				if (sseMode === "hold") await holdGate;
+				await route.continue();
+			});
+			const batchF = watchAppBatch(pageF);
+			const pendingFirst = pageF.waitForResponse(
+				(r) => new URL(r.url()).pathname === "/api/chat/pending",
+				{ timeout: 30_000 },
+			);
+			await pageF.goto(srvU.url, { waitUntil: "load" });
+			await pageF.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pendingFirst;
+			await pageF.fill("#chatinput", "NEED-APPROVAL first-connect gap");
+			await pageF.click("#sendbtn");
+			await pollT71Log(t50b.log, /EMIT-APPROVAL/, 15_000);
+			check(
+				"t50 held SSE shows no card before release",
+				(await pageF.locator(".appr-card.hold-pending").count()) === 0,
+			);
+			sseMode = "live";
+			releaseHold();
+			check(
+				"t50 first-connect recovery renders the held approval",
+				await soft(() =>
+					pageF.waitForSelector(".appr-card.hold-pending", {
+						timeout: 15_000,
+					}),
+				),
+			);
+			const waitingF = (
+				(await pageF.locator("#waiting").textContent()) ?? ""
+			).replace(/\s+/g, " ");
+			check(
+				"t50 waiting strip appears after first-connect recovery",
+				waitingF.includes("Waiting for you") && waitingF.includes("1"),
+				waitingF,
+			);
+			await pageF.screenshot({
+				path: path.join(OUT, "35-t50-firstconnect.png"),
+			});
+			// Converge F1's approval before R2: decide its card when one
+			// rendered, else Stop the still-held turn — either way t50-a1
+			// settles server-side and F idles, so R2 starts clean.
+			if ((await pageF.locator(".appr-card.hold-pending").count()) > 0) {
+				await pageF
+					.locator(
+						'.appr-card.hold-pending .appr-btn[data-choice="allow_once"]',
+					)
+					.first()
+					.click();
+				await pageF.waitForSelector(".appr-card.hold-resolved .appr-resolved", {
+					timeout: 15_000,
+				});
+			}
+			if ((await pageF.locator("#stopbtn:visible").count()) > 0) {
+				await pageF.click("#stopbtn");
+				await pageF.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
+			}
+			await pollT71Log(
+				t50b.log,
+				/(DECIDE approvalId=t50-a1|INTERRUPT-RESOLVED approvalId=t50-a1)/,
+				15_000,
+			);
+			// Leg R2 (settled elsewhere): F holds a pending approval,
+			// drops SSE (abort + reload re-renders from the snapshot),
+			// G decides it, F's next recovery reconciles the card away.
+			await pageF.fill("#chatinput", "NEED-APPROVAL settle elsewhere");
+			await pageF.click("#sendbtn");
+			await pageF.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			const batchG = watchAppBatch(pageG);
+			await pageG.goto(srvU.url, { waitUntil: "load" });
+			await pageG.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageG.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			sseMode = "abort";
+			await pageF.reload({ waitUntil: "load" });
+			await pageF.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageF.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			await pageF.waitForSelector("#ssestate:visible", { timeout: 15_000 });
+			check("t50 offline tab keeps its pending card", true);
+			await pageG
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await pageG.waitForSelector(".appr-card.hold-resolved .appr-resolved", {
+				timeout: 15_000,
+			});
+			await pollT71Log(t50b.log, /DECIDE approvalId=t50-a2/, 15_000);
+			sseMode = "live";
+			check(
+				"t50 reconnect marks the prompt settled elsewhere",
+				await soft(() =>
+					pageF.waitForFunction(
+						() =>
+							[
+								...document.querySelectorAll(
+									".appr-card.hold-resolved .appr-resolved",
+								),
+							].some((el) =>
+								(el.textContent ?? "").includes("settled elsewhere"),
+							),
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"t50 settled-elsewhere tab holds no pending card",
+				(await pageF.locator(".appr-card.hold-pending").count()) === 0,
+			);
+			check(
+				"t50 waiting strip clears after settled-elsewhere reconcile",
+				(await pageF.locator("#waiting:visible").count()) === 0,
+			);
+			await pageF.screenshot({ path: path.join(OUT, "36-t50-elsewhere.png") });
+			// Leg D6 (differing rulePreview): the subtitle stays when it
+			// differs from the label — the pending snapshot is rewritten
+			// on the way in, so the card renders the different text. Runs
+			// on G: F missed t50-t2's completion while offline and sits
+			// running, while G idled normally.
+			await pageG.fill("#chatinput", "NEED-APPROVAL rule differs");
+			await pageG.click("#sendbtn");
+			await pageG.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			const DIFF_RULE = "rule: ls anywhere below the workspace";
+			await pageG.route("**/api/chat/pending", async (route) => {
+				const resp = await route.fetch();
+				const j = (await resp.json()) as {
+					approvals?: {
+						availableChoices?: { choiceId?: string; rulePreview?: string }[];
+					}[];
+				};
+				for (const a of j.approvals ?? []) {
+					for (const c of a.availableChoices ?? []) {
+						if (c.choiceId === "allow_local_prefix") c.rulePreview = DIFF_RULE;
+					}
+				}
+				await route.fulfill({ response: resp, json: j });
+			});
+			await pageG.reload({ waitUntil: "load" });
+			await pageG.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageG.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			const diffRule = pageG
+				.locator(
+					'.appr-card.hold-pending .appr-btn[data-choice="allow_local_prefix"] .rule',
+				)
+				.first();
+			check(
+				"t50 rulePreview shows when it differs from the label",
+				(await diffRule.count()) === 1 &&
+					((await diffRule.textContent()) ?? "") === DIFF_RULE,
+				(await diffRule.textContent()) ?? "(no subtitle)",
+			);
+			await pageG.screenshot({ path: path.join(OUT, "37-t50-rulediff.png") });
+			await pageG.unroute("**/api/chat/pending");
+			await pageG
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="abort"]')
+				.first()
+				.click();
+			await pageG.waitForSelector(".appr-card.hold-resolved .appr-resolved", {
+				timeout: 15_000,
+			});
+			// Quiescence before the stop (mirrors the T50 block): the
+			// reloads above fired fresh app batches after batchF/batchG
+			// resolved, so round-trip first, then await the waiters.
+			await pageF.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await pageG.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchF;
+			await batchG;
+			await ctxU.close();
+		} finally {
+			await srvU.stop();
 		}
 	});
 
