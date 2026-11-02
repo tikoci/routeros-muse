@@ -328,3 +328,19 @@ status = "decided"
 detail = "Capture B2: MSP has no host/client tool registration; per-session MCP is negotiated (sessionMcp at initialize, config.mcpServers at session/start), ui_show_note round trip captured; MCP tools prompt even under onRequest. Recommendation: routeros-muse serves an MCP server with ui_* tools (render into tab, select device, raise alert) as T55's design."
 decided = "2026-11-01"
 outcome = "Developer 2026-11-01: yes, no objections. routeros-muse serves a per-session MCP server (sessionMcp + config.mcpServers) with ui_* tools; this is T55's design."
+
+[[decision]]
+id = "D42"
+title = "Ask first runs under permission profile :ask-me (sandbox + per-destination network approvals)"
+status = "open"
+detail = "Permissions research 2026-11-01 (docs/design/permissions.md P2/P6): sandboxing is a profile axis, and this machine's muse settings.json default is :unrestricted, so today an approved command runs unsandboxed (outside-workspace writes succeed, LAN free). :ask-me adds bubblewrap (writable roots: workspace, /tmp, $TMPDIR) and a network-kind approval per destination (allow_once / allow_session / allow_local_network). Recommendation: session/start passes permissionProfile :ask-me for Ask first and :unrestricted for Allow all, explicitly, instead of inheriting the machine default. Known quirks to verify before shipping: under a sandboxed profile the shell sees cwd as /, and /dev/shm workspaces sandbox fully read-only."
+decided = ""
+outcome = ""
+
+[[decision]]
+id = "D43"
+title = "routeros-muse pre-seeds read-only allow rules into the user's muse approval-policy.json"
+status = "open"
+detail = "Option C verdict FEASIBLE (permissions.md): allow rules live in $XDG_CONFIG_HOME/muse/approval-policy.json, scoped to the absolute workspace root, with argv-prefix matching that keeps centrs retrieve and centrs execute apart (sh -c cannot smuggle). Recommendation: start ensures one rule per read command for this workspace (centrs retrieve, rosetta <subcommands>, quickchr list, quickchr doctor, ls, cat, grep, find; never bare binaries; centrs execute stays unlisted because --yes cannot be excluded), merge-safe (never removes or rewrites rules it did not write, tags its own), re-keyed on workspace move, visible in Settings, with an off switch. It writes user-machine state outside the workspace, hence a decision."
+decided = ""
+outcome = ""

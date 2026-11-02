@@ -1000,3 +1000,23 @@ evidence = "Developer question 2026-11-01 on D40; capture B1 shows muse reads pr
 blocked_by = []
 agent = ""
 updated = "2026-11-01"
+
+[[task]]
+id = "T101"
+title = "Option C: pre-allowed reads plus explicit permission profile"
+status = "needed"
+detail = "Implement D42 and D43 once decided: session/start sends permissionProfile per access mode; start ensures the workspace's read allow rules in approval-policy.json (merge-safe, tagged, re-keyed on move); Settings shows the profile and the pre-allowed list with an off switch. Verify the sandboxed-profile quirks first (cwd seen as /, read-only /dev/shm workspaces) with a live turn on a twin-free temp workspace under $HOME."
+evidence = "docs/design/permissions.md (merged 53bee58), captures out/wire-capture/perm-20261102T000756Z/"
+blocked_by = ["D42", "D43", "T50"]
+agent = ""
+updated = "2026-11-01"
+
+[[task]]
+id = "T102"
+title = "SECURITY.md from the permission research"
+status = "needed"
+detail = "Write SECURITY.md before GitHub (D34): what each access mode and profile allows, where trust/rules/settings live, what --trust-workspace enables (skills, rules, hooks that run outside the sandbox and approvals), the artifact sandbox (T83) and its residuals, init write-safety threat model (T97), and how to report issues. Source: docs/design/permissions.md SECURITY notes plus T83/T97 records. Facts only, each grounded."
+evidence = "permissions research 2026-11-01; developer asked for an eventual SECURITY.md"
+blocked_by = []
+agent = ""
+updated = "2026-11-01"
