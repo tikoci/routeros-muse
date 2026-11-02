@@ -587,8 +587,7 @@ describe("network rules (probed shape)", () => {
 			const doc = readPolicy(cfg);
 			expect(
 				doc.rules.filter(
-					(r) =>
-						(r["rule"] as Record<string, unknown>)["kind"] === "network",
+					(r) => (r["rule"] as Record<string, unknown>)["kind"] === "network",
 				),
 			).toHaveLength(2);
 		});
@@ -651,7 +650,10 @@ describe("network rules (probed shape)", () => {
 			};
 			nodeFs.writeFileSync(
 				policyFile(cfg),
-				JSON.stringify({ schema_version: 2, rules: [...doc.rules, other, foreign] }),
+				JSON.stringify({
+					schema_version: 2,
+					rules: [...doc.rules, other, foreign],
+				}),
 			);
 			ensurePreallowReads({
 				configHome: cfg,
@@ -662,9 +664,9 @@ describe("network rules (probed shape)", () => {
 			const after = readPolicy(cfg);
 			expect(after.rules).toContainEqual(other);
 			expect(after.rules).toContainEqual(foreign);
-			expect(
-				after.rules.filter((r) => r["reason"] === PREALLOW_TAG),
-			).toEqual([other]);
+			expect(after.rules.filter((r) => r["reason"] === PREALLOW_TAG)).toEqual([
+				other,
+			]);
 		});
 	});
 });
