@@ -8,9 +8,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { have } from "../src/lib/run";
-import { pollT71Log } from "./t71-fake";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
+import { pollT71Log } from "./t71-fake";
 
 afterAll(cleanupTmpdirs);
 
@@ -92,9 +92,15 @@ describe("approval/question surface (T50)", () => {
 				try {
 					const sent = await sendText(srv.url, "T50-DEFAULT-MODE");
 					expect(sent["ok"]).toBe(true);
-					await pollT71Log(log, /START session=t50-s1 approvalMode=(\S+)/, 15_000);
+					await pollT71Log(
+						log,
+						/START session=t50-s1 approvalMode=(\S+)/,
+						15_000,
+					);
 					const text = nodeFs.readFileSync(log, "utf8");
-					expect(text).toContain("START session=t50-s1 approvalMode=promptUnmatched");
+					expect(text).toContain(
+						"START session=t50-s1 approvalMode=promptUnmatched",
+					);
 				} finally {
 					await srv.stop();
 				}
@@ -142,7 +148,10 @@ describe("approval/question surface (T50)", () => {
 					expect(approvals).toHaveLength(1);
 					const first = approvals[0] as Record<string, unknown>;
 					expect(typeof first["approvalId"]).toBe("string");
-					const choices = first["availableChoices"] as Record<string, unknown>[];
+					const choices = first["availableChoices"] as Record<
+						string,
+						unknown
+					>[];
 					expect(choices.map((c) => c["label"])).toEqual([
 						"Allow once",
 						"Always allow in this workspace: ls ...",
@@ -157,7 +166,11 @@ describe("approval/question surface (T50)", () => {
 					});
 					expect(decided.json["ok"]).toBe(true);
 					expect(decided.json["terminal"]).toBe(true);
-					await pollT71Log(log, /DECIDE approvalId=t50-a1 choiceId=allow_once/, 15_000);
+					await pollT71Log(
+						log,
+						/DECIDE approvalId=t50-a1 choiceId=allow_once/,
+						15_000,
+					);
 					const text = nodeFs.readFileSync(log, "utf8");
 					expect(text).toContain(
 						'requirementId={"approvalId":"t50-a1","sourceIndex":0}',
@@ -182,7 +195,9 @@ describe("approval/question surface (T50)", () => {
 					await sendText(srv.url, "NEED-APPROVAL stale guard");
 					await pollT71Log(log, /EMIT-APPROVAL/, 15_000);
 					const pending = await getJson(`${srv.url}api/chat/pending`);
-					const first = (pending["approvals"] as Record<string, unknown>[])[0] as Record<string, unknown>;
+					const first = (
+						pending["approvals"] as Record<string, unknown>[]
+					)[0] as Record<string, unknown>;
 					const decided = await postJson(`${srv.url}api/chat/approval/decide`, {
 						approvalId: first["approvalId"],
 						choiceId: "allow_once",
@@ -215,10 +230,13 @@ describe("approval/question surface (T50)", () => {
 					const questions = first["questions"] as Record<string, unknown>[];
 					expect(questions).toHaveLength(1);
 					expect(questions[0]?.["id"]).toBe("indent_pref");
-					const answered = await postJson(`${srv.url}api/chat/question/answer`, {
-						userInputId: first["userInputId"],
-						answers: [{ questionId: "indent_pref", selectedLabel: "Tabs" }],
-					});
+					const answered = await postJson(
+						`${srv.url}api/chat/question/answer`,
+						{
+							userInputId: first["userInputId"],
+							answers: [{ questionId: "indent_pref", selectedLabel: "Tabs" }],
+						},
+					);
 					expect(answered.json["ok"]).toBe(true);
 					await pollT71Log(log, /ANSWER userInputId=t50-q1/, 15_000);
 					const text = nodeFs.readFileSync(log, "utf8");
@@ -231,10 +249,15 @@ describe("approval/question surface (T50)", () => {
 					await sendText(srv.url, "NEED-QUESTION again");
 					await pollT71Log(log, /EMIT-QUESTION userInputId=t50-q2/, 15_000);
 					const pending2 = await getJson(`${srv.url}api/chat/pending`);
-					const second = (pending2["userInputs"] as Record<string, unknown>[])[0] as Record<string, unknown>;
-					const cancelled = await postJson(`${srv.url}api/chat/question/cancel`, {
-						userInputId: second["userInputId"],
-					});
+					const second = (
+						pending2["userInputs"] as Record<string, unknown>[]
+					)[0] as Record<string, unknown>;
+					const cancelled = await postJson(
+						`${srv.url}api/chat/question/cancel`,
+						{
+							userInputId: second["userInputId"],
+						},
+					);
 					expect(cancelled.json["ok"]).toBe(true);
 					await pollT71Log(log, /CANCEL userInputId=t50-q2/, 15_000);
 					const cleared2 = await getJson(`${srv.url}api/chat/pending`);
@@ -317,7 +340,9 @@ describe("approval/question surface (T50)", () => {
 		async () => {
 			const { bin, log } = stubT50Bin();
 			const dataHome = mktmp("t50-dh-settings-");
-			nodeFs.mkdirSync(path.join(dataHome, "routeros-muse"), { recursive: true });
+			nodeFs.mkdirSync(path.join(dataHome, "routeros-muse"), {
+				recursive: true,
+			});
 			nodeFs.writeFileSync(
 				path.join(dataHome, "routeros-muse", "settings.toml"),
 				'[agent]\ndefault_access = "allowAll"\n',
@@ -343,7 +368,9 @@ describe("approval/question surface (T50)", () => {
 		async () => {
 			const { bin, log } = stubT50Bin();
 			const dataHome = mktmp("t50-dh-yolo-");
-			nodeFs.mkdirSync(path.join(dataHome, "routeros-muse"), { recursive: true });
+			nodeFs.mkdirSync(path.join(dataHome, "routeros-muse"), {
+				recursive: true,
+			});
 			nodeFs.writeFileSync(
 				path.join(dataHome, "routeros-muse", "settings.toml"),
 				'[agent]\ndefault_access = "promptUnmatched"\n',
@@ -378,14 +405,15 @@ describe("approval/question surface (T50)", () => {
 					expect(before["ok"]).toBe(true);
 					expect(before["defaultAccess"]).toBe("promptUnmatched");
 					// Seed unrelated content the write must not disturb.
-					const file = path.join(srv.dataHome, "routeros-muse", "settings.toml");
+					const file = path.join(
+						srv.dataHome,
+						"routeros-muse",
+						"settings.toml",
+					);
 					nodeFs.mkdirSync(path.join(srv.dataHome, "routeros-muse"), {
 						recursive: true,
 					});
-					nodeFs.writeFileSync(
-						file,
-						"# operator note\n[other]\nkeep = true\n",
-					);
+					nodeFs.writeFileSync(file, "# operator note\n[other]\nkeep = true\n");
 					const written = await postJson(`${srv.url}api/settings`, {
 						defaultAccess: "allowAll",
 					});
@@ -413,7 +441,9 @@ describe("approval/question surface (T50)", () => {
 		async () => {
 			const { bin, log } = stubT50Bin();
 			const dataHome = mktmp("t50-dh-corrupt-");
-			nodeFs.mkdirSync(path.join(dataHome, "routeros-muse"), { recursive: true });
+			nodeFs.mkdirSync(path.join(dataHome, "routeros-muse"), {
+				recursive: true,
+			});
 			nodeFs.writeFileSync(
 				path.join(dataHome, "routeros-muse", "settings.toml"),
 				"[agent\ndefault_access = oops\n",
