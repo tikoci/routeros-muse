@@ -94,7 +94,7 @@
   .ctab.main .run { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex: none; animation: pulse 1.2s infinite; }
   .ctab.main .devchip { font: 700 10.5px var(--sans); background: rgba(255,255,255,.2); border-radius: 4px; padding: 0 6px; }
   @keyframes pulse { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .rdot, .mstat .mdot, .stream .caret { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .rdot, .mstat .mdot, .stream .caret, .waiting .wdot { animation: none; } }
 
   .ctab .n { font: 700 10.5px var(--sans); color: var(--faint); background: var(--inset); border: 1px solid var(--border-soft); border-radius: 10px; padding: 0 7px; flex: none; }
 
@@ -166,6 +166,33 @@
   details.tout pre, .outpre { margin: 6px 0 0; padding: 9px 12px; font: 11.5px/1.5 var(--mono); color: var(--code-fg); background: var(--code-bg); border-radius: 8px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; }
   .outpre.tall { max-height: none; }
   .tfail { margin-top: 6px; font-size: 12px; color: var(--red); }
+  .waiting { display: flex; align-items: center; gap: 8px; margin: 8px 20px 0; padding: 7px 12px; font-size: 12px; font-weight: 650; color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.4); border-radius: 9px; cursor: pointer; }
+  .waiting:hover { border-color: var(--amber); }
+  .waiting .wdot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); animation: pulse 1.2s infinite; flex: none; }
+  .appr-subj { font: 12px var(--mono); color: var(--code-fg); background: var(--code-bg); border-radius: 8px; padding: 8px 11px; margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+  .appr-stage { color: var(--muted); font: 11.5px var(--mono); margin-bottom: 6px; word-break: break-all; }
+  .appr-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .appr-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font: 600 12px var(--sans); border-radius: 8px; padding: 6px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); }
+  .appr-btn:hover { border-color: var(--accent); }
+  .appr-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .appr-btn:disabled:hover { border-color: var(--border); }
+  .appr-btn .rule { font: 400 10.5px var(--sans); color: var(--faint); }
+  .appr-btn.danger { border-color: var(--red); color: var(--red); background: var(--red-dim); }
+  .appr-btn.danger:hover { border-color: var(--red); }
+  .appr-resolved, .q-resolved { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .appr-resolved b, .q-resolved b { color: var(--text); }
+  .q-q { margin-bottom: 10px; }
+  .q-q:last-of-type { margin-bottom: 6px; }
+  .q-head { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .q-text { font-size: 12.5px; margin: 2px 0 6px; }
+  .q-opt { display: flex; gap: 8px; align-items: baseline; border: 1px solid var(--border-soft); border-radius: 8px; padding: 6px 10px; margin-bottom: 5px; cursor: pointer; }
+  .q-opt:hover { border-color: var(--accent); }
+  .q-opt.picked { border-color: var(--accent); background: var(--accent-dim); }
+  .q-opt .ql { font-weight: 650; font-size: 12.5px; flex: none; }
+  .q-opt .qd { font-size: 11.5px; color: var(--muted); }
+  .q-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .defbtns { display: flex; gap: 8px; padding: 2px 2px 3px 88px; }
+  .minibtn.cur { border-color: var(--accent); color: var(--text); }
   .tobj { font-size: 12.5px; margin: 0 0 6px; }
   .tres { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border-soft); padding-top: 6px; margin-top: 6px; white-space: pre-wrap; }
   .dl-file { font: 700 11.5px var(--mono); color: var(--muted); padding: 8px 0 2px; }
@@ -457,6 +484,7 @@
         <button class="tadd" id="tadddev" title="Target another device — its centrs card is checked and added here">+ Device</button>
         <button class="tadd" id="composerfile" title="Open a file…">+ File</button>
       </div>
+      <div class="waiting" id="waiting" style="display:none" title="Jump to the first item waiting for you"><span class="wdot"></span><span id="waiting-text">Waiting for you</span></div>
       <div class="composer">
         <div class="box">
           <textarea id="chatinput" rows="2" placeholder="Ask about this network…" aria-label="Chat input"></textarea>
@@ -611,6 +639,12 @@
           <div class="agenthead"><span class="dot ok"></span><span id="set-muse">muse …</span><span class="conn" id="set-conn">…</span></div>
           <div class="arow"><span class="k">Model</span><span class="v" id="set-model">…</span></div>
           <div class="arow"><span class="k">Access</span><span class="v" id="set-access">…</span></div>
+          <div class="arow"><span class="k">Default access</span><span class="v" id="set-defaccess">…</span></div>
+          <div class="defbtns" id="defaccess-btns">
+            <button class="minibtn" data-defaccess="promptUnmatched" title="Shell commands, file writes and network tools ask before they run, unless you said always allow.">Ask first</button>
+            <button class="minibtn" data-defaccess="allowAll" title="Nothing asks.">Allow all</button>
+          </div>
+          <div class="setnote">New chats start at the default access. Changing it never touches the live chat.</div>
           <div class="arow"><span class="k">Context</span><span class="v" id="set-ctx">…</span></div>
           <div class="arow"><span class="k">Session</span><span class="v" id="set-session">…</span></div>
           <button class="btn rbtn" title="Drop the session and run the OAuth flow again">Reconnect</button>
@@ -1942,9 +1976,465 @@
     }
   }
 
+  // T50 approval/question surface. Cards render from the
+  // approval/requested + userInput/requested notification twins
+  // (stable approvalId/userInputId keys), never from the
+  // server-request frames; the {} receipts stay in the MSP client.
+  // All wire text renders via textContent (host-authored content is
+  // never trusted as markup). Buttons mirror availableChoices
+  // VERBATIM — the UI never assumes a fixed set — and behavior keys
+  // off decision (Reject is just the abort choice).
+  const pendingApprovals = new Map(); // approvalId -> {params, el, resolved}
+  const pendingQuestions = new Map(); // userInputId -> {params, el, resolved, busy, picks}
+
+  function pendingTallies() {
+    let approvals = 0, questions = 0;
+    for (const v of pendingApprovals.values()) if (!v.resolved) approvals++;
+    for (const v of pendingQuestions.values()) if (!v.resolved) questions++;
+    return { approvals, questions, total: approvals + questions };
+  }
+
+  function updateWaiting() {
+    const t = pendingTallies();
+    const w = document.getElementById("waiting");
+    if (t.total === 0) { w.style.display = "none"; return; }
+    w.style.display = "";
+    const plural = (n, one) => n + " " + one + (n === 1 ? "" : "s");
+    document.getElementById("waiting-text").textContent =
+      "Waiting for you · " + t.total +
+      " (" + plural(t.approvals, "approval") + ", " + plural(t.questions, "question") + ")";
+  }
+
+  // Place a hold card: joined to its gated tool row when that row is
+  // already on screen (request.itemId == item.itemId — the wire
+  // toolCall carries approvalId null even when gated), else appended
+  // like any row. The gated row usually arrives after the resolve, so
+  // it lands adjacent naturally.
+  function placeHoldCard(el, itemId) {
+    const tool = (typeof itemId === "string" && itemId && liveCards.get(itemId)) || null;
+    if (tool && tool.isConnected) {
+      tool.after(el);
+      if (atBottom(msgsEl())) tail(); else markUnread(true);
+    } else {
+      placeNode(el);
+    }
+  }
+
+  function holdError(card, why) {
+    let e = card.querySelector(":scope > .body > .tfail.holderr");
+    if (!e) {
+      e = document.createElement("div");
+      e.className = "tfail holderr";
+      card.querySelector(".body").appendChild(e);
+    }
+    e.textContent = why;
+  }
+
+  function approvalCard(p) {
+    const shell = cardShell("Approval · " + (p.toolName || "tool"), "approval", "inProgress");
+    shell.wrap.classList.add("appr-card", "hold-pending");
+    shell.wrap.dataset.approval = p.approvalId;
+    if (typeof p.itemId === "string") shell.wrap.dataset.item = p.itemId;
+    const body = shell.body;
+    const subj = (p.subject && typeof p.subject === "object") ? p.subject : {};
+    const args = typeof p.rawArgs === "string" ? p.rawArgs : "";
+    if (subj.kind === "shell" && typeof subj.command === "string") {
+      const pre = document.createElement("div");
+      pre.className = "appr-subj";
+      pre.textContent = subj.command;
+      body.appendChild(pre);
+      const stages = Array.isArray(subj.stages) ? subj.stages : [];
+      for (const st of stages) {
+        if (st && Array.isArray(st.argv)) {
+          const s = document.createElement("div");
+          s.className = "appr-stage";
+          s.textContent = "argv: " + st.argv.join(" ");
+          body.appendChild(s);
+        }
+      }
+    } else if (subj.kind === "tool") {
+      const pre = document.createElement("div");
+      pre.className = "appr-subj";
+      pre.textContent = (subj.toolName || p.toolName || "tool") + (args ? " " + args : "");
+      body.appendChild(pre);
+    } else {
+      // Unknown subject kind: show the tool name plus raw args
+      // generically, and never auto-anything.
+      const pre = document.createElement("div");
+      pre.className = "appr-subj";
+      pre.textContent = (p.toolName || "tool") + (args ? " " + args : "");
+      body.appendChild(pre);
+    }
+    const btns = document.createElement("div");
+    btns.className = "appr-btns";
+    body.appendChild(btns);
+    paintApprovalChoices(p, btns);
+    return shell.wrap;
+  }
+
+  function paintApprovalChoices(p, btns) {
+    btns.innerHTML = "";
+    const choices = Array.isArray(p.availableChoices) ? p.availableChoices : [];
+    for (const c of choices) {
+      if (!c || typeof c.choiceId !== "string") continue;
+      const b = document.createElement("button");
+      b.className = "appr-btn" + (c.decision === "abort" ? " danger" : "");
+      b.dataset.choice = c.choiceId;
+      const lab = document.createElement("span");
+      lab.textContent = c.label || c.choiceId;
+      b.appendChild(lab);
+      if (typeof c.rulePreview === "string" && c.rulePreview) {
+        const r = document.createElement("span");
+        r.className = "rule";
+        r.textContent = c.rulePreview;
+        b.appendChild(r);
+      }
+      b.addEventListener("click", () => decideApproval(p.approvalId, c.choiceId));
+      btns.appendChild(b);
+    }
+  }
+
+  async function decideApproval(approvalId, choiceId) {
+    const rec = pendingApprovals.get(approvalId);
+    if (!rec || rec.resolved || !rec.el || !rec.el.isConnected) return;
+    const btns = [...rec.el.querySelectorAll(".appr-btn")];
+    btns.forEach((b) => { b.disabled = true; });
+    try {
+      const r = await fetch("/api/chat/approval/decide", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          approvalId,
+          choiceId,
+          requirementId: rec.params ? rec.params.currentRequirementId : null,
+        }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        // Refused (a stale requirementId is a normal race): re-enable
+        // so the user can retry once approval/updated refreshes us.
+        btns.forEach((b) => { b.disabled = false; });
+        holdError(rec.el, "not decided: " + (j.why || "request failed"));
+        return;
+      }
+      // Affirmed: the card resolves when approval/resolved arrives on
+      // the stream. Buttons stay disabled meanwhile (no double-decide).
+    } catch (e) {
+      btns.forEach((b) => { b.disabled = false; });
+      holdError(rec.el, "not decided: " + e.message);
+    }
+  }
+
+  function onApprovalRequested(p) {
+    if (!p || typeof p.approvalId !== "string") return;
+    const rec = pendingApprovals.get(p.approvalId);
+    if (rec) {
+      if (rec.resolved) return; // never resurrect a resolved card
+      rec.params = p;
+      const btns = rec.el && rec.el.querySelector(".appr-btns");
+      if (btns) paintApprovalChoices(p, btns);
+      return;
+    }
+    const el = approvalCard(p);
+    pendingApprovals.set(p.approvalId, { params: p, el, resolved: false });
+    placeHoldCard(el, p.itemId);
+    updateWaiting();
+  }
+
+  function onApprovalUpdated(p) {
+    if (!p || typeof p.approvalId !== "string") return;
+    const rec = pendingApprovals.get(p.approvalId);
+    if (!rec || rec.resolved) return;
+    // The update carries the refreshed choices + requirement guard;
+    // keep the original subject (the update may not repeat it).
+    rec.params = { ...rec.params, availableChoices: p.availableChoices, currentRequirementId: p.currentRequirementId };
+    const btns = rec.el && rec.el.querySelector(".appr-btns");
+    if (btns) paintApprovalChoices(rec.params, btns);
+  }
+
+  function onApprovalResolved(p) {
+    if (!p || typeof p.approvalId !== "string") return;
+    const decision = typeof p.decision === "string" ? p.decision : "unknown";
+    const by = typeof p.resolvedBy === "string" ? p.resolvedBy : "host";
+    // Our own Reject click carries our command id; the interrupt path
+    // resolves abort with decidedByCommandId null (capture 10).
+    const byInterrupt = decision === "abort" && p.decidedByCommandId == null && by === "user";
+    let rec = pendingApprovals.get(p.approvalId);
+    if (!rec) {
+      // A settlement for a request we never saw (late join racing a
+      // resolve): record it so recovery never re-adds it as pending.
+      pendingApprovals.set(p.approvalId, { params: null, el: null, resolved: true });
+      return;
+    }
+    if (rec.resolved) return;
+    rec.resolved = true;
+    if (rec.el && rec.el.isConnected) {
+      rec.el.classList.remove("hold-pending");
+      rec.el.classList.add("hold-resolved");
+      // Done is the absence of a pill (statusWord convention): drop the
+      // active dot + running pill with the decision.
+      const dot = rec.el.querySelector(".who .dot");
+      if (dot) dot.remove();
+      const pill = rec.el.querySelector(".who .pill");
+      if (pill) pill.remove();
+      rec.el.querySelectorAll(".appr-btn").forEach((b) => { b.disabled = true; });
+      const line = document.createElement("div");
+      line.className = "appr-resolved";
+      const b = document.createElement("b");
+      b.textContent = decision;
+      line.appendChild(b);
+      line.appendChild(document.createTextNode(" · by " + by + (byInterrupt ? " · interrupt (Stop)" : "")));
+      rec.el.querySelector(".body").appendChild(line);
+    }
+    updateWaiting();
+  }
+
+  function questionHeaders(p) {
+    const qs = Array.isArray(p.questions) ? p.questions : [];
+    const heads = qs.map((q) => q && q.header).filter((h) => typeof h === "string" && h);
+    return heads.length ? heads.join(" · ") : "input";
+  }
+
+  function questionCard(state) {
+    const p = state.params;
+    const shell = cardShell("Question · " + questionHeaders(p), "userInput", "inProgress");
+    shell.wrap.classList.add("q-card", "hold-pending");
+    shell.wrap.dataset.question = p.userInputId;
+    if (typeof p.itemId === "string") shell.wrap.dataset.item = p.itemId;
+    const body = shell.body;
+    const questions = Array.isArray(p.questions) ? p.questions : [];
+    for (const q of questions) {
+      if (!q || typeof q.id !== "string") continue;
+      const sel = (q.selection && typeof q.selection === "object") ? q.selection : {};
+      const multi = sel.mode === "multiple";
+      const st = {
+        multi,
+        set: new Set(),
+        min: typeof sel.minSelections === "number" ? sel.minSelections : 1,
+        max: typeof sel.maxSelections === "number" ? sel.maxSelections : null,
+        box: null,
+      };
+      state.picks.set(q.id, st);
+      const box = document.createElement("div");
+      box.className = "q-q";
+      st.box = box;
+      const head = document.createElement("div");
+      head.className = "q-head";
+      head.textContent = q.header || "Question";
+      const text = document.createElement("div");
+      text.className = "q-text";
+      text.textContent = q.question || "";
+      box.appendChild(head);
+      box.appendChild(text);
+      const opts = Array.isArray(q.options) ? q.options : [];
+      for (const opt of opts) {
+        if (!opt || typeof opt.label !== "string") continue;
+        const row = document.createElement("div");
+        row.className = "q-opt";
+        row.dataset.label = opt.label;
+        const lab = document.createElement("span");
+        lab.className = "ql";
+        lab.textContent = opt.label;
+        row.appendChild(lab);
+        if (typeof opt.description === "string" && opt.description) {
+          const d = document.createElement("span");
+          d.className = "qd";
+          d.textContent = opt.description;
+          row.appendChild(d);
+        }
+        row.addEventListener("click", () => {
+          if (state.resolved || state.busy) return;
+          if (multi) {
+            if (st.set.has(opt.label)) st.set.delete(opt.label);
+            else if (st.max === null || st.set.size < st.max) st.set.add(opt.label);
+          } else {
+            st.set.clear();
+            st.set.add(opt.label);
+          }
+          paintQuestionPicks(state);
+        });
+        box.appendChild(row);
+      }
+      body.appendChild(box);
+    }
+    const btns = document.createElement("div");
+    btns.className = "q-btns";
+    const answer = document.createElement("button");
+    answer.className = "btn primary q-answer";
+    answer.textContent = "Answer";
+    answer.disabled = true;
+    answer.addEventListener("click", () => answerQuestion(p.userInputId));
+    const decline = document.createElement("button");
+    decline.className = "btn q-decline";
+    decline.textContent = "Decline";
+    decline.addEventListener("click", () => cancelQuestion(p.userInputId));
+    btns.appendChild(answer);
+    btns.appendChild(decline);
+    body.appendChild(btns);
+    state.answerBtn = answer;
+    state.declineBtn = decline;
+    return shell.wrap;
+  }
+
+  function paintQuestionPicks(state) {
+    for (const [, st] of state.picks) {
+      if (!st.box) continue;
+      for (const row of st.box.querySelectorAll(".q-opt")) {
+        row.classList.toggle("picked", st.set.has(row.dataset.label));
+      }
+    }
+    // Answer arms when every question has a host-acceptable pick: the
+    // single choice, or a multiple within its selection bounds.
+    let ok = state.picks.size > 0;
+    for (const [, st] of state.picks) {
+      if (st.multi) {
+        const max = st.max === null ? Infinity : st.max;
+        if (st.set.size < st.min || st.set.size > max) { ok = false; break; }
+      } else if (st.set.size !== 1) { ok = false; break; }
+    }
+    if (state.answerBtn) state.answerBtn.disabled = !ok || state.busy;
+  }
+
+  function questionPayload(state) {
+    const answers = [];
+    const questions = Array.isArray(state.params.questions) ? state.params.questions : [];
+    for (const q of questions) {
+      const st = state.picks.get(q.id);
+      if (!st) continue;
+      if (st.multi) answers.push({ questionId: q.id, selectedLabels: [...st.set] });
+      else answers.push({ questionId: q.id, selectedLabel: [...st.set][0] });
+    }
+    return answers;
+  }
+
+  function setQuestionBusy(state, busy) {
+    state.busy = busy;
+    if (state.answerBtn) state.answerBtn.disabled = busy ? true : state.answerBtn.disabled;
+    if (state.declineBtn) state.declineBtn.disabled = busy;
+    if (!busy) paintQuestionPicks(state);
+  }
+
+  async function answerQuestion(userInputId) {
+    const rec = pendingQuestions.get(userInputId);
+    if (!rec || rec.resolved || rec.busy || !rec.el || !rec.el.isConnected) return;
+    setQuestionBusy(rec, true);
+    try {
+      const r = await fetch("/api/chat/question/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userInputId, answers: questionPayload(rec) }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        setQuestionBusy(rec, false);
+        holdError(rec.el, "not answered: " + (j.why || "request failed"));
+        return;
+      }
+      // Affirmed: the card settles when userInput/settled arrives.
+    } catch (e) {
+      setQuestionBusy(rec, false);
+      holdError(rec.el, "not answered: " + e.message);
+    }
+  }
+
+  async function cancelQuestion(userInputId) {
+    const rec = pendingQuestions.get(userInputId);
+    if (!rec || rec.resolved || rec.busy || !rec.el || !rec.el.isConnected) return;
+    setQuestionBusy(rec, true);
+    try {
+      const r = await fetch("/api/chat/question/cancel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userInputId }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        setQuestionBusy(rec, false);
+        holdError(rec.el, "not declined: " + (j.why || "request failed"));
+        return;
+      }
+      // Affirmed: the card settles when userInput/settled arrives.
+    } catch (e) {
+      setQuestionBusy(rec, false);
+      holdError(rec.el, "not declined: " + e.message);
+    }
+  }
+
+  function onQuestionRequested(p) {
+    if (!p || typeof p.userInputId !== "string") return;
+    const rec = pendingQuestions.get(p.userInputId);
+    if (rec) return; // never resurrect, never rebuild mid-pick
+    const state = { params: p, el: null, resolved: false, busy: false, picks: new Map(), answerBtn: null, declineBtn: null };
+    const el = questionCard(state);
+    state.el = el;
+    pendingQuestions.set(p.userInputId, state);
+    placeHoldCard(el, p.itemId);
+    updateWaiting();
+  }
+
+  function onQuestionSettled(p) {
+    if (!p || typeof p.userInputId !== "string") return;
+    const outcome = typeof p.outcome === "string" ? p.outcome : "unknown";
+    const byInterrupt = outcome === "aborted" && p.decidedByCommandId == null;
+    const rec = pendingQuestions.get(p.userInputId);
+    if (!rec) {
+      pendingQuestions.set(p.userInputId, { params: null, el: null, resolved: true, busy: false, picks: new Map() });
+      return;
+    }
+    if (rec.resolved) return;
+    rec.resolved = true;
+    if (rec.el && rec.el.isConnected) {
+      rec.el.classList.remove("hold-pending");
+      rec.el.classList.add("hold-resolved");
+      const dot = rec.el.querySelector(".who .dot");
+      if (dot) dot.remove();
+      const pill = rec.el.querySelector(".who .pill");
+      if (pill) pill.remove();
+      if (rec.answerBtn) rec.answerBtn.disabled = true;
+      if (rec.declineBtn) rec.declineBtn.disabled = true;
+      const line = document.createElement("div");
+      line.className = "q-resolved";
+      const b = document.createElement("b");
+      b.textContent = outcome;
+      line.appendChild(b);
+      const bits = [];
+      if (typeof p.reason === "string" && p.reason) bits.push(p.reason);
+      const answers = Array.isArray(p.answers) ? p.answers : [];
+      const picked = [];
+      for (const a of answers) {
+        if (a && typeof a.selectedLabel === "string") picked.push(a.selectedLabel);
+        else if (a && Array.isArray(a.selectedLabels)) picked.push(...a.selectedLabels.filter((s) => typeof s === "string"));
+        else if (a && typeof a.freeText === "string") picked.push(a.freeText);
+      }
+      if (picked.length) bits.push(picked.join(", "));
+      if (byInterrupt) bits.push("interrupt (Stop)");
+      if (bits.length) line.appendChild(document.createTextNode(" · " + bits.join(" · ")));
+      rec.el.querySelector(".body").appendChild(line);
+    }
+    updateWaiting();
+  }
+
+  // Late join / reload / reconnect: re-render whatever is still
+  // pending. listPending returns only unsettled items, and the
+  // resolved maps above refuse to resurrect — so a resolved item can
+  // never show as pending through here.
+  async function recoverPending() {
+    try {
+      const j = await getJSON("/api/chat/pending");
+      if (!j.ok) return;
+      for (const a of j.approvals || []) onApprovalRequested(a);
+      for (const q of j.userInputs || []) onQuestionRequested(q);
+    } catch { /* pending stays empty when the server is unreachable */ }
+  }
+
   function onStream(ev) {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.method === "approval/requested") { onApprovalRequested(m.params); return; }
+    if (m.method === "approval/updated") { onApprovalUpdated(m.params); return; }
+    if (m.method === "approval/resolved") { onApprovalResolved(m.params); return; }
+    if (m.method === "userInput/requested") { onQuestionRequested(m.params); return; }
+    if (m.method === "userInput/settled") { onQuestionSettled(m.params); return; }
     if (m.method === "turn/started") {
       // A newer send landed while stopping: drop the stale pin and visuals,
       // back to plain running (the pin's completion can no longer idle us).
@@ -2452,11 +2942,13 @@
   }
 
   const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+  // T50/D38: promptUnmatched IS Ask first and is the default. onRequest
+  // only gates MCP tools (we load none) and denyUnmatched is unprobed,
+  // so neither is offered; the server still accepts them if sent, and a
+  // live session running one shows its raw mode name, honestly.
   const ACCESS = [
-    ["allowAll", "Allow all"],
-    ["promptUnmatched", "Prompt new"],
-    ["onRequest", "Ask first"],
-    ["denyUnmatched", "Deny new"],
+    ["promptUnmatched", "Ask first", "Shell commands, file writes and network tools ask before they run, unless you said always allow."],
+    ["allowAll", "Allow all", "Nothing asks."],
   ];
   const cap = (s) => s.slice(0, 1).toUpperCase() + s.slice(1);
   let modelCatalog = [];
@@ -2471,6 +2963,7 @@
     for (const o of options) {
       const b = document.createElement("button");
       b.className = "opt";
+      if (o.hint) b.title = o.hint;
       const lab = document.createElement("span");
       lab.textContent = o.label;
       b.appendChild(lab);
@@ -2529,12 +3022,56 @@
       $("set-model").textContent = curLabel;
       const eff = (sj.ok && sj.effort) || "max";
       $("seleffort").textContent = cap(eff);
-      const acc = (sj.ok && sj.access) || "onRequest";
+      const acc = (sj.ok && sj.access) || "promptUnmatched";
       const accLabel = (ACCESS.find((a) => a[0] === acc) || [])[1] || acc;
       $("selaccess").textContent = accLabel;
       $("set-access").textContent = accLabel;
       $("sp-access").textContent = accLabel;
     } catch { /* selectors keep placeholders */ }
+  }
+
+  // T50/D38: the Default access row shows the settings.toml default
+  // (what new chats start in) and writes it live. The live session
+  // mode stays separate — this row never touches the running chat.
+  function paintDefaultAccess(mode) {
+    const label = (ACCESS.find((a) => a[0] === mode) || [])[1] || mode;
+    $("set-defaccess").textContent = label;
+    document.querySelectorAll("#defaccess-btns button").forEach((b) => {
+      b.classList.toggle("cur", b.dataset.defaccess === mode);
+    });
+  }
+
+  async function loadDefaultAccess() {
+    try {
+      const j = await getJSON("/api/settings");
+      if (j.ok && j.defaultAccess) paintDefaultAccess(j.defaultAccess);
+    } catch { /* the row keeps its placeholder */ }
+  }
+
+  function wireDefaultAccess() {
+    document.querySelectorAll("#defaccess-btns button").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const v = b.dataset.defaccess;
+        try {
+          const r = await fetch("/api/settings", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ defaultAccess: v }),
+          });
+          const j = await r.json();
+          if (j.ok) {
+            paintDefaultAccess(v);
+            return;
+          }
+          const keep = b.title;
+          b.title = "not saved: " + (j.why || "request failed");
+          setTimeout(() => { b.title = keep; }, 4000);
+        } catch (e) {
+          const keep = b.title;
+          b.title = "not saved: " + e.message;
+          setTimeout(() => { b.title = keep; }, 4000);
+        }
+      }));
   }
 
   function wireControls() {
@@ -2569,7 +3106,7 @@
       e.stopPropagation();
       openMenu(
         $("sel-access-btn"),
-        ACCESS.map((a) => ({ value: a[0], label: a[1] })),
+        ACCESS.map((a) => ({ value: a[0], label: a[1], hint: a[2] })),
         (ACCESS.find((a) => a[1] === $("selaccess").textContent) || [])[0],
         (v) => postControl("/api/chat/access", { mode: v }, $("sel-access-btn"), (ACCESS.find((a) => a[0] === v) || [])[1]).then(() => {
           const accLabel = (ACCESS.find((a) => a[0] === v) || [])[1] || v;
@@ -2768,6 +3305,12 @@
     if (first) first.scrollIntoView({ block: "nearest" });
   });
 
+  // T50: the waiting strip jumps to the first hold card still pending.
+  document.getElementById("waiting").addEventListener("click", () => {
+    const el = document.querySelector(".appr-card.hold-pending, .q-card.hold-pending");
+    if (el) el.scrollIntoView({ block: "center" });
+  });
+
   function showLock(st) {
     $("locksub").textContent = "CDB password for " + (st.cdbFile || "the device registry");
     $("lockerr").textContent = "";
@@ -2893,6 +3436,7 @@
     applyMeta(st.meta || "unknown");
     loadStatus();
     loadControls();
+    loadDefaultAccess();
     loadWorkspaces();
     loadDevices();
     loadRecents();
@@ -2900,19 +3444,27 @@
     loadAlerts();
     // No loadTwins(): the Twins tab fetches on first show (T38 on-demand).
     loadPast();
-    loadHistory().then(() => refreshStatpop());
+    loadHistory().then(() => { refreshStatpop(); recoverPending(); });
     const es = new EventSource("/api/chat/events");
     es.onmessage = onStream;
     // T45: stream drops used to be silent (stale Stop, no rows). Native
-    // retry reconnects; the chip says so until it succeeds.
-    es.onerror = () => { $("ssestate").style.display = ""; };
-    es.onopen = () => { $("ssestate").style.display = "none"; };
+    // retry reconnects; the chip says so until it succeeds. T50: a
+    // reconnect also re-recovers pending holds (frames may have been
+    // lost in the gap); onopen fires on first connect too, when there
+    // is nothing to recover (recoverPending is a no-op then anyway).
+    let sseDown = false;
+    es.onerror = () => { sseDown = true; $("ssestate").style.display = ""; };
+    es.onopen = () => {
+      $("ssestate").style.display = "none";
+      if (sseDown) { sseDown = false; recoverPending(); }
+    };
   }
 
   wireComposer();
   wireUpload();
   wireToml();
   wireControls();
+  wireDefaultAccess();
   wireWorkspaces();
   wireAuth();
   // Twins are on-demand (T38): quickchr is optional, so the tab fetches

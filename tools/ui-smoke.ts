@@ -6,8 +6,10 @@
 // open-in-tab wiring, the T39 lock/unlock/bypass flow, the T64
 // missing-CDB guidance, the no-workspace mode, the T40
 // no-workspace picker (list/open/prune/create), the T48
-// set-credentials modal (affordance, context, save, refresh), and the
-// T71 stop lifecycle (Stopping ticker, Force stop, SIGTERM note).
+// set-credentials modal (affordance, context, save, refresh), the
+// T71 stop lifecycle (Stopping ticker, Force stop, SIGTERM note), and
+// the T50 approval/question surface (cards, waiting strip, selector,
+// settings default, late join — all on the scriptable T50 fake).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -22,6 +24,7 @@ import { chromium, type Page, type Request } from "playwright";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
+import { stubT50Bin, withT50Env } from "../tests/t50-fake";
 import { pollT71Log, stubT71Bin, withT71Env } from "../tests/t71-fake";
 
 type SmokeHook = {
@@ -2138,6 +2141,315 @@ try {
 			await page.screenshot({ path: path.join(OUT, "21-t71-forced-note.png") });
 		} finally {
 			await srvB.stop();
+		}
+	});
+
+	// T50: approval/question surface on the scriptable fake. One
+	// server, one page flow: the selector shows only Ask first /
+	// Allow all (Ask first default); a fake approval renders its
+	// choices verbatim and Allow once resolves it; a fake question
+	// answers and declines; NEED-BOTH fills the waiting strip and
+	// Stop resolves both as interrupt; the settings default persists
+	// across reload; a pending approval survives a reload via
+	// /api/chat/pending. Screenshots 30-34.
+	const t50 = stubT50Bin();
+	await withT50Env(t50.log, async () => {
+		const srvT = await startServer({
+			dataHome: mktmp("ui-smoke-t50-dh-"),
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: t50.bin,
+		});
+		try {
+			await page.goto(srvT.url, { waitUntil: "load" });
+			const batchT = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			// Selector: Ask first is the default, and the menu holds
+			// only the two honest options, each with its tooltip.
+			check(
+				"t50 selector defaults to Ask first",
+				((await page.locator("#selaccess").textContent()) ?? "").trim() ===
+					"Ask first",
+			);
+			await page.click("#sel-access-btn");
+			await page.waitForSelector("#selmenu.open", { timeout: 5_000 });
+			const accessOpts = await page.locator("#selmenu .opt").allTextContents();
+			check(
+				"t50 selector offers only Ask first / Allow all",
+				accessOpts.length === 2 &&
+					(accessOpts[0] ?? "").includes("Ask first") &&
+					(accessOpts[1] ?? "").includes("Allow all"),
+				accessOpts.join(" | "),
+			);
+			const askTip =
+				(await page.locator("#selmenu .opt").nth(0).getAttribute("title")) ??
+				"";
+			const allowTip =
+				(await page.locator("#selmenu .opt").nth(1).getAttribute("title")) ??
+				"";
+			check(
+				"t50 Ask first tooltip is honest",
+				askTip.includes("ask before they run"),
+				askTip,
+			);
+			check(
+				"t50 Allow all tooltip is honest",
+				allowTip.toLowerCase().includes("nothing asks"),
+				allowTip,
+			);
+			await page.screenshot({ path: path.join(OUT, "30-t50-selector.png") });
+			await page.keyboard.press("Escape");
+			// Approval: the card renders the captured choices verbatim,
+			// the waiting strip counts it, Allow once resolves it.
+			await page.fill("#chatinput", "NEED-APPROVAL smoke ls");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", { timeout: 15_000 });
+			const apprBtns = await page
+				.locator(".appr-card.hold-pending .appr-btn")
+				.allTextContents();
+			check(
+				"t50 approval card renders choices verbatim",
+				apprBtns.length === 3 &&
+					(apprBtns[0] ?? "").includes("Allow once") &&
+					(apprBtns[1] ?? "").includes(
+						"Always allow in this workspace: ls ...",
+					) &&
+					(apprBtns[2] ?? "").includes("Reject"),
+				apprBtns.join(" | "),
+			);
+			const apprText =
+				(await page.locator(".appr-card.hold-pending").first().textContent()) ?? "";
+			check(
+				"t50 approval card shows the shell command",
+				apprText.includes("ls -1"),
+				apprText.slice(0, 200),
+			);
+			await page.waitForSelector("#waiting:visible", { timeout: 5_000 });
+			const waiting1 = (
+				(await page.locator("#waiting").textContent()) ?? ""
+			).replace(/\s+/g, " ");
+			check(
+				"t50 waiting strip counts the approval",
+				waiting1.includes("Waiting for you") && waiting1.includes("1"),
+				waiting1,
+			);
+			await page.screenshot({ path: path.join(OUT, "31-t50-approval.png") });
+			await page
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await page.waitForSelector(".appr-card.hold-resolved .appr-resolved", {
+				timeout: 15_000,
+			});
+			const apprDone =
+				(await page
+					.locator(".appr-card.hold-resolved .appr-resolved")
+					.first()
+					.textContent()) ?? "";
+			check(
+				"t50 Allow once resolves the card",
+				apprDone.includes("approved") && apprDone.includes("user"),
+				apprDone,
+			);
+			check(
+				"t50 waiting strip clears after decide",
+				(await page.locator("#waiting:visible").count()) === 0,
+			);
+			await pollT71Log(
+				t50.log,
+				/DECIDE approvalId=t50-a1 choiceId=allow_once/,
+				15_000,
+			);
+			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
+			// Question: options render, Tabs answers, a second prompt declines.
+			await page.fill("#chatinput", "NEED-QUESTION smoke indent");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".q-card.hold-pending", { timeout: 15_000 });
+			const qOpts = await page
+				.locator(".q-card.hold-pending .q-opt")
+				.allTextContents();
+			check(
+				"t50 question card renders options verbatim",
+				qOpts.length === 2 &&
+					(qOpts[0] ?? "").includes("Tabs") &&
+					(qOpts[1] ?? "").includes("Spaces"),
+				qOpts.join(" | "),
+			);
+			check(
+				"t50 question card offers Decline",
+				(await page.locator(".q-card.hold-pending .q-decline").count()) === 1,
+			);
+			await page.screenshot({ path: path.join(OUT, "32-t50-question.png") });
+			await page
+				.locator('.q-card.hold-pending .q-opt[data-label="Tabs"]')
+				.first()
+				.click();
+			await page.locator(".q-card.hold-pending .q-answer").first().click();
+			await page.waitForSelector(".q-card.hold-resolved .q-resolved", {
+				timeout: 15_000,
+			});
+			const qDone =
+				(await page
+					.locator(".q-card.hold-resolved .q-resolved")
+					.first()
+					.textContent()) ?? "";
+			check("t50 answer resolves the card", qDone.includes("answered"), qDone);
+			await pollT71Log(t50.log, /ANSWER userInputId=t50-q1/, 15_000);
+			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
+			await page.fill("#chatinput", "NEED-QUESTION smoke decline");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".q-card.hold-pending", { timeout: 15_000 });
+			await page.locator(".q-card.hold-pending .q-decline").first().click();
+			await page.waitForFunction(
+				() =>
+					[...document.querySelectorAll(".q-card.hold-resolved .q-resolved")].some(
+						(el) => (el.textContent ?? "").includes("cancelled"),
+					),
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check("t50 Decline cancels the prompt", true);
+			await pollT71Log(t50.log, /CANCEL userInputId=t50-q2/, 15_000);
+			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
+			// Waiting strip + interrupt: NEED-BOTH counts 2, a strip
+			// click scrolls to the card, Stop resolves both as interrupt.
+			await page.fill("#chatinput", "NEED-BOTH smoke both");
+			await page.click("#sendbtn");
+			await page.waitForFunction(
+				() =>
+					(document.getElementById("waiting")?.textContent ?? "").includes("2"),
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const waiting2 = (
+				(await page.locator("#waiting").textContent()) ?? ""
+			).replace(/\s+/g, " ");
+			check(
+				"t50 waiting strip counts both holds",
+				waiting2.includes("2"),
+				waiting2,
+			);
+			await page.screenshot({ path: path.join(OUT, "33-t50-waiting.png") });
+			await page.click("#waiting");
+			const firstPendingVisible = await page.evaluate(() => {
+				const el = document.querySelector(
+					".appr-card.hold-pending, .q-card.hold-pending",
+				);
+				if (!el) return false;
+				const r = el.getBoundingClientRect();
+				return r.top >= 0 && r.bottom <= window.innerHeight;
+			});
+			check("t50 waiting click scrolls to the card", firstPendingVisible);
+			await page.click("#stopbtn");
+			await page.waitForFunction(
+				() =>
+					[
+						...document.querySelectorAll(".appr-card.hold-resolved .appr-resolved"),
+					].some((el) => /interrupt/i.test(el.textContent ?? "")) &&
+					[...document.querySelectorAll(".q-card.hold-resolved .q-resolved")].some(
+						(el) => /interrupt/i.test(el.textContent ?? ""),
+					),
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check("t50 Stop resolves both cards as interrupt", true);
+			check(
+				"t50 waiting strip clears after interrupt",
+				(await page.locator("#waiting:visible").count()) === 0,
+			);
+			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
+			// Settings default: the row writes through and persists.
+			await page.click('#crail button[data-crview="rview-settings"]');
+			await page.waitForSelector("#set-defaccess", { timeout: 5_000 });
+			check(
+				"t50 settings default starts at Ask first",
+				((await page.locator("#set-defaccess").textContent()) ?? "").trim() ===
+					"Ask first",
+			);
+			await page
+				.locator('#defaccess-btns button[data-defaccess="allowAll"]')
+				.click();
+			await page.waitForFunction(
+				() =>
+					(
+						document.getElementById("set-defaccess")?.textContent ?? ""
+					).includes("Allow all"),
+				undefined,
+				{ timeout: 5_000 },
+			);
+			check("t50 settings default writes through", true);
+			await page.screenshot({ path: path.join(OUT, "34-t50-settings.png") });
+			await page.reload({ waitUntil: "load" });
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.click('#crail button[data-crview="rview-settings"]');
+			check(
+				"t50 settings default persists across reload",
+				((await page.locator("#set-defaccess").textContent()) ?? "").trim() ===
+					"Allow all",
+			);
+			// Late join: a pending approval survives the reload above and
+			// re-renders from /api/chat/pending (it was never decided).
+			await page.fill("#chatinput", "NEED-APPROVAL smoke late");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", { timeout: 15_000 });
+			const lateId =
+				(await page
+					.locator(".appr-card.hold-pending")
+					.first()
+					.getAttribute("data-approval")) ?? "";
+			await page.reload({ waitUntil: "load" });
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.waitForSelector(
+				`.appr-card.hold-pending[data-approval="${lateId}"]`,
+				{
+					timeout: 15_000,
+				},
+			);
+			check("t50 pending approval survives reload", lateId !== "");
+			await page
+				.locator(
+					`.appr-card.hold-pending[data-approval="${lateId}"] .appr-btn[data-choice="abort"]`,
+				)
+				.click();
+			await page.waitForFunction(
+				(id) =>
+					[...document.querySelectorAll(".appr-card.hold-resolved")].some(
+						(el) =>
+							el.getAttribute("data-approval") === id &&
+							(el.querySelector(".appr-resolved")?.textContent ?? "").includes(
+								"abort",
+							),
+					),
+				lateId,
+				{ timeout: 15_000 },
+			);
+			check("t50 Reject after reload resolves as abort", true);
+			// The two reloads above fired fresh app batches after
+			// batchT resolved: prove quiescence before the stop.
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchT;
+		} finally {
+			await srvT.stop();
 		}
 	});
 
