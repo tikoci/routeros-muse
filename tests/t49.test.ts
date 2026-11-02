@@ -255,6 +255,176 @@ describe("D39: /api/status reports the trust state", () => {
 	});
 });
 
+describe("D39: the trust flag rides every spawn", () => {
+	async function recheckMeta(trustWorkspace?: boolean): Promise<{
+		meta: unknown;
+		argv: string[];
+	}> {
+		const t50 = stubT50Bin();
+		return withT50Env(t50.log, async () => {
+			const srv = await startServer({
+				dataHome: mktmp("t49-dh-"),
+				allowOpenCdb: true,
+				workspace: makeT49Workspace(),
+				provider: "meta",
+				museHome: mktmp("t49-home-"),
+				toolBinDir: t50.bin,
+				...(trustWorkspace === undefined ? {} : { trustWorkspace }),
+			});
+			try {
+				const r = await fetch(`${srv.url}api/auth/oauth-recheck`, {
+					method: "POST",
+				});
+				expect(r.status).toBe(200);
+				const j = (await r.json()) as Record<string, unknown>;
+				return { meta: j["meta"], argv: await pollArgv(t50.bin) };
+			} finally {
+				await srv.stop();
+			}
+		});
+	}
+
+	test("auth probe carries --trust-workspace by default", async () => {
+		const { meta, argv } = await recheckMeta();
+		expect(meta).toBe("authed");
+		expect(argv.length).toBeGreaterThanOrEqual(1);
+		expect(argv.every((l) => l.includes("--trust-workspace"))).toBe(true);
+	});
+
+	test("auth probe drops the flag with trustWorkspace:false", async () => {
+		const { meta, argv } = await recheckMeta(false);
+		expect(meta).toBe("authed");
+		expect(argv.length).toBeGreaterThanOrEqual(1);
+		expect(argv.some((l) => l.includes("--trust-workspace"))).toBe(false);
+	});
+
+	const T49_CDB_PASSWORD = "t49-fixture-password";
+
+	/** T50 fake + argv logging, but a password-gated stub CDB (T81 shape). */
+	function stubT50BinEncryptedCdb(): { bin: string; log: string } {
+		const t50 = stubT50Bin();
+		const file = path.join(t50.bin, "centrs");
+		nodeFs.writeFileSync(
+			file,
+			`#!/bin/sh\n` +
+				`if [ "$1" = "devices" ]; then\n` +
+				`if [ "$CENTRS_CDB_PASSWORD" = ${JSON.stringify(T49_CDB_PASSWORD)} ]; then\n` +
+				`printf '%s\\n' '{"ok":true,"data":[],"warnings":[],"tips":[],"meta":{}}'\n` +
+				`else\n` +
+				`printf '%s\\n' '{"ok":false,"error":{"code":"cdb/password-required","summary":"password required"},"warnings":[],"tips":[],"meta":{}}'\n` +
+				`fi\n` +
+				`else\n` +
+				`echo "stub-centrs 9.9.9-t49b"\n` +
+				`fi\n`,
+		);
+		nodeFs.chmodSync(file, 0o755);
+		return t50;
+	}
+
+	function workspaceWithCdb(): string {
+		const dir = makeT49Workspace();
+		nodeFs.writeFileSync(
+			path.join(dir, "device.cdb"),
+			"t49 stub-backed CDB placeholder\n",
+		);
+		return dir;
+	}
+
+	function cookieFrom(res: Response): string | null {
+		const set = res.headers.get("set-cookie");
+		if (!set) return null;
+		const m = /rmsid=([^;]+)/.exec(set);
+		return m?.[1] ? `rmsid=${m[1]}` : null;
+	}
+
+	async function postJson(
+		url: string,
+		body: unknown,
+		cookie?: string,
+	): Promise<{ status: number; json: Record<string, unknown>; res: Response }> {
+		const res = await fetch(url, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				...(cookie ? { cookie } : {}),
+			},
+			body: JSON.stringify(body),
+		});
+		return {
+			status: res.status,
+			json: (await res.json()) as Record<string, unknown>,
+			res,
+		};
+	}
+
+	async function pollArgvLines(bin: string, n: number): Promise<string[]> {
+		for (let i = 0; i < 200; i++) {
+			const lines = argvLines(bin);
+			if (lines.length >= n) return lines;
+			await new Promise((r) => setTimeout(r, 25));
+		}
+		throw new Error(
+			`fake spawned ${argvLines(bin).length} workers, wanted ${n}`,
+		);
+	}
+
+	async function lockUnlockArgv(trustWorkspace?: boolean): Promise<string[]> {
+		const t50 = stubT50BinEncryptedCdb();
+		return withT50Env(t50.log, async () => {
+			const srv = await startServer({
+				dataHome: mktmp("t49-dh-"),
+				workspace: workspaceWithCdb(),
+				provider: "echo",
+				museHome: mktmp("t49-home-"),
+				toolBinDir: t50.bin,
+				...(trustWorkspace === undefined ? {} : { trustWorkspace }),
+			});
+			try {
+				const unlock = async (): Promise<string> => {
+					const posted = await postJson(`${srv.url}api/auth/unlock`, {
+						password: T49_CDB_PASSWORD,
+					});
+					expect(posted.json["ok"]).toBe(true);
+					const cookie = cookieFrom(posted.res);
+					if (!cookie) throw new Error("unlock set no cookie");
+					return cookie;
+				};
+				const cookieA = await unlock();
+				const s1 = await postJson(
+					`${srv.url}api/chat/send`,
+					{ text: "first" },
+					cookieA,
+				);
+				expect(s1.json["ok"]).toBe(true);
+				const lock = await postJson(`${srv.url}api/auth/lock`, {}, cookieA);
+				expect(lock.json["ok"]).toBe(true);
+				const cookieB = await unlock();
+				const s2 = await postJson(
+					`${srv.url}api/chat/send`,
+					{ text: "second" },
+					cookieB,
+				);
+				expect(s2.json["ok"]).toBe(true);
+				return await pollArgvLines(t50.bin, 2);
+			} finally {
+				await srv.stop();
+			}
+		});
+	}
+
+	test("lock then unlock re-spawns the worker with the flag", async () => {
+		const argv = await lockUnlockArgv();
+		expect(argv.length).toBe(2);
+		expect(argv.every((l) => l.includes("--trust-workspace"))).toBe(true);
+	});
+
+	test("re-spawn drops the flag with trustWorkspace:false", async () => {
+		const argv = await lockUnlockArgv(false);
+		expect(argv.length).toBe(2);
+		expect(argv.some((l) => l.includes("--trust-workspace"))).toBe(false);
+	});
+});
+
 describe("D39: --no-trust-workspace parses", () => {
 	test("start and bare forms set it; default leaves it unset", () => {
 		expect(parseCli(["start", "--no-trust-workspace"])).toEqual({
