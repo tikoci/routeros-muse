@@ -8,6 +8,7 @@
 //
 // Subcommands:
 //   session-probe  initialize + session/start + skill/list + model/list (no model calls)
+//   skills-reread  session + skill/list, apply file mutations, skill/list again (S4 probe)
 //   turn           full session + one turn; scripted approval/question policies
 //   mcp-server     trivial stdio MCP server exposing ui_show_note(text) (B2 probe)
 //
@@ -315,18 +316,30 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 	const workspace = need(flags, "workspace");
 	const out = need(flags, "out");
 	const museHome = flags.get("muse-home");
+	const museConfigHome = flags.get("muse-config-home");
+	const homeOverride = flags.get("home");
 	const approvalMode = flags.get("approval-mode") ?? "onRequest";
 	const extraServeArgs = (flags.get("serve-args") ?? "")
 		.split(" ")
 		.filter(Boolean);
 	const mcpConfigPath = flags.get("mcp-config");
+	const dumpSkills = flags.get("dump-skills");
+	const setActivation = flags.get("set-activation"); // selector,scope,state
+	const importDryRun = flags.get("import-dry-run"); // claude|codex
 
 	const caps = (flags.get("capabilities") ?? "").split(",").filter(Boolean);
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v !== undefined) env[k] = v;
+	}
+	if (museConfigHome) env["XDG_CONFIG_HOME"] = museConfigHome;
+	if (homeOverride) env["HOME"] = homeOverride;
 	const cap = await Capture.spawn({
 		provider,
 		extraServeArgs,
 		museHome,
 		logPath: out,
+		env,
 	});
 	try {
 		const init = (await cap.call("initialize", {
@@ -362,8 +375,70 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 		console.log(`skill/list: ${rows.length} rows`);
 		for (const r of rows) {
 			console.log(
-				`  - ${String(r["selector"])} [${String(r["source"])}] ${String(r["description"] ?? "").slice(0, 100)}`,
+				`  - ${String(r["selector"])} [${String(r["source"])}] ${String(r["pluginId"] ?? "")} ${String(r["displayName"] ?? "")} :: ${String(r["description"] ?? "").slice(0, 90)}`,
 			);
+		}
+		if (dumpSkills) {
+			await Bun.write(Bun.file(dumpSkills), JSON.stringify(skills, null, 2));
+			console.log(`skill/list dumped to ${dumpSkills}`);
+		}
+		try {
+			const plugins = (await cap.call("plugin/list", {
+				sessionId: session["sessionId"],
+			})) as Frame;
+			const prows = (plugins["plugins"] as Frame[]) ?? [];
+			console.log(`plugin/list: ${prows.length} rows`);
+			for (const r of prows.slice(0, 20)) {
+				console.log(
+					`  - ${String(r["id"] ?? r["pluginId"] ?? "?")} ${JSON.stringify(r).slice(0, 200)}`,
+				);
+			}
+		} catch (e) {
+			console.log(`plugin/list failed: ${e}`);
+		}
+		try {
+			const hooks = (await cap.call("hook/list", {
+				sessionId: session["sessionId"],
+			})) as Frame;
+			console.log(`hook/list: ${JSON.stringify(hooks).slice(0, 300)}`);
+		} catch (e) {
+			console.log(`hook/list failed: ${e}`);
+		}
+		if (setActivation) {
+			const [selector, scope, activation] = setActivation.split(",");
+			try {
+				const res = (await cap.call("skill/setActivation", {
+					commandId: uuid7(),
+					sessionId: session["sessionId"],
+					selector,
+					scope,
+					activation,
+				})) as Frame;
+				console.log(`skill/setActivation: ${JSON.stringify(res)}`);
+				const relist = (await cap.call("skill/list", {
+					sessionId: session["sessionId"],
+				})) as Frame;
+				const rrows = (relist["skills"] as Frame[]) ?? [];
+				console.log(`skill/list after setActivation: ${rrows.length} rows`);
+				const hit = rrows.filter((r) => String(r["selector"]) === selector);
+				for (const r of hit)
+					console.log(`  - ${JSON.stringify(r).slice(0, 300)}`);
+			} catch (e) {
+				console.log(`skill/setActivation failed: ${e}`);
+			}
+		}
+		if (importDryRun) {
+			try {
+				const res = (await cap.call("skill/import", {
+					commandId: uuid7(),
+					sessionId: session["sessionId"],
+					source: importDryRun,
+					dryRun: true,
+				})) as Frame;
+				console.log(`skill/import dryRun: ${JSON.stringify(res)}`);
+			} catch (e) {
+				console.log(`skill/import dryRun failed: ${e}`);
+			}
 		}
 		const models = (await cap.call("model/list", {})) as Frame;
 		const ms = (models["models"] as Frame[]) ?? [];
@@ -381,6 +456,122 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 		console.log(
 			`approval/listPending: approvals=${JSON.stringify((pending["approvals"] as unknown[])?.length ?? "?")} userInputs=${JSON.stringify((pending["userInputs"] as unknown[])?.length ?? "?")}`,
 		);
+		console.log(`methods seen: ${[...cap.methodsSeen].sort().join(" ")}`);
+	} finally {
+		await cap.close();
+	}
+}
+
+// ---------- skills-reread (S4: mid-session mutation visibility) ----------
+
+type MutOp =
+	| { op: "add"; name: string; description?: string; body?: string }
+	| { op: "edit-desc"; name: string; description: string }
+	| { op: "delete"; name: string };
+
+async function skillsReread(flags: Map<string, string>): Promise<void> {
+	const provider = flags.get("provider") ?? "meta";
+	const workspace = need(flags, "workspace");
+	const out = need(flags, "out");
+	const museHome = flags.get("muse-home");
+	const museConfigHome = flags.get("muse-config-home");
+	const homeOverride = flags.get("home");
+	const approvalMode = flags.get("approval-mode") ?? "onRequest";
+	const extraServeArgs = (flags.get("serve-args") ?? "")
+		.split(" ")
+		.filter(Boolean);
+	const mutatePath = flags.get("mutate-json");
+	const settleMs = Number(flags.get("settle-ms") ?? "3000");
+
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v !== undefined) env[k] = v;
+	}
+	if (museConfigHome) env["XDG_CONFIG_HOME"] = museConfigHome;
+	if (homeOverride) env["HOME"] = homeOverride;
+	const cap = await Capture.spawn({
+		provider,
+		extraServeArgs,
+		museHome,
+		logPath: out,
+		env,
+	});
+	const changedNotifs: string[] = [];
+	cap.onNotification((method, params) => {
+		if (method === "skill/changed" || method === "session/todoListChanged") {
+			changedNotifs.push(`${method} ${JSON.stringify(params).slice(0, 200)}`);
+		}
+	});
+	const listSelectors = async (sessionId: string): Promise<Frame[]> => {
+		const res = (await cap.call("skill/list", { sessionId })) as Frame;
+		return (res["skills"] as Frame[]) ?? [];
+	};
+	try {
+		await cap.call("initialize", {
+			clientInfo: { name: "msp_capture", version: "0.1" },
+		});
+		cap.notify("initialized", {});
+		const started = (await cap.call(
+			"session/start",
+			{ commandId: uuid7(), workspaceRoot: workspace, approvalMode },
+			120_000,
+		)) as Frame;
+		const sessionId = String((started["session"] as Frame)["sessionId"]);
+		console.log(`session: ${sessionId}`);
+		const before = await listSelectors(sessionId);
+		const projBefore = before.filter((r) => r["source"] === "project");
+		console.log(
+			`skill/list #1: ${before.length} rows (${projBefore.length} project): ${projBefore.map((r) => r["selector"]).join(",")}`,
+		);
+		if (mutatePath) {
+			const ops = JSON.parse(await Bun.file(mutatePath).text()) as MutOp[];
+			const { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } =
+				await import("node:fs");
+			const { join } = await import("node:path");
+			for (const m of ops) {
+				const dir = join(workspace, ".agents", "skills", m.name);
+				if (m.op === "add") {
+					mkdirSync(dir, { recursive: true });
+					const desc = m.description ?? `probe skill ${m.name}`;
+					writeFileSync(
+						join(dir, "SKILL.md"),
+						`---\nname: ${m.name}\ndescription: ${desc}\n---\n\n# ${m.name}\n\n${m.body ?? "Probe body."}\n`,
+					);
+					console.log(`[mutate] added ${m.name}`);
+				} else if (m.op === "edit-desc") {
+					const p = join(dir, "SKILL.md");
+					if (existsSync(p)) {
+						const cur = readFileSync(p, "utf8");
+						writeFileSync(
+							p,
+							cur.replace(/^description: .*/m, `description: ${m.description}`),
+						);
+						console.log(`[mutate] edited ${m.name} description`);
+					} else {
+						console.log(`[mutate] edit skipped, missing ${m.name}`);
+					}
+				} else if (m.op === "delete") {
+					rmSync(dir, { recursive: true, force: true });
+					console.log(`[mutate] deleted ${m.name}`);
+				}
+			}
+			console.log(`waiting ${settleMs}ms for skill/changed...`);
+			await new Promise((r) => setTimeout(r, settleMs));
+		}
+		const after = await listSelectors(sessionId);
+		const projAfter = after.filter((r) => r["source"] === "project");
+		console.log(
+			`skill/list #2 (same session): ${after.length} rows (${projAfter.length} project): ${projAfter.map((r) => r["selector"]).join(",")}`,
+		);
+		for (const r of projAfter) {
+			console.log(
+				`  - ${String(r["selector"])} :: ${String(r["description"] ?? "").slice(0, 80)}`,
+			);
+		}
+		console.log(
+			`skill/changed notifications during settle: ${changedNotifs.length}`,
+		);
+		for (const n of changedNotifs) console.log(`  - ${n}`);
 		console.log(`methods seen: ${[...cap.methodsSeen].sort().join(" ")}`);
 	} finally {
 		await cap.close();
@@ -806,11 +997,12 @@ async function mcpServer(): Promise<void> {
 
 const { cmd, flags } = args(process.argv.slice(2));
 if (cmd === "session-probe") await sessionProbe(flags);
+else if (cmd === "skills-reread") await skillsReread(flags);
 else if (cmd === "turn") await turnCmd(flags);
 else if (cmd === "mcp-server") await mcpServer();
 else {
 	console.error(
-		"usage: msp-capture.ts <session-probe|turn|mcp-server> [flags]",
+		"usage: msp-capture.ts <session-probe|skills-reread|turn|mcp-server> [flags]",
 	);
 	process.exit(2);
 }
