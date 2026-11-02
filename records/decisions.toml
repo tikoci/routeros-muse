@@ -332,10 +332,10 @@ outcome = "Developer 2026-11-01: yes, no objections. routeros-muse serves a per-
 [[decision]]
 id = "D42"
 title = "Ask first runs under permission profile :ask-me (sandbox + per-destination network approvals)"
-status = "open"
+status = "decided"
 detail = "Permissions research 2026-11-01 (docs/design/permissions.md P2/P6): sandboxing is a profile axis, and this machine's muse settings.json default is :unrestricted, so today an approved command runs unsandboxed (outside-workspace writes succeed, LAN free). :ask-me adds bubblewrap (writable roots: workspace, /tmp, $TMPDIR) and a network-kind approval per destination (allow_once / allow_session / allow_local_network). Recommendation: session/start passes permissionProfile :ask-me for Ask first and :unrestricted for Allow all, explicitly, instead of inheriting the machine default. Known quirks to verify before shipping: under a sandboxed profile the shell sees cwd as /, and /dev/shm workspaces sandbox fully read-only."
-decided = ""
-outcome = ""
+decided = "2026-11-01"
+outcome = "Developer 2026-11-01: yes. session/start sends permissionProfile (stable MSP member, the wire twin of the TUI --permission-profile flag): :ask-me for Ask first, :unrestricted for Allow all; the machine settings.json default is left untouched. Developer hands-on on orca (TUI, :ask-me): pwd = real workspace dir, cat a.txt works, touch outside the workspace blocked read-only, curl raised a per-destination network approval (once / session / always / reject) then exited 28 at -m5, likely because approval wait counts against the command timeout. T101 therefore also pre-seeds network allow rules for router.toml device hosts and re-checks the cwd quirk under serve."
 
 [[decision]]
 id = "D43"

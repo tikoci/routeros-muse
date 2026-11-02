@@ -1007,7 +1007,7 @@ title = "Option C: pre-allowed reads plus explicit permission profile"
 status = "needed"
 detail = "Implement D42 and D43 once decided: session/start sends permissionProfile per access mode; start ensures the workspace's read allow rules in approval-policy.json (merge-safe, tagged, re-keyed on move); Settings shows the profile and the pre-allowed list with an off switch. Verify the sandboxed-profile quirks first (cwd seen as /, read-only /dev/shm workspaces) with a live turn on a twin-free temp workspace under $HOME."
 evidence = "docs/design/permissions.md (merged 53bee58), captures out/wire-capture/perm-20261102T000756Z/"
-blocked_by = ["D42", "D43", "T50"]
+blocked_by = []
 agent = ""
 updated = "2026-11-01"
 
