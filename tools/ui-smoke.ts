@@ -255,8 +255,8 @@ try {
 	);
 	const preCmds = (await page.locator("#preallow-cmds").textContent()) ?? "";
 	check(
-		"t101 preallow lists exactly the 3-command read set",
-		preCmds.trim() === "centrs retrieve, quickchr list, quickchr doctor",
+		"t101 preallow lists exactly the 2-command read set",
+		preCmds.trim() === "quickchr list, quickchr doctor",
 		preCmds.slice(0, 160),
 	);
 	const preCfg = (await page.locator("#preallow-cfg").textContent()) ?? "";

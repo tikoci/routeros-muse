@@ -61,6 +61,9 @@ let liveTurn = null;
 const approvals = new Map();
 const questions = new Map();
 logLine("SPAWN pid=" + process.pid);
+// T101 round 3: record the config home this spawn received, so the
+// isolation test can prove workers run under the private home.
+logLine("CONFIG_HOME " + (process.env["XDG_CONFIG_HOME"] ?? "(unset)"));
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 let dead = false;
@@ -620,6 +623,8 @@ export type T50SrvOpts = {
 	configHome?: string;
 	/** T101: caller-built workspace (default: minimal, no router.toml). */
 	workspace?: string;
+	/** Round 3: provider override (default echo; meta runs the boot probe). */
+	provider?: string;
 };
 
 /** Bypass-mode server on the fake worker (no CDB file, no centrs). */
@@ -632,7 +637,7 @@ export async function startT50Srv(
 		dataHome,
 		allowOpenCdb: true,
 		workspace: extra?.workspace ?? makeT50Workspace(),
-		provider: "echo",
+		provider: extra?.provider ?? "echo",
 		museHome: mktmp("t50-home-"),
 		toolBinDir: bin,
 		// Round 2: no override by default, so the server derives the

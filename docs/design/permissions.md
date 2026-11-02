@@ -430,21 +430,45 @@ Untagged rules (the owner's own Always-allow choices) are never
 touched. No separate ownership state file: registry.toml +
 router.toml files ARE the state (derived ownership, cannot drift).
 
-Read set as amended 2026-11-02: exactly `centrs retrieve`,
-`quickchr list`, `quickchr doctor`. Dropped: find (-exec/-delete),
-rosetta browse (writes its DB), ls/cat/grep (not workspace-confined).
+Read set as amended 2026-11-02 (round 3): exactly `quickchr
+list`, `quickchr doctor`. Dropped: find (-exec/-delete), rosetta
+browse (writes its DB), ls/cat/grep (not workspace-confined), and
+`centrs retrieve` — C19: `centrs retrieve
+--quickchr <vm> '/system/reboot#' --no-validate` rebooted a
+disposable CHR without --yes (fragment handling drops the appended
+/print, so the wire request is POST /rest/system/reboot). A
+pre-allowed command must be incapable of dispatching a write, so
+retrieve stays unseeded until the upstream centrs fix lands and is
+consumed here via the `@tikoci/centrs` pin; existing tagged
+retrieve rules are pruned by the next seed (same-root replacement).
+Housekeeping, documented not alarming: `quickchr list`/`doctor`
+call refreshAllStatuses(), which rewrites stale LOCAL machine
+state (clears dead PIDs/frozen markers) — bookkeeping under
+`~/.config/quickchr`, no device contact, acceptable in the read set.
 
 Concurrency: all seeding serializes in-process (one mutex; the path
 is fully synchronous so run-to-completion does the work and the
-guard makes it explicit). The reread-before-rename guard with
-retries stays. Residual window: a live muse session persisting an
-Always-allow into our private file writes WITHOUT a lock and WITHOUT
-a re-read, so it can still clobber a seed (or a seed can clobber it)
-when the two land in the same instant — smaller than round 1 (only
-our own workers write this file now, not every agent on the box),
-but not zero. Convergence is eventual: the next boot/toggle/edit
+guard makes it explicit) AND cross-process (round 3: a lock file
+next to the policy, `approval-policy.json.lock`, O_EXCL-created
+holding {pid, started}, bounded backoff, stale locks — dead pid
+or older than 30s — broken, always released in a finally). The
+reread-before-rename guard with retries stays under the lock.
+Residual window: a live muse session persisting an Always-allow
+into our private file writes WITHOUT a lock and WITHOUT a re-read,
+so it can still clobber a seed (or a seed can clobber it) when
+the two land in the same instant — smaller than round 1 (only our
+own workers write this file now, not every agent on the box), but
+not zero. Convergence is eventual: the next boot/toggle/edit
 re-seeds our tagged set over whatever the file holds, and muse
 re-persists owner choices on next approval.
+
+Fail-closed (round 3): when the private home itself is rejected
+(symlink anywhere in the `<dataHome>/routeros-muse` down-chain),
+the seed is skipped — never write through a refused link — and no
+worker spawns with it (the session start fails with the reason;
+never falls back to the shared `~/.config/muse`). The reason
+lands in the status `preallow.homeError`, the warnings, and the
+boot log.
 
 Shell environment (probed 2026-11-02, muse 1.4.14): the agent's
 shell tools INHERIT the serve process environment, including
@@ -510,10 +534,13 @@ the workspace's absolute root:
 ]}
 ```
 
-Concrete read set (each its own two-word prefix; never the bare
-binary — `[quickchr]` would also free `quickchr remove`):
-`centrs retrieve`, `rosetta` (+ subcommand words as needed),
-`quickchr list`, `quickchr doctor`, `ls`, `cat`, `grep`, `find`.
+Concrete read set at feasibility time (each its own two-word
+prefix; never the bare binary — `[quickchr]` would also free
+`quickchr remove`): `centrs retrieve`, `rosetta` (+ subcommand
+words as needed), `quickchr list`, `quickchr doctor`, `ls`, `cat`,
+`grep`, `find`. SUPERSEDED: the live set is `quickchr list`,
+`quickchr doctor` only — see the D44 section above (C19 removed
+`centrs retrieve`; the rest were cut in round 2).
 Still prompting, live-verified: `centrs execute` (second word
 differs — P3 both directions), any write outside the workspace
 (shell approval under promptUnmatched; hard-blocked by the sandbox

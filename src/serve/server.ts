@@ -27,6 +27,7 @@ import {
 	unionWorkspaceHosts,
 } from "../lib/preallow";
 import {
+	dataHomeDir,
 	defaultWorkspacesDir,
 	pruneRegistry,
 	type RegistryEntry,
@@ -666,6 +667,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		hosts: string[];
 		warnings: string[];
 		configHome: string;
+		/** Round 3: set when the private home itself was rejected. */
+		homeError: string | null;
 	};
 	let preallow: PreallowReport | null = null;
 	function preallowState(): PreallowReport | null {
@@ -686,32 +689,43 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	}
 	/**
 	 * Run the D43/D44 seed and refresh the report. Never throws:
-	 * seeding failures (symlinked chain, unreadable file, unknown
-	 * schema, lost races) land as warnings and the boot
-	 * continues. Always ensures the private home first (both
-	 * modes: workers need auth everywhere); no-workspace mode
+	 * seeding failures (unreadable file, unknown schema, lost
+	 * races) land as warnings and the boot continues. Always
+	 * ensures the private home first (both modes: workers need
+	 * auth everywhere); round 3 fails closed — when the home
+	 * itself is rejected, the seed is SKIPPED (never write
+	 * through a link we refused) and the reason lands in
+	 * homeError + warnings + the boot log. No-workspace mode
 	 * seeds the network union only and keeps the report null.
 	 */
 	function refreshPreallow(enabled: boolean): void {
 		const warnings: string[] = [...homeWarnings];
 		homeWarnings = [];
+		let homeError: string | null = null;
 		try {
-			const home = ensurePrivateHome({ privateHome: museCfgHome });
+			const home = ensurePrivateHome({
+				privateHome: museCfgHome,
+				dataHome: dataHomeDir(opts.dataHome),
+			});
 			warnings.push(...home.warnings);
 		} catch (err) {
-			warnings.push(err instanceof Error ? err.message : String(err));
+			homeError = err instanceof Error ? err.message : String(err);
+			warnings.push(homeError);
+			console.error(`private muse home unsafe, seeding skipped: ${homeError}`);
 		}
 		const hosts = enabled ? unionWorkspaceHosts(unionRoots()) : [];
-		try {
-			const res = ensurePreallowReads({
-				configHome: museCfgHome,
-				...(noWs ? {} : { workspaceRoot: root }),
-				hosts,
-				enabled,
-			});
-			warnings.push(...res.warnings);
-		} catch (err) {
-			warnings.push(err instanceof Error ? err.message : String(err));
+		if (homeError === null) {
+			try {
+				const res = ensurePreallowReads({
+					configHome: museCfgHome,
+					...(noWs ? {} : { workspaceRoot: root }),
+					hosts,
+					enabled,
+				});
+				warnings.push(...res.warnings);
+			} catch (err) {
+				warnings.push(err instanceof Error ? err.message : String(err));
+			}
 		}
 		if (noWs) {
 			preallow = null;
@@ -724,21 +738,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			hosts,
 			warnings,
 			configHome: museCfgHome,
+			homeError,
 		};
 	}
 	/**
 	 * Re-ensure the private home (auth symlink) before a worker
-	 * spawn. Never throws: failures stash as warnings for the
-	 * report, and a truly broken home fails the spawn honestly
-	 * as an authRequired turn.
+	 * spawn. THROWS on an unsafe home: the caller must not spawn
+	 * with it (fail closed — never fall back to the shared
+	 * ~/.config/muse). Benign warnings still stash for the report.
 	 */
-	function ensureHomeQuiet(): void {
-		try {
-			const home = ensurePrivateHome({ privateHome: museCfgHome });
-			stashHomeWarnings(home.warnings);
-		} catch (err) {
-			stashHomeWarnings([err instanceof Error ? err.message : String(err)]);
-		}
+	function ensureHomeOrThrow(): void {
+		const home = ensurePrivateHome({
+			privateHome: museCfgHome,
+			dataHome: dataHomeDir(opts.dataHome),
+		});
+		stashHomeWarnings(home.warnings);
 	}
 	refreshPreallow(readPreallowReads(opts.dataHome));
 	let sessionStartedAt: number | null = null;
@@ -892,7 +906,14 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					mspWhy = "muse not on PATH";
 					throw new Error(mspWhy);
 				}
-				ensureHomeQuiet();
+				try {
+					ensureHomeOrThrow();
+				} catch (err) {
+					mspWhy = err instanceof Error ? err.message : String(err);
+					throw new Error(
+						`refusing to spawn the muse worker: private config home is unsafe (${mspWhy})`,
+					);
+				}
 				const client = await MspClient.spawn({
 					provider,
 					museHome: opts.museHome,
@@ -1093,7 +1114,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		void (async () => {
 			try {
 				const m = await probeMetaAuth(() => {
-					ensureHomeQuiet();
+					// Throws on an unsafe home: the probe never
+					// spawns with it (probeMetaAuth maps the
+					// throw to "unknown", same as any spawn failure).
+					ensureHomeOrThrow();
 					return MspClient.spawn({
 						provider,
 						museHome: opts.museHome,
@@ -1265,16 +1289,20 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						setMeta("authed");
 						return json({ ok: true, meta: metaAuth });
 					}
-					const m = await probeMetaAuth(
-						() =>
-							MspClient.spawn({
-								provider,
-								museHome: opts.museHome,
-								extraArgs: mspExtraArgs,
-								env: tools,
-							}),
-						root,
-					);
+					const m = await probeMetaAuth(() => {
+						// Round 3: the recheck probe runs in the
+						// private home like every other spawn
+						// (never the shared ~/.config/muse), and
+						// never spawns with an unsafe one.
+						ensureHomeOrThrow();
+						return MspClient.spawn({
+							provider,
+							museHome: opts.museHome,
+							museConfigHome: museCfgHome,
+							extraArgs: mspExtraArgs,
+							env: tools,
+						});
+					}, root);
 					if (m !== "unknown") setMeta(m);
 					return json({ ok: true, meta: metaAuth });
 				}
