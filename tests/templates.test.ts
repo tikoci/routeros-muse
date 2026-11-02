@@ -309,6 +309,7 @@ describe("picker template routes", () => {
 				museHome: mktmp("t93-tpl-yolohome-"),
 				cdbFile: path.join(dh, "missing.cdb"),
 				dataHome: dh,
+				configHome: mktmp("t93-tpl-cfg-"),
 				defaultWorkspaceDir: path.join(dh, "nets"),
 				toolBinDir: stubCentrsBin(),
 				...(defaultApprovalMode ? { defaultApprovalMode } : {}),
@@ -352,6 +353,7 @@ describe("picker template routes", () => {
 			museHome: home,
 			cdbFile: path.join(dh, "missing.cdb"),
 			dataHome: dh,
+			configHome: mktmp("t93-tpl-cfg-"),
 			defaultWorkspaceDir: nets,
 			toolBinDir: stubCentrsBin(),
 		});

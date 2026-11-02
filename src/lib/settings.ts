@@ -64,27 +64,50 @@ function chainSymlink(file: string): string | null {
  * default) — a symlinked file falls back exactly like a corrupt one.
  */
 export function readDefaultAccess(dataHome?: string): DefaultAccess | null {
+	const v = readAgentKey(dataHome, "default_access");
+	return isDefaultAccess(v) ? v : null;
+}
+
+/**
+ * Read the T101 pre-seed switch ([agent] preallow_reads). Default
+ * true: only an explicit `false` disables seeding — a missing file,
+ * an unparseable file, a missing key, any other value, or a symlink
+ * in the chain all read as true (the seeding path stays on).
+ */
+export function readPreallowReads(dataHome?: string): boolean {
+	return readAgentKey(dataHome, "preallow_reads") !== false;
+}
+
+const SECTION_RE = /^\s*\[\s*(?:agent|"agent"|'agent')\s*\]\s*(?:#.*)?$/;
+
+/** Bare/double-quoted/single-quoted spellings of an [agent] key. */
+function keyRe(key: string): RegExp {
+	return new RegExp(`^(\\s*)(?:${key}|"${key}"|'${key}')(\\s*)=.*$`);
+}
+
+/**
+ * Read a raw [agent] key. Missing file, unparseable file, missing
+ * key, or a symlink in the chain all read as undefined (the caller
+ * applies the default) — a symlinked file falls back exactly like a
+ * corrupt one.
+ */
+function readAgentKey(dataHome: string | undefined, key: string): unknown {
 	const file = settingsFile(dataHome);
-	if (chainSymlink(file) !== null) return null;
+	if (chainSymlink(file) !== null) return undefined;
 	let text: string;
 	try {
 		text = nodeFs.readFileSync(file, "utf8");
 	} catch {
-		return null;
+		return undefined;
 	}
 	const parsed = parseToml(text);
-	if (!parsed.ok) return null;
+	if (!parsed.ok) return undefined;
 	const agent = parsed.value["agent"];
 	if (typeof agent !== "object" || agent === null || Array.isArray(agent)) {
-		return null;
+		return undefined;
 	}
-	const v = (agent as Record<string, unknown>)["default_access"];
-	return isDefaultAccess(v) ? v : null;
+	return (agent as Record<string, unknown>)[key];
 }
-
-const SECTION_RE = /^\s*\[\s*(?:agent|"agent"|'agent')\s*\]\s*(?:#.*)?$/;
-const KEY_RE =
-	/^(\s*)(?:default_access|"default_access"|'default_access')(\s*)=.*$/;
 
 /**
  * Narrow test seam for the settings write (T50 follow-up), mirroring
@@ -150,17 +173,18 @@ function writeFileAtomic(file: string, content: string, fs?: SettingsFs): void {
 }
 
 /**
- * Store the default access mode, creating the file (and dir) when
- * needed. Every other line — comments, other sections, other keys —
- * is preserved byte-identical. Bare, double-quoted, and
- * single-quoted key spellings all match, and save as exactly one
- * bare key (Bun.TOML.parse rejects duplicates, so a second spelling
- * would otherwise corrupt the read). A symlink in the chain throws
+ * Store one [agent] key, creating the file (and dir) when needed.
+ * Every other line — comments, other sections, other keys — is
+ * preserved byte-identical. Bare, double-quoted, and single-quoted
+ * key spellings all match, and save as exactly one bare key
+ * (Bun.TOML.parse rejects duplicates, so a second spelling would
+ * otherwise corrupt the read). A symlink in the chain throws
  * SettingsSymlinkError without touching anything.
  */
-export function writeDefaultAccess(
+function writeAgentKey(
 	dataHome: string | undefined,
-	mode: DefaultAccess,
+	key: string,
+	rendered: string,
 	fs?: SettingsFs,
 ): void {
 	const file = settingsFile(dataHome);
@@ -181,6 +205,7 @@ export function writeDefaultAccess(
 	// Drop the phantom last element a trailing newline produces, so a
 	// join("\n") round-trips the untouched lines byte-identical.
 	if (hasTrailingNl && lines.length > 0) lines.pop();
+	const keyLine = keyRe(key);
 	let sectionAt = -1;
 	const keyAts: number[] = [];
 	for (let i = 0; i < lines.length; i++) {
@@ -190,9 +215,9 @@ export function writeDefaultAccess(
 			if (SECTION_RE.test(line)) sectionAt = i;
 			continue;
 		}
-		if (sectionAt !== -1 && KEY_RE.test(line)) keyAts.push(i);
+		if (sectionAt !== -1 && keyLine.test(line)) keyAts.push(i);
 	}
-	const replacement = `default_access = "${mode}"`;
+	const replacement = `${key} = ${rendered}`;
 	const firstKey = keyAts[0];
 	if (firstKey !== undefined) {
 		lines[firstKey] = replacement;
@@ -207,4 +232,25 @@ export function writeDefaultAccess(
 		lines.push("[agent]", replacement);
 	}
 	writeFileAtomic(file, `${lines.join("\n")}\n`, fs);
+}
+
+/** Store the default access mode (see writeAgentKey for the contract). */
+export function writeDefaultAccess(
+	dataHome: string | undefined,
+	mode: DefaultAccess,
+	fs?: SettingsFs,
+): void {
+	writeAgentKey(dataHome, "default_access", `"${mode}"`, fs);
+}
+
+/**
+ * Store the T101 pre-seed switch (see writeAgentKey for the
+ * contract). Renders a bare TOML boolean.
+ */
+export function writePreallowReads(
+	dataHome: string | undefined,
+	on: boolean,
+	fs?: SettingsFs,
+): void {
+	writeAgentKey(dataHome, "preallow_reads", on ? "true" : "false", fs);
 }

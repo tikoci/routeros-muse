@@ -371,6 +371,7 @@
   .pending { font: 600 10.5px var(--sans); color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); border-radius: 10px; padding: 0 7px; margin-left: auto; }
   .arow { display: flex; font-size: 12.5px; padding: 3px 2px; }
   .arow .k { width: 88px; flex: none; color: var(--faint); }
+  #rview-settings .arow .k { width: 102px; }
   .arow .v { font-family: var(--mono); font-size: 12px; }
   .rbtn { width: 100%; margin-top: 9px; }
   .action { border: 1px solid rgba(210,153,34,.4); background: var(--amber-dim); border-radius: 9px; padding: 9px 12px; font-size: 12.5px; margin-bottom: 8px; }
@@ -642,16 +643,26 @@
           <div class="agenthead"><span class="dot ok"></span><span id="set-muse">muse …</span><span class="conn" id="set-conn">…</span></div>
           <div class="arow"><span class="k">Model</span><span class="v" id="set-model">…</span></div>
           <div class="arow"><span class="k">Access</span><span class="v" id="set-access">…</span></div>
+          <div class="arow"><span class="k">Profile</span><span class="v" id="set-profile">…</span></div>
           <div class="arow"><span class="k">Default access</span><span class="v" id="set-defaccess">…</span></div>
           <div class="defbtns" id="defaccess-btns">
-            <button class="minibtn" data-defaccess="promptUnmatched" title="Shell commands, file writes and network tools ask before they run, unless you said always allow.">Ask first</button>
-            <button class="minibtn" data-defaccess="allowAll" title="Nothing asks.">Allow all</button>
+            <button class="minibtn" data-defaccess="promptUnmatched" title="Shell, file and network actions ask before they run unless allowed; sandboxed to the workspace (:ask-me).">Ask first</button>
+            <button class="minibtn" data-defaccess="allowAll" title="Nothing asks; runs unsandboxed (:unrestricted), like --yolo.">Allow all</button>
           </div>
-          <div class="setnote">New chats start at the default access. Changing it never touches the live chat.</div>
+          <div class="setnote">New chats start at the default access and profile. Changing it never touches the live chat.</div>
           <div class="arow"><span class="k">Context</span><span class="v" id="set-ctx">…</span></div>
           <div class="arow"><span class="k">Session</span><span class="v" id="set-session">…</span></div>
           <button class="btn rbtn" title="Drop the session and run the OAuth flow again">Reconnect</button>
           <div class="setnote">Model changes apply to the main chat after the current turn finishes.</div>
+        </div>
+        <div class="rblock" id="preallow-block">
+          <div class="rsect">Pre-allowed reads</div>
+          <div class="setrow"><label><input type="checkbox" id="preallow-toggle"> Pre-allow read commands for this workspace</label></div>
+          <div class="arow"><span class="k">Commands</span><span class="v" id="preallow-cmds">…</span></div>
+          <div class="arow"><span class="k">Hosts</span><span class="v" id="preallow-hosts">…</span></div>
+          <div class="arow"><span class="k">Config home</span><span class="v" id="preallow-cfg">…</span></div>
+          <div class="setnote">Seeded into our private muse approval policy, tagged routeros-muse:seed. Shell rules cover this workspace only; host rules span every registered workspace. Your own muse config is never touched.</div>
+          <div class="setnote" id="preallow-warn" style="display:none"></div>
         </div>
         <div class="rblock">
           <div class="rsect">Appearance</div>
@@ -2932,6 +2943,8 @@
       const tw = j.trustWorkspace;
       $("set-trust").textContent = tw == null ? "no workspace" : (tw ? "on" : "off");
       $("set-trust-note").style.display = tw === false ? "" : "none";
+      // T101: pre-seed report. Null means no workspace to seed.
+      paintPreallow(j.preallow);
       if (NO_WS) {
         // No-workspace mode is picker-first: reveal the Workspaces tab
         // and land on it (workspace mode keeps it hidden).
@@ -3026,6 +3039,52 @@
     $("pkcreatenote").textContent = "in " + pkDefaultDir + " · " + t + " · device.cdb starts open (encrypt in WinBox)";
   }
 
+  // T101: the pre-seed block mirrors /api/status. The toggle
+  // POSTs the switch and reloads the status for the truth (the
+  // file may carry warnings the toggle response does not).
+  function paintPreallow(pre) {
+    const tog = $("preallow-toggle");
+    if (!pre) {
+      tog.checked = false;
+      tog.disabled = true;
+      $("preallow-cmds").textContent = "no workspace";
+      $("preallow-hosts").textContent = "no workspace";
+      $("preallow-cfg").textContent = "no workspace";
+      $("preallow-warn").style.display = "none";
+      return;
+    }
+    tog.disabled = false;
+    tog.checked = pre.enabled === true;
+    $("preallow-cmds").textContent = (pre.commands || []).join(", ") || "—";
+    $("preallow-hosts").textContent = (pre.hosts || []).join(", ") || "—";
+    $("preallow-cfg").textContent = pre.configHome || "—";
+    const w = $("preallow-warn");
+    if (pre.warnings && pre.warnings.length) {
+      w.textContent = pre.warnings.join(" ");
+      w.style.display = "";
+    } else {
+      w.style.display = "none";
+    }
+  }
+
+  function wirePreallow() {
+    $("preallow-toggle").addEventListener("change", async (e) => {
+      const on = e.target.checked;
+      try {
+        const r = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ preallowReads: on }),
+        });
+        const j = await r.json();
+        if (!j.ok) e.target.checked = !on;
+      } catch {
+        e.target.checked = !on;
+      }
+      loadStatus();
+    });
+  }
+
   function wireWorkspaces() {
     $("pkcreate").addEventListener("click", async () => {
       const err = $("pkerr");
@@ -3078,9 +3137,12 @@
   // only gates MCP tools (we load none) and denyUnmatched is unprobed,
   // so neither is offered; the server still accepts them if sent, and a
   // live session running one shows its raw mode name, honestly.
+  // T101: the selector also flips the live profile (:ask-me for Ask
+  // first, :unrestricted for Allow all) — the sandbox follows the
+  // mode at once, not at the next session.
   const ACCESS = [
-    ["promptUnmatched", "Ask first", "Shell commands, file writes and network tools ask before they run, unless you said always allow."],
-    ["allowAll", "Allow all", "Nothing asks."],
+    ["promptUnmatched", "Ask first", "Shell, file and network actions ask before they run unless allowed; sandboxed to the workspace (:ask-me)."],
+    ["allowAll", "Allow all", "Nothing asks; runs unsandboxed (:unrestricted), like --yolo."],
   ];
   const cap = (s) => s.slice(0, 1).toUpperCase() + s.slice(1);
   let modelCatalog = [];
@@ -3159,6 +3221,7 @@
       $("selaccess").textContent = accLabel;
       $("set-access").textContent = accLabel;
       $("sp-access").textContent = accLabel;
+      $("set-profile").textContent = (sj.ok && sj.profile) || ":ask-me";
     } catch { /* selectors keep placeholders */ }
   }
 
@@ -3277,6 +3340,7 @@
         $("set-access").textContent = accLabel;
         $("sp-access").textContent = accLabel;
       }
+      if (j.profile) $("set-profile").textContent = j.profile;
       const ring = $("ctxring");
       if (j.contextPct != null) {
         ring.style.strokeDashoffset = String(50.3 * (1 - j.contextPct / 100));
@@ -3600,6 +3664,7 @@
   wireToml();
   wireControls();
   wireDefaultAccess();
+  wirePreallow();
   wireWorkspaces();
   wireAuth();
   // Twins are on-demand (T38): quickchr is optional, so the tab fetches

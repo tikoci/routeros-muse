@@ -317,6 +317,7 @@ describe("render routes", () => {
 				provider: "echo",
 				museHome: home,
 				dataHome: mktmp("t33-serve-dh-"),
+				configHome: mktmp("t33-serve-cfg-"),
 			});
 			try {
 				const r = (await (

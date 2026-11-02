@@ -258,6 +258,7 @@ describe("workspaces routes", () => {
 			provider: "echo",
 			museHome: makeHome(),
 			dataHome: dh,
+			configHome: mktmp("t40-reg-cfg-"),
 			defaultWorkspaceDir: path.join(dh, "nets"),
 		});
 		try {
@@ -285,6 +286,7 @@ describe("workspaces routes", () => {
 			provider: "echo",
 			museHome: makeHome(),
 			dataHome: dh,
+			configHome: mktmp("t40-reg-cfg-"),
 			defaultWorkspaceDir: path.join(dh, "nets"),
 		});
 		try {
@@ -329,6 +331,7 @@ describe("workspaces routes", () => {
 				provider: "echo",
 				museHome: makeHome(),
 				dataHome: dh,
+				configHome: mktmp("t40-reg-cfg-"),
 				defaultWorkspaceDir: path.join(dh, "nets"),
 			});
 			try {
@@ -376,6 +379,7 @@ describe("workspaces routes", () => {
 			provider: "echo",
 			museHome: makeHome(),
 			dataHome: dh,
+			configHome: mktmp("t40-reg-cfg-"),
 		});
 		try {
 			const entries = readRegistry(registryFile(dh)).entries;
@@ -394,6 +398,7 @@ describe("workspaces routes", () => {
 			provider: "echo",
 			museHome: makeHome(),
 			dataHome: dh,
+			configHome: mktmp("t40-reg-cfg-"),
 		});
 		try {
 			expect(readRegistry(registryFile(dh)).entries).toEqual([]);
