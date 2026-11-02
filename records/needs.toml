@@ -352,3 +352,14 @@ evidence = "T101b child report 2026-11-02; not yet reproduced by the orchestrato
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
+
+[[need]]
+id = "C19"
+repo = "centrs"
+title = "centrs retrieve must never dispatch a non-read (path fragment reaches a write verb)"
+status = "needed"
+detail = "T101 round-2 review (sol, 2026-11-02), CONFIRMED on a disposable CHR 7.24.5: `centrs retrieve --quickchr <vm> '/system/reboot#' --no-validate --attribute uptime --json` rebooted the router without --yes. centrs appends /print, but URL fragment handling drops it, so the wire request is POST /rest/system/reboot with a .proplist body (src/protocols/adapter.ts:351 and :1338; installed 0.1.9-next.24 reproduces). retrieve must reject paths with '#'/'?' and any target that does not resolve to a print, regardless of --no-validate. Security-relevant: blocks re-adding `centrs retrieve` to the routeros-muse seeded read set (D43). Upstream handling (public issue vs private advisory) is the developer's call."
+evidence = "sol review of t3/private-muse-config-home 63c5bed, 2026-11-02"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
