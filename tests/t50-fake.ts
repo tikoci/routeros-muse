@@ -635,10 +635,10 @@ export async function startT50Srv(
 		provider: "echo",
 		museHome: mktmp("t50-home-"),
 		toolBinDir: bin,
+		configHome: extra?.configHome ?? mktmp("t50-cfg-"),
 		...(extra?.defaultApprovalMode
 			? { defaultApprovalMode: extra.defaultApprovalMode }
 			: {}),
-		...(extra?.configHome ? { configHome: extra.configHome } : {}),
 	});
 	return {
 		url: srv.url,

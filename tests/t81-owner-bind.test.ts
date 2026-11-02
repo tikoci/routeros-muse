@@ -186,6 +186,7 @@ async function startT81Srv(bin: string): Promise<{
 	nodeFs.writeFileSync(cdb, "t81 stub-backed CDB placeholder\n");
 	return startServer({
 		dataHome: mktmp("t81-dh-"),
+		configHome: mktmp("t81-cfg-"),
 		noWorkspace: true,
 		provider: "echo",
 		museHome: mktmp("t81-home-"),

@@ -20,6 +20,11 @@ import {
 	showCdbDevice,
 } from "../lib/fleet";
 import {
+	ensurePreallowReads,
+	normalizeHosts,
+	READ_COMMANDS,
+} from "../lib/preallow";
+import {
 	defaultWorkspacesDir,
 	pruneRegistry,
 	type RegistryEntry,
@@ -32,8 +37,10 @@ import { have, run } from "../lib/run";
 import {
 	isDefaultAccess,
 	readDefaultAccess,
+	readPreallowReads,
 	SettingsSymlinkError,
 	writeDefaultAccess,
+	writePreallowReads,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
 import {
@@ -643,16 +650,48 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// permissionProfileChanged fold — never null, like lastAccess.
 	let lastProfile: string | null = profileForAccess(defaultAccess());
 	// T101/D43: pre-seed report for /api/status. Workspace mode
-	// fills this at boot (Part B); no-workspace mode stays null.
-	const preallow: {
+	// fills this at boot; no-workspace mode stays null.
+	type PreallowReport = {
 		enabled: boolean;
 		commands: string[];
 		hosts: string[];
 		warnings: string[];
-	} | null = null;
-	function preallowState(): typeof preallow {
+	};
+	let preallow: PreallowReport | null = null;
+	function preallowState(): PreallowReport | null {
 		return preallow;
 	}
+	/**
+	 * Run the D43 seed for this workspace and refresh the
+	 * report. Never throws: seeding failures (symlinked chain,
+	 * unreadable file, unknown schema, lost races) land as
+	 * warnings and the boot continues.
+	 */
+	function refreshPreallow(enabled: boolean): void {
+		if (noWs) {
+			preallow = null;
+			return;
+		}
+		const hosts = normalizeHosts(readDevices(root).map((d) => d.host ?? ""));
+		const commands = READ_COMMANDS.map((p) => p.join(" "));
+		try {
+			const res = ensurePreallowReads({
+				configHome: opts.configHome,
+				workspaceRoot: root,
+				hosts,
+				enabled,
+			});
+			preallow = { enabled, commands, hosts, warnings: res.warnings };
+		} catch (err) {
+			preallow = {
+				enabled,
+				commands,
+				hosts,
+				warnings: [err instanceof Error ? err.message : String(err)],
+			};
+		}
+	}
+	refreshPreallow(readPreallowReads(opts.dataHome));
 	let sessionStartedAt: number | null = null;
 	const sse = new Set<(line: string) => void>();
 
@@ -2178,13 +2217,38 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				// default (what the next session starts in); POST stores
 				// one of the two selector modes. The live session mode is
 				// separate (/api/chat/access) and untouched here.
+				// T101: the same route carries the pre-seed switch
+				// ([agent] preallow_reads): POST applies it at once
+				// (reseed or removal), and GET reports it.
 				if (p === "/api/settings") {
 					if (req.method === "GET") {
-						return json({ ok: true, defaultAccess: defaultAccess() });
+						return json({
+							ok: true,
+							defaultAccess: defaultAccess(),
+							preallowReads: readPreallowReads(opts.dataHome),
+						});
 					}
 					if (req.method === "POST") {
-						const body = (await req.json()) as { defaultAccess?: unknown };
-						if (!isDefaultAccess(body.defaultAccess)) {
+						const body = (await req.json()) as {
+							defaultAccess?: unknown;
+							preallowReads?: unknown;
+						};
+						if (
+							body.defaultAccess === undefined &&
+							body.preallowReads === undefined
+						) {
+							return json(
+								{
+									ok: false,
+									why: "need {defaultAccess} and/or {preallowReads}",
+								},
+								400,
+							);
+						}
+						if (
+							body.defaultAccess !== undefined &&
+							!isDefaultAccess(body.defaultAccess)
+						) {
 							return json(
 								{
 									ok: false,
@@ -2193,8 +2257,23 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								400,
 							);
 						}
+						if (
+							body.preallowReads !== undefined &&
+							typeof body.preallowReads !== "boolean"
+						) {
+							return json(
+								{ ok: false, why: "need {preallowReads} boolean" },
+								400,
+							);
+						}
 						try {
-							writeDefaultAccess(opts.dataHome, body.defaultAccess);
+							if (body.defaultAccess !== undefined) {
+								writeDefaultAccess(opts.dataHome, body.defaultAccess);
+							}
+							if (typeof body.preallowReads === "boolean") {
+								writePreallowReads(opts.dataHome, body.preallowReads);
+								refreshPreallow(body.preallowReads);
+							}
 						} catch (err) {
 							// A symlinked settings chain is refused, not
 							// followed (409: the on-disk state conflicts).
@@ -2203,7 +2282,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							}
 							throw err;
 						}
-						return json({ ok: true, defaultAccess: body.defaultAccess });
+						return json({
+							ok: true,
+							defaultAccess: defaultAccess(),
+							preallowReads: readPreallowReads(opts.dataHome),
+						});
 					}
 					return json({ ok: false, why: "need GET or POST" }, 405);
 				}

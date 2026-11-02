@@ -322,6 +322,9 @@ export async function startT71Srv(bin: string): Promise<{
 }> {
 	return startServer({
 		dataHome: mktmp("t71-dh-"),
+		// T101: the boot seeds the approval policy here, never the
+		// developer's real config home.
+		configHome: mktmp("t71-cfg-"),
 		allowOpenCdb: true,
 		workspace: makeT71Workspace(),
 		provider: "echo",
