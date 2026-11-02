@@ -152,34 +152,105 @@ describe("D39: the worker spawns trusted by default", () => {
 });
 
 describe("D39: /api/status reports the trust state", () => {
-	async function trustOf(
+	/**
+	 * Controlled stub for every binary /api/status touches: muse
+	 * (the version probe) plus the trilogy (toolInfo). The centrs
+	 * stub answers cdb/not-found for a missing --cdb-file (the
+	 * boot CDB detection), like the T50 fake's.
+	 */
+	function stubStatusBin(): string {
+		const bin = mktmp("t49-statusbin-");
+		const write = (name: string, body: string): void => {
+			const file = path.join(bin, name);
+			nodeFs.writeFileSync(file, `#!/bin/sh\n${body}\n`);
+			nodeFs.chmodSync(file, 0o755);
+		};
+		write("muse", `echo "stub-muse 9.9.9-t49"`);
+		write(
+			"centrs",
+			`if [ "$1" = "devices" ]; then\n` +
+				`file=""; prev=""; for a in "$@"; do if [ "$prev" = "--cdb-file" ]; then file="$a"; fi; prev="$a"; done\n` +
+				`if [ -n "$file" ] && [ -f "$file" ]; then\n` +
+				`printf '%s\\n' '{"ok":true,"data":[],"warnings":[],"tips":[],"meta":{}}'\n` +
+				`else\n` +
+				`printf '%s\\n' '{"ok":false,"error":{"code":"cdb/not-found","summary":"CDB file not found"},"warnings":[],"tips":[],"meta":{}}'\n` +
+				`fi\n` +
+				`else\n` +
+				`echo "stub-centrs 9.9.9-t49"\n` +
+				`fi`,
+		);
+		for (const tool of ["quickchr", "rosetta"]) {
+			write(tool, `echo "stub-${tool} 9.9.9-t49"`);
+		}
+		return bin;
+	}
+
+	async function statusOf(
 		extra: Record<string, unknown>,
 		noWs = false,
-	): Promise<unknown> {
+	): Promise<Record<string, unknown>> {
 		const srv = await startServer({
 			dataHome: mktmp("t49-dh-"),
 			allowOpenCdb: true,
 			...(noWs ? { noWorkspace: true } : { workspace: makeT49Workspace() }),
 			provider: "echo",
 			museHome: mktmp("t49-home-"),
-			toolBinDir: mktmp("t49-emptybin-"),
+			toolBinDir: stubStatusBin(),
 			...extra,
 		});
 		try {
-			const j = (await (await fetch(`${srv.url}api/status`)).json()) as Record<
-				string,
-				unknown
-			>;
-			return j["trustWorkspace"];
+			return (await (
+				await fetch(`${srv.url}api/status`)
+			).json()) as Record<string, unknown>;
 		} finally {
 			await srv.stop();
 		}
 	}
 
 	test("true by default, false when opted out, null without a workspace", async () => {
-		expect(await trustOf({})).toBe(true);
-		expect(await trustOf({ trustWorkspace: false })).toBe(false);
-		expect(await trustOf({}, true)).toBeNull();
+		expect((await statusOf({}))["trustWorkspace"]).toBe(true);
+		expect((await statusOf({ trustWorkspace: false }))["trustWorkspace"]).toBe(
+			false,
+		);
+		expect((await statusOf({}, true))["trustWorkspace"]).toBeNull();
+	});
+
+	test("status versions come from the controlled stubs, never ambient", async () => {
+		const j = await statusOf({});
+		expect(j["muse"]).toBe("stub-muse 9.9.9-t49");
+		const tools = j["tools"] as {
+			versions: Record<string, string | null>;
+		};
+		expect(tools.versions).toEqual({
+			quickchr: "9.9.9-t49",
+			centrs: "9.9.9-t49",
+			rosetta: "9.9.9-t49",
+		});
+	});
+
+	test("status never reaches an ambient binary", async () => {
+		// Logging wrappers first on PATH: any ambient resolution
+		// invokes one, and the test fails.
+		const wrap = mktmp("t49-ambient-");
+		const log = path.join(wrap, "invoked.log");
+		for (const tool of ["muse", "centrs", "quickchr", "rosetta"]) {
+			const file = path.join(wrap, tool);
+			nodeFs.writeFileSync(
+				file,
+				`#!/bin/sh\necho "${tool} $*" >> ${JSON.stringify(log)}\necho "${tool} 0.0.0-ambient-should-not-run"\n`,
+			);
+			nodeFs.chmodSync(file, 0o755);
+		}
+		const savedPath = process.env["PATH"];
+		process.env["PATH"] = `${wrap}${path.delimiter}${savedPath ?? ""}`;
+		try {
+			const j = await statusOf({});
+			expect(j["muse"]).toBe("stub-muse 9.9.9-t49");
+			expect(nodeFs.existsSync(log)).toBe(false);
+		} finally {
+			if (savedPath === undefined) delete process.env["PATH"];
+			else process.env["PATH"] = savedPath;
+		}
 	});
 });
 
