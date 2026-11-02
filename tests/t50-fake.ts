@@ -37,6 +37,20 @@ function logLine(line) {
 
 const SESSION = "t50-s1";
 let workspaceRoot = "";
+// T101: the live profile id (canned permissionState per profile,
+// captured shapes: :ask-me sandboxed/off/human, :unrestricted open).
+let liveProfile = ":unrestricted";
+function permState(id) {
+	const sandboxed = id === ":ask-me" || id === ":auto-review" || id === ":read-only";
+	return {
+		axes: sandboxed
+			? { approval: "onRequest", filesystem: "sandboxed", network: "off", reviewer: "human" }
+			: { approval: "allowAll", filesystem: "unrestricted", network: "enabled", reviewer: "none" },
+		profileId: id,
+		reviewerAttached: true,
+		reviewerAuthority: sandboxed ? "human" : "none",
+	};
+}
 const turns = [];
 let turnN = 0;
 let apprN = 0;
@@ -228,18 +242,36 @@ rl.on("line", (text) => {
 	const method = msg.method;
 	const params = msg.params ?? {};
 	if (method === "initialize") {
+		const caps = params.capabilities ?? {};
+		logLine("EXP experimentalApi=" + String(caps.experimentalApi === true));
 		send({ jsonrpc: "2.0", id: id, result: {} });
 		return;
 	}
 	if (method === "session/start") {
 		workspaceRoot = String(params.workspaceRoot ?? "");
-		logLine("START session=" + SESSION + " approvalMode=" + String(params.approvalMode ?? "(none)"));
-		send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: SESSION }, viewCursor: "" } });
+		liveProfile = String(params.permissionProfile ?? ":unrestricted");
+		logLine("START session=" + SESSION + " approvalMode=" + String(params.approvalMode ?? "(none)") + " permissionProfile=" + String(params.permissionProfile ?? "(none)"));
+		send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: SESSION, permissionState: permState(liveProfile) }, viewCursor: "" } });
 		return;
 	}
 	if (method === "session/setApprovalMode") {
 		logLine("MODE " + String(params.mode));
 		send({ jsonrpc: "2.0", id: id, result: {} });
+		return;
+	}
+	if (method === "session/setPermissionProfile") {
+		const want = String(params.profileId ?? "");
+		logLine("PROFILE " + want);
+		liveProfile = want;
+		notify("session/permissionProfileChanged", {
+			sessionId: SESSION,
+			profileId: want,
+			commandId: params.commandId,
+			source: "livePicker",
+			sourceRange: srcRange(),
+			viewCursor: cursor(),
+		});
+		send({ jsonrpc: "2.0", id: id, result: { status: "accepted", commandId: params.commandId, applyOutcome: "completed", permissionState: permState(want) } });
 		return;
 	}
 	if (method === "turn/start") {
@@ -465,7 +497,7 @@ rl.on("line", (text) => {
 		send({
 			jsonrpc: "2.0",
 			id: id,
-			result: { session: { sessionId: SESSION }, history: [], lastTurn: null, pendingRequests: pending, viewCursor: cursor() },
+			result: { session: { sessionId: SESSION, permissionState: permState(liveProfile) }, history: [], lastTurn: null, pendingRequests: pending, viewCursor: cursor() },
 		});
 		return;
 	}
@@ -584,6 +616,10 @@ export function makeT50Workspace(): string {
 export type T50SrvOpts = {
 	defaultApprovalMode?: ApprovalMode;
 	dataHome?: string;
+	/** T101: isolated muse config home for approval-policy seeding. */
+	configHome?: string;
+	/** T101: caller-built workspace (default: minimal, no router.toml). */
+	workspace?: string;
 };
 
 /** Bypass-mode server on the fake worker (no CDB file, no centrs). */
@@ -595,10 +631,11 @@ export async function startT50Srv(
 	const srv = await startServer({
 		dataHome,
 		allowOpenCdb: true,
-		workspace: makeT50Workspace(),
+		workspace: extra?.workspace ?? makeT50Workspace(),
 		provider: "echo",
 		museHome: mktmp("t50-home-"),
 		toolBinDir: bin,
+		configHome: extra?.configHome ?? mktmp("t50-cfg-"),
 		...(extra?.defaultApprovalMode
 			? { defaultApprovalMode: extra.defaultApprovalMode }
 			: {}),
