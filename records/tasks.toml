@@ -484,19 +484,19 @@ updated = "2026-11-01"
 [[task]]
 id = "T49"
 title = "Session context: device targeting plus harness orientation"
-status = "needed"
+status = "active"
 detail = "Two halves of the agent knowing its context and our interface. (1) Targeting: the +Device pill selects a device for the chat but adds nothing to the session info the agent sees; attach the selected device plus metadata to the session. (2) Orientation: re-align the template skills with the MSP client so the template inherits harness knowledge (transcript cards, targeting, @next tool channel), and/or an instruction prompt stating the agent context and interface."
 evidence = "user report 2026-11-01, explicitly future work; orientation half added per developer direction same day; T80 review: milestone priority: the posted chat payload contains text/images only, so current target pills are visual state; complete targeting before @-trigger polish (T61).; orientation half depends on D39/D40 (capture 2026-11-01)"
 blocked_by = []
-agent = ""
+agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
 
 [[task]]
 id = "T50"
 title = "Approval/question surface plus meta wire-shape repro"
-status = "active"
+status = "done"
 detail = "Main session runs approvalMode onRequest but onStream drops every non-turn/item notification, so an agent approval request or user question waits forever with no UI. Repro against live meta, capture the wire shapes, then build the surface. Companion to the T45 SSE half of the stall."
-evidence = "user report 2026-11-01; T45 fixes the transport half only; t3code approval/question patterns inventoried in notes/t41-chat-inventory.md (GAP2-3) for the surface design; T62 inputs in notes/t62-resweep.md (kinds/options/questions/dedupe/feedback; no transport work needed); live meta capture 2026-11-01 merged 97f6bd8 (docs/design/t50-t55-wire-shapes.md, tools/msp-capture.ts; raw out/wire-capture/20261101T210403Z local): approval/request+approval/decide only under promptUnmatched (onRequest gates nothing, see D38); request_user_input -> userInput/request answered by userInput/answer; never-answered stays pending indefinitely; UI onStream drops approval/*, userInput/*, session/*"
+evidence = "user report 2026-11-01; T45 fixes the transport half only; t3code approval/question patterns inventoried in notes/t41-chat-inventory.md (GAP2-3) for the surface design; T62 inputs in notes/t62-resweep.md (kinds/options/questions/dedupe/feedback; no transport work needed); live meta capture 2026-11-01 merged 97f6bd8 (docs/design/t50-t55-wire-shapes.md, tools/msp-capture.ts; raw out/wire-capture/20261101T210403Z local): approval/request+approval/decide only under promptUnmatched (onRequest gates nothing, see D38); request_user_input -> userInput/request answered by userInput/answer; never-answered stays pending indefinitely; UI onStream drops approval/*, userInput/*, session/*; DONE 2026-11-01: muse t3/approval-question-ux (6) + t3/t50-followup (4) + orchestrator 7e79772/f53881f; codex sol x3 (5 then 6 findings; auth gates, XSS-safe rendering, schema shapes, Reject-vs-Stop verified), CodeRabbit 1. Ask first = promptUnmatched default, Allow all, settings.toml default_access (symlink-refusing atomic write), verbatim approval/question cards, waiting strip, serialized snapshot-reconcile recovery (settled elsewhere). Live meta turn: ls card rendered, Allow once approved, turn completed (out/t50-live). Merged 34ee15c; main gate 375/0, smoke green. Accepted: settings dir not fsynced after rename; a crash can orphan one 0600 temp."
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
