@@ -465,6 +465,12 @@ try {
 			)
 			.then(() => true)
 			.catch(() => false);
+	// Each leg starts with no toasts, so a toast match can only be
+	// this leg's (an 8 s toast from the previous leg otherwise races).
+	const t56ClearToasts = (): Promise<void> =>
+		page.evaluate(() => {
+			for (const t of document.querySelectorAll("#toasts .toast")) t.remove();
+		});
 	const t56Interrupted = (): Promise<boolean> =>
 		page.evaluate(() =>
 			[...document.querySelectorAll("#toasts .toast .tbody")].some((el) =>
@@ -598,6 +604,7 @@ try {
 		const usersBefore = await page.locator("#pane-chat .msg.user").count();
 		const staged = await stageOne();
 		check("t56 abort leg stages one image", staged === 1, `n=${staged}`);
+		await t56ClearToasts();
 		await page.route("**/api/chat/send", async (route) => {
 			await route.abort();
 		});
@@ -635,8 +642,15 @@ try {
 		const usersBefore = await page.locator("#pane-chat .msg.user").count();
 		const staged = await stageOne();
 		check("t56 kept-typing leg stages one image", staged === 1, `n=${staged}`);
+		await t56ClearToasts();
+		// Explicit barrier, not a timer: the failure lands only after
+		// the new text is typed, however loaded the box is.
+		let releaseL3: () => void = () => {};
+		const gateL3 = new Promise<void>((r) => {
+			releaseL3 = r;
+		});
 		await page.route("**/api/chat/send", async (route) => {
-			await new Promise((r) => setTimeout(r, 800));
+			await gateL3;
 			await route.fulfill({
 				status: 200,
 				contentType: "application/json",
@@ -654,6 +668,7 @@ try {
 				{ timeout: 5_000 },
 			);
 			await page.fill("#chatinput", "T56-NEW-TYPING");
+			releaseL3();
 			check(
 				"t56 kept-typing shows the why toast",
 				await t56Toast("T56 simulated ok:false"),
@@ -683,6 +698,87 @@ try {
 		// The kept text sends (carrying the restored image) and echoes.
 		await page.press("#chatinput", "Enter");
 		check("t56 kept text sends and echoes", await t56Echoed("T56-NEW-TYPING"));
+		await t56Idle();
+	}
+
+	// L6 (review): overlapping sends from idle. A is dispatched, then B,
+	// before either acks; A fails while B is still in flight. B owns
+	// the run now, so Stop must stay up until B resolves.
+	{
+		await t56ClearToasts();
+		let releaseB: () => void = () => {};
+		const gateB = new Promise<void>((r) => {
+			releaseB = r;
+		});
+		let n = 0;
+		let releaseA: () => void = () => {};
+		const gateA = new Promise<void>((r) => {
+			releaseA = r;
+		});
+		await page.route("**/api/chat/send", async (route) => {
+			n += 1;
+			if (n === 1) {
+				await gateA;
+				await route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({ ok: false, why: "T56 overlap A failed" }),
+				});
+				return;
+			}
+			await gateB;
+			await route.continue();
+		});
+		try {
+			await page.fill("#chatinput", "T56-OVERLAP-A");
+			await page.press("#chatinput", "Enter");
+			await page.fill("#chatinput", "T56-OVERLAP-B");
+			await page.press("#chatinput", "Enter");
+			releaseA();
+			check(
+				"t56 overlap A's failure is toasted",
+				await t56Toast("T56 overlap A failed"),
+			);
+			check(
+				"t56 overlap keeps Stop while B is in flight",
+				(await page.locator("#sendbtn:visible").count()) === 0,
+			);
+		} finally {
+			releaseB();
+			await page.unroute("**/api/chat/send");
+		}
+		check("t56 overlap B still echoes", await t56Echoed("T56-OVERLAP-B"));
+		await t56Idle();
+		await page.fill("#chatinput", "");
+	}
+
+	// L7 (review): the same image attached twice restores once.
+	{
+		await t56ClearToasts();
+		await stageOne();
+		const twice = await stageOne();
+		check("t56 dup leg stages two copies", twice === 2, `n=${twice}`);
+		await page.route("**/api/chat/send", async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ ok: false, why: "T56 dup failed" }),
+			});
+		});
+		try {
+			await page.fill("#chatinput", "T56-DUP");
+			await page.press("#chatinput", "Enter");
+			check("t56 dup failure is toasted", await t56Toast("T56 dup failed"));
+			check(
+				"t56 duplicate image restores once",
+				(await stagedNow()) === 1,
+				`n=${await stagedNow()}`,
+			);
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		await page.press("#chatinput", "Enter");
+		check("t56 dup retry echoes", await t56Echoed("T56-DUP"));
 		await t56Idle();
 	}
 

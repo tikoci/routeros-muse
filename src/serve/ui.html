@@ -2064,8 +2064,14 @@
         kept = true;
       }
     }
+    // Dedupe across the whole merge (saved copies among themselves
+    // too): attaching one image twice must not restore two.
     const staged = new Set(pendingImages.map((im) => im.mediaType + "\n" + im.base64Data));
-    const missing = saved.images.filter((im) => !staged.has(im.mediaType + "\n" + im.base64Data));
+    const missing = [];
+    for (const im of saved.images) {
+      const key = im.mediaType + "\n" + im.base64Data;
+      if (!staged.has(key)) { staged.add(key); missing.push(im); }
+    }
     if (missing.length > 0) pendingImages = missing.concat(pendingImages);
     const have = new Set();
     for (const p of document.querySelectorAll(".tpill")) have.add(p.dataset.dev);
@@ -2082,7 +2088,11 @@
       msg += " — kept your new text; unsent: \"" + clip + "\"";
     }
     showToast(msg, "alert");
-    if (!saved.wasRunning && LIVE_TURN === saved.liveBefore) {
+    // Idle only when this send owned the run: nothing was running
+    // when it dispatched, no turn went live since, and no newer send
+    // was dispatched (every send bumps STOP_EPOCH; Stop pins never
+    // do). A newer in-flight send owns the run state now.
+    if (!saved.wasRunning && LIVE_TURN === saved.liveBefore && STOP_EPOCH === saved.epoch) {
       if (STOP_PIN !== null && STOP_PIN.epoch === saved.epoch) stopReset();
       if (STOP_PIN === null) setRunning(false);
     }
