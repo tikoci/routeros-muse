@@ -805,6 +805,8 @@ export type T50SrvOpts = {
 	provider?: string;
 	/** T55: fixed relay token instead of a minted one. */
 	mcpToken?: string;
+	/** T105: package-root override for trilogy MCP bundle entries. */
+	packageRoot?: string | null;
 };
 
 /** Bypass-mode server on the fake worker (no CDB file, no centrs). */
@@ -829,6 +831,9 @@ export async function startT50Srv(
 		// private home from the temp data home (still hermetic).
 		...(extra?.configHome ? { configHome: extra.configHome } : {}),
 		...(extra?.mcpToken ? { mcpToken: extra.mcpToken } : {}),
+		...(extra?.packageRoot !== undefined
+			? { packageRoot: extra.packageRoot }
+			: {}),
 		...(extra?.defaultApprovalMode
 			? { defaultApprovalMode: extra.defaultApprovalMode }
 			: {}),

@@ -22,7 +22,7 @@ import {
 	settingsFile,
 	writePreallowReads,
 } from "../src/lib/settings";
-import { UI_TOOL_NAMES } from "../src/mcp/ui-tools";
+import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 
 afterAll(cleanupTmpdirs);
@@ -186,7 +186,7 @@ describe("ensurePreallowReads", () => {
 			const tools = ours.filter(
 				(r) => (r["rule"] as Record<string, unknown>)["kind"] === "tool_action",
 			);
-			expect(tools.length).toBe(UI_TOOL_NAMES.length);
+			expect(tools.length).toBe(SEED_TOOL_NAMES.length);
 			for (const r of ours) {
 				expect(r["effect"]).toBe("allow");
 				expect(r["durability"]).toBe("local_persistent");

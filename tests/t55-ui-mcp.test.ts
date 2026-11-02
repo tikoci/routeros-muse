@@ -23,6 +23,11 @@ import {
 	toolRuleForMcp,
 } from "../src/lib/preallow";
 import {
+	CENTRS_MCP_SERVER,
+	ROSETTA_MCP_SERVER,
+	SEED_TOOL_NAMES,
+} from "../src/mcp/trilogy-tools";
+import {
 	mcpToolName,
 	mintMcpToken,
 	NOTIFY_TEXT_MAX,
@@ -283,7 +288,7 @@ describe("seeded ui tool rules", () => {
 		});
 	});
 
-	test("enabled seeds the three namespaced tools, key order like muse", () => {
+	test("enabled seeds the full namespaced tool set, key order like muse", () => {
 		const cfg = mktmp("t55-seed-");
 		const res = ensurePreallowReads({
 			configHome: cfg,
@@ -296,42 +301,29 @@ describe("seeded ui tool rules", () => {
 		const tools = rules.filter(
 			(e) => (e["rule"] as Record<string, unknown>)?.["kind"] === "tool_action",
 		);
-		expect(tools).toEqual([
-			{
+		// T105: the three ui tools first, then the read-only centrs +
+		// rosetta tools — seed order pinned, no mixed/write tools.
+		expect(tools).toEqual(
+			SEED_TOOL_NAMES.map((tool_name) => ({
 				effect: "allow",
 				durability: "local_persistent",
 				rule: {
 					kind: "tool_action",
-					tool_name: "mcp__routeros_muse__ui_notify",
+					tool_name,
 				},
 				reason: PREALLOW_TAG,
-			},
-			{
-				effect: "allow",
-				durability: "local_persistent",
-				rule: {
-					kind: "tool_action",
-					tool_name: "mcp__routeros_muse__ui_open",
-				},
-				reason: PREALLOW_TAG,
-			},
-			{
-				effect: "allow",
-				durability: "local_persistent",
-				rule: {
-					kind: "tool_action",
-					tool_name: "mcp__routeros_muse__ui_select_device",
-				},
-				reason: PREALLOW_TAG,
-			},
-		]);
+			})),
+		);
+		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_execute");
+		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_devices");
+		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_discover");
 		// Key order matches muse's own writer (P7 capture).
 		const flat = nodeFs
 			.readFileSync(policyFile(cfg), "utf8")
 			.replace(/\s+/g, "");
-		for (const name of UI_TOOL_NAMES) {
+		for (const tool_name of SEED_TOOL_NAMES) {
 			expect(flat).toContain(
-				`"rule":{"kind":"tool_action","tool_name":"${mcpToolName(name)}"}`,
+				`"rule":{"kind":"tool_action","tool_name":"${tool_name}"}`,
 			);
 		}
 	});
@@ -393,7 +385,7 @@ describe("seeded ui tool rules", () => {
 				(e) =>
 					(e["rule"] as Record<string, unknown>)?.["kind"] === "tool_action",
 			).length,
-		).toBe(1 + UI_TOOL_NAMES.length);
+		).toBe(1 + SEED_TOOL_NAMES.length);
 		ensurePreallowReads({
 			configHome: cfg,
 			workspaceRoot: ws,
@@ -406,7 +398,7 @@ describe("seeded ui tool rules", () => {
 
 describe("worker spawn negotiation", () => {
 	t55(
-		"every worker spawn sends sessionMcp plus the ui mcpServers",
+		"every worker spawn sends sessionMcp plus all three mcpServers",
 		async () => {
 			const bin = stubT50Bin();
 			await withT50Env(bin.log, async () => {
@@ -433,7 +425,11 @@ describe("worker spawn negotiation", () => {
 					const cfg = JSON.parse(
 						cfgLine?.slice("MCPCFG ".length) ?? "{}",
 					) as Record<string, Record<string, unknown>>;
-					expect(Object.keys(cfg)).toEqual([UI_MCP_SERVER]);
+					// T105: the ui bridge plus the centrs and rosetta
+					// bundle servers, in config-key order.
+					expect(Object.keys(cfg).sort()).toEqual(
+						[UI_MCP_SERVER, CENTRS_MCP_SERVER, ROSETTA_MCP_SERVER].sort(),
+					);
 					const one = cfg[UI_MCP_SERVER] as Record<string, unknown>;
 					expect(one["transport"]).toBe("stdio");
 					expect(one["command"]).toBe(process.execPath);
@@ -447,6 +443,23 @@ describe("worker spawn negotiation", () => {
 						),
 						[RELAY_TOKEN_ENV]: "t55-fixed-token",
 					});
+					// The trilogy entries ride absolute bundle paths
+					// (D26); the centrs entry binds the session CDB.
+					for (const key of [CENTRS_MCP_SERVER, ROSETTA_MCP_SERVER]) {
+						const entry = cfg[key] as Record<string, unknown>;
+						expect(entry["transport"]).toBe("stdio");
+						expect(entry["command"]).toBe(process.execPath);
+						const eargs = entry["args"] as string[];
+						expect(path.isAbsolute(eargs[0] as string)).toBe(true);
+						expect(nodeFs.existsSync(eargs[0] as string)).toBe(true);
+					}
+					const centrsEnv = (cfg[CENTRS_MCP_SERVER] as Record<string, unknown>)[
+						"env"
+					] as Record<string, string>;
+					expect(
+						(centrsEnv["CENTRS_CDB_FILE"] as string).endsWith("device.cdb"),
+					).toBe(true);
+					expect("CENTRS_CDB_PASSWORD" in centrsEnv).toBe(false);
 				} finally {
 					await srv.stop();
 				}
@@ -1357,11 +1370,11 @@ describe("preallow toggle end to end", () => {
 						.sort();
 				};
 				// Boot default is on.
-				expect(names()).toEqual([...UI_TOOL_NAMES].map(mcpToolName).sort());
+				expect(names()).toEqual([...SEED_TOOL_NAMES].sort());
 				const status = await getJson(`${srv.url}api/status`);
 				expect(
 					(status["preallow"] as Record<string, unknown>)["tools"],
-				).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+				).toEqual(SEED_TOOL_NAMES);
 				const off = await postJson(`${srv.url}api/settings`, {
 					preallowReads: false,
 				});
@@ -1371,7 +1384,7 @@ describe("preallow toggle end to end", () => {
 					preallowReads: true,
 				});
 				expect(on.json["ok"]).toBe(true);
-				expect(names()).toEqual([...UI_TOOL_NAMES].map(mcpToolName).sort());
+				expect(names()).toEqual([...SEED_TOOL_NAMES].sort());
 			} finally {
 				await srv.stop();
 			}
