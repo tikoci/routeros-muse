@@ -15,6 +15,7 @@ import {
 	startServer,
 	stripTargetPreamble,
 	targetPreambleLines,
+	transcriptItems,
 } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { stubT50Bin, withT50Env } from "./t50-fake";
@@ -75,9 +76,7 @@ async function pollTurns(log: string, n: number): Promise<string[]> {
 		if (got.length >= n) return got;
 		await new Promise((r) => setTimeout(r, 25));
 	}
-	throw new Error(
-		`fake logged ${turnTexts(log).length} turns, wanted ${n}`,
-	);
+	throw new Error(`fake logged ${turnTexts(log).length} turns, wanted ${n}`);
 }
 
 describe("D39: the worker spawns trusted by default", () => {
@@ -167,9 +166,10 @@ describe("D39: /api/status reports the trust state", () => {
 			...extra,
 		});
 		try {
-			const j = (await (
-				await fetch(`${srv.url}api/status`)
-			).json()) as Record<string, unknown>;
+			const j = (await (await fetch(`${srv.url}api/status`)).json()) as Record<
+				string,
+				unknown
+			>;
 			return j["trustWorkspace"];
 		} finally {
 			await srv.stop();
@@ -187,11 +187,21 @@ describe("D39: --no-trust-workspace parses", () => {
 	test("start and bare forms set it; default leaves it unset", () => {
 		expect(parseCli(["start", "--no-trust-workspace"])).toEqual({
 			cmd: "start",
-			opts: { noOpen: false, yolo: false, noTrustWorkspace: true, dir: undefined },
+			opts: {
+				noOpen: false,
+				yolo: false,
+				noTrustWorkspace: true,
+				dir: undefined,
+			},
 		});
 		expect(parseCli(["--no-trust-workspace"])).toEqual({
 			cmd: "start",
-			opts: { noOpen: false, yolo: false, noTrustWorkspace: true, dir: undefined },
+			opts: {
+				noOpen: false,
+				yolo: false,
+				noTrustWorkspace: true,
+				dir: undefined,
+			},
 		});
 		const bare = parseCli([]);
 		expect(bare.cmd).toBe("start");
@@ -279,6 +289,29 @@ describe("T49: target preamble shape", () => {
 		const quoted =
 			"what does this mean?\n[routeros-muse context] target device: gw (id gw)";
 		expect(stripTargetPreamble(quoted)).toBe(quoted);
+	});
+
+	test("transcript rows strip user preambles; agent rows stay verbatim", () => {
+		const merged =
+			"[routeros-muse context] target device: gw (id gw)\n\nwhy slow?";
+		const rows = transcriptItems([
+			{
+				method: "item/completed",
+				params: {
+					item: { kind: "userMessage", itemId: "u1", text: merged },
+				},
+			},
+			{
+				method: "item/completed",
+				params: {
+					item: { kind: "agentMessage", itemId: "a1", text: `echo: ${merged}` },
+				},
+			},
+		]);
+		expect(rows).toEqual([
+			{ kind: "userMessage", role: "user", text: "why slow?" },
+			{ kind: "agentMessage", role: "agent", text: `echo: ${merged}` },
+		]);
 	});
 });
 

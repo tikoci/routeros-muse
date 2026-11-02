@@ -257,7 +257,17 @@ export function transcriptItems(events: ViewEvent[]): TranscriptItem[] {
 		if (kind === "userMessage" || kind === "agentMessage") {
 			const text = str(item["text"]);
 			if (!text) continue;
-			out.push({ kind, role: kind === "userMessage" ? "user" : "agent", text });
+			// T49: the send route prepends target context to the stored
+			// user text; rows show the prose, never the raw preamble.
+			// User rows only — an agent quoting the tag is its own
+			// voice and stays verbatim. History and live SSE share
+			// this mapper, so one strip point covers both.
+			out.push({
+				kind,
+				role: kind === "userMessage" ? "user" : "agent",
+				text:
+					kind === "userMessage" ? stripTargetPreamble(text) : text,
+			});
 			continue;
 		}
 		if (kind === "toolCall") {
@@ -398,10 +408,7 @@ const TARGET_PREAMBLE_TAG = "[routeros-muse context] ";
 export function stripTargetPreamble(text: string): string {
 	const lines = text.split("\n");
 	let i = 0;
-	while (
-		i < lines.length &&
-		(lines[i] ?? "").startsWith(TARGET_PREAMBLE_TAG)
-	)
+	while (i < lines.length && (lines[i] ?? "").startsWith(TARGET_PREAMBLE_TAG))
 		i++;
 	if (i === 0) return text;
 	if ((lines[i] ?? "") === "") i++;
@@ -854,17 +861,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				(item.kind === "userMessage" || item.kind === "agentMessage") &&
 				item.text
 			) {
-				// T49: the send route prepends target context to the
-				// stored user text; history shows the prose, never the
-				// raw preamble (user rows only — an agent quoting the
-				// tag is its own voice and stays verbatim).
-				const text =
-					item.kind === "userMessage"
-						? stripTargetPreamble(item.text)
-						: item.text;
 				messages.push({
 					role: item.kind === "userMessage" ? "user" : "agent",
-					text,
+					text: item.text,
 				});
 			}
 		}
