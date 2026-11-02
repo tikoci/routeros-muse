@@ -1,8 +1,15 @@
-// Approval-policy pre-seeding (T101, D43): our designed read set as
-// `shell_command_argv_prefix` allow rules in the user's muse
-// approval-policy.json (schema v2), scoped to the workspace's
-// absolute root, plus network allow rules for the workspace's
-// router.toml device hosts (phase 1.5: shape from the live probe).
+// Approval-policy pre-seeding (T101, D43/D44): our designed read
+// set as `shell_command_argv_prefix` allow rules in OUR OWN muse
+// approval-policy.json (schema v2, inside the private config home),
+// scoped to the workspace's absolute root, plus network allow rules
+// for the union of router.toml device hosts over every registered
+// workspace (network rules are global, so ownership is the union —
+// derived from registry.toml + router.toml files, never separate
+// state).
+//
+// The shared ~/.config/muse is never written: auth reaches our
+// workers through a symlink to the real auth.json, re-ensured on
+// every spawn.
 //
 // Every rule we write carries reason "routeros-muse:seed", and only
 // entries carrying that tag are ever modified or removed — foreign
@@ -10,14 +17,17 @@
 //
 // Write safety mirrors src/lib/settings.ts (T50): lstat the chain
 // and refuse symlinks; an exclusively created sibling temp,
-// written fully, then rename. Concurrent writers exist (other muse
-// sessions persisting "Always allow"), so the flow is read, merge,
-// write-temp, re-read, rename-or-retry (initial attempt plus up to
-// 3 retries), then an honest give-up that leaves the file alone.
+// written fully, then rename. Concurrent writers exist (our own
+// live muse sessions persisting "Always allow"), so the flow is
+// read, merge, write-temp, re-read, rename-or-retry (initial
+// attempt plus up to 3 retries), then an honest give-up that leaves
+// the file alone.
 import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { readDevices } from "./fleet";
+import { dataHomeDir } from "./registry";
 
 /** Tag on every rule we write; the only rules we ever touch. */
 export const PREALLOW_TAG = "routeros-muse:seed";
@@ -26,28 +36,19 @@ export const PREALLOW_TAG = "routeros-muse:seed";
 export const POLICY_SCHEMA_VERSION = 2;
 
 /**
- * Designed read set, one argv prefix per rule (D43): two-word
- * prefixes for the trilogy tools so sibling subcommands keep
- * prompting (centrs execute stays unlisted — --yes cannot be
- * excluded — and bare binaries are never seeded), one-word
- * prefixes for the read-only coreutils.
- *
- * Rosetta: `browse` is the read path (agent runs
- * `rosetta browse --once ...` plus `rosetta --version`); `export`
- * writes a dataset dir and --setup/--refresh download, so those
- * stay prompting; the bare binary would free them all.
+ * Designed read set, one argv prefix per rule (D43 as amended
+ * 2026-11-02): exactly three two-word prefixes, so sibling
+ * subcommands keep prompting (centrs execute stays unlisted —
+ * --yes cannot be excluded — and bare binaries are never seeded).
+ * Dropped from round 1: ls, cat, grep (not confined to the
+ * workspace — agents read files with muse's own tools), find
+ * (runs -exec/-delete), rosetta browse/--help/--version (browse
+ * writes its DB).
  */
 export const READ_COMMANDS: string[][] = [
 	["centrs", "retrieve"],
 	["quickchr", "list"],
 	["quickchr", "doctor"],
-	["ls"],
-	["cat"],
-	["grep"],
-	["find"],
-	["rosetta", "browse"],
-	["rosetta", "--help"],
-	["rosetta", "--version"],
 ];
 
 /** Explicit opt beats XDG_CONFIG_HOME beats ~/.config. */
@@ -59,6 +60,32 @@ export function configHomeDir(explicit?: string): string {
 /** The muse approval-policy file under a config home. Pure. */
 export function policyFile(configHome?: string): string {
 	return path.join(configHomeDir(configHome), "muse", "approval-policy.json");
+}
+
+/**
+ * Our private muse config home (D44): the XDG_CONFIG_HOME our
+ * workers spawn with. Pure. Derives from the data-home plumbing
+ * (ServeOpts.dataHome) so tests isolate hermetically.
+ */
+export function privateConfigHome(dataHome?: string): string {
+	return path.join(dataHomeDir(dataHome), "routeros-muse", "muse-config");
+}
+
+/**
+ * In-process seeding mutex (D44). The seeding path is fully
+ * synchronous, so run-to-completion already serializes it; this
+ * guard makes that structural fact explicit and turns any future
+ * re-entrancy into a loud error instead of an interleave.
+ */
+let seedHeld = false;
+export function withSeedLock<T>(fn: () => T): T {
+	if (seedHeld) throw new Error("preallow seeding re-entered");
+	seedHeld = true;
+	try {
+		return fn();
+	} finally {
+		seedHeld = false;
+	}
 }
 
 /** Thrown when the policy chain holds a symlink (never followed). */
@@ -93,8 +120,17 @@ export type PreallowFs = {
 
 export type EnsureArgs = {
 	configHome?: string;
-	workspaceRoot: string;
-	/** Router hosts to cover with network rules (normalized). */
+	/**
+	 * The served workspace, or undefined in no-workspace mode (then
+	 * only the network union is seeded and dead-root shell pruning
+	 * still applies).
+	 */
+	workspaceRoot?: string;
+	/**
+	 * The network-rule union (normalized): every registered
+	 * workspace's router.toml hosts when enabled, [] when disabled.
+	 * Tagged network rules outside this set are pruned.
+	 */
 	hosts?: string[];
 	/** False removes our tagged rules for this workspace instead. */
 	enabled: boolean;
@@ -266,7 +302,162 @@ export function normalizeHosts(hosts: string[]): string[] {
 	return out;
 }
 
+/**
+ * Network-rule ownership (D44): the union of router.toml device
+ * hosts over workspace roots. readDevices is total (missing or
+ * unparseable router.toml contributes nothing), so dead or
+ * half-written roots simply drop out of the union.
+ */
+export function unionWorkspaceHosts(roots: string[]): string[] {
+	const hosts: string[] = [];
+	for (const root of roots) {
+		for (const d of readDevices(root)) hosts.push(d.host ?? "");
+	}
+	return normalizeHosts(hosts);
+}
+
+/** Minimal muse-valid settings.json: schema_version only, nothing inherited. */
+const PRIVATE_SETTINGS = '{"schema_version":1}\n';
+
+export type PrivateHomeArgs = {
+	/** Our private home (the workers' XDG_CONFIG_HOME). */
+	privateHome: string;
+	/** The user's real config home; defaults to the process one. */
+	realConfigHome?: string;
+};
+
+export type PrivateHomeResult = {
+	changed: boolean;
+	warnings: string[];
+};
+
+/**
+ * Ensure the private muse config home (D44): <privateHome>/muse/
+ * holding our own settings.json (minimal, muse-valid) plus an
+ * auth.json SYMLINK to the real <configHome>/muse/auth.json,
+ * re-ensured on every call (a regular file or stale link is
+ * replaced). Dirs are created 0700; a symlink anywhere in the
+ * private chain throws PolicySymlinkError without touching
+ * anything. The real home is only ever read (link target), never
+ * written: when the real auth.json is absent the link is skipped
+ * and a "not signed in" warning is returned (the server surfaces
+ * it through the boot/auth path), leaving any existing private
+ * file alone. When both homes are the same path there is nothing
+ * to link and the call is quiet.
+ *
+ * Auth content is never read and never logged — link targets only.
+ */
+export function ensurePrivateHome(args: PrivateHomeArgs): PrivateHomeResult {
+	return withSeedLock(() => {
+		const museDir = path.join(args.privateHome, "muse");
+		for (const p of [args.privateHome, museDir]) {
+			try {
+				if (nodeFs.lstatSync(p).isSymbolicLink()) {
+					throw new PolicySymlinkError(p);
+				}
+			} catch (err) {
+				if (err instanceof PolicySymlinkError) throw err;
+				// Absent: nothing to follow; creation follows.
+			}
+		}
+		nodeFs.mkdirSync(museDir, { recursive: true });
+		nodeFs.chmodSync(args.privateHome, 0o700);
+		nodeFs.chmodSync(museDir, 0o700);
+		let changed = false;
+		const warnings: string[] = [];
+		// settings.json: ours alone, written atomically (0600 temp +
+		// rename), untouched when the bytes already match.
+		const settings = path.join(museDir, "settings.json");
+		try {
+			if (nodeFs.lstatSync(settings).isSymbolicLink()) {
+				throw new PolicySymlinkError(settings);
+			}
+		} catch (err) {
+			if (err instanceof PolicySymlinkError) throw err;
+			// Absent: creation follows.
+		}
+		let current: string | null = null;
+		try {
+			current = nodeFs.readFileSync(settings, "utf8");
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+		}
+		if (current !== PRIVATE_SETTINGS) {
+			const tmp = writeTempExclusive(settings, PRIVATE_SETTINGS);
+			try {
+				nodeFs.renameSync(tmp, settings);
+			} catch (err) {
+				try {
+					nodeFs.unlinkSync(tmp);
+				} catch {
+					// Best effort.
+				}
+				throw err;
+			}
+			changed = true;
+		}
+		// auth.json: a symlink to the real one, re-ensured.
+		const realAuth = path.join(
+			configHomeDir(args.realConfigHome),
+			"muse",
+			"auth.json",
+		);
+		const privAuth = path.join(museDir, "auth.json");
+		if (path.resolve(realAuth) === path.resolve(privAuth)) {
+			return { changed, warnings };
+		}
+		try {
+			nodeFs.lstatSync(realAuth);
+		} catch {
+			warnings.push(
+				`not signed in: ${realAuth} is missing (log in with muse, then retry)`,
+			);
+			return { changed, warnings };
+		}
+		let relink = true;
+		try {
+			if (
+				nodeFs.lstatSync(privAuth).isSymbolicLink() &&
+				nodeFs.readlinkSync(privAuth) === realAuth
+			) {
+				relink = false;
+			}
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+		}
+		if (relink) {
+			try {
+				nodeFs.unlinkSync(privAuth);
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+			}
+			nodeFs.symlinkSync(realAuth, privAuth);
+			changed = true;
+		}
+		return { changed, warnings };
+	});
+}
+
 const MAX_ATTEMPTS = 4; // Initial attempt plus up to 3 retries.
+
+/** Canonical form for order-insensitive rule-set comparison. */
+function canonicalize(v: unknown): unknown {
+	if (Array.isArray(v)) return v.map(canonicalize);
+	if (isRecord(v)) {
+		const out: Record<string, unknown> = {};
+		for (const k of Object.keys(v).sort()) out[k] = canonicalize(v[k]);
+		return out;
+	}
+	return v;
+}
+
+/** True when two rule lists hold the same entries in any order. */
+function rulesEqual(a: unknown[], b: unknown[]): boolean {
+	if (a.length !== b.length) return false;
+	const sa = a.map((e) => JSON.stringify(canonicalize(e))).sort();
+	const sb = b.map((e) => JSON.stringify(canonicalize(e))).sort();
+	return sa.every((s, i) => s === sb[i]);
+}
 
 /**
  * Ensure this workspace's pre-seeded rules in approval-policy.json.
@@ -275,23 +466,28 @@ const MAX_ATTEMPTS = 4; // Initial attempt plus up to 3 retries.
  * entries from older seed sets are replaced, never merged), our
  * tagged shell rules for roots that no longer exist are pruned,
  * our tagged rules for other live roots are kept, every foreign
- * entry is preserved in place, and missing network rules for the
- * current hosts are added. Network rules are global (no
- * workspace_root — the persisted shape carries none), so they are
- * never pruned by content: another workspace may share the host,
- * and only it can re-seed. Disabled: our tagged rules for this
- * root are removed, plus our tagged network rules for the current
- * hosts (a workspace sharing a host re-seeds at its next boot);
- * dead-root pruning still applies.
+ * entry is preserved in place, and the tagged network rules hold
+ * exactly the host union (a host no live preallowed workspace
+ * needs is pruned). Disabled: our tagged rules for this root are
+ * removed, plus every tagged network rule (the union is empty);
+ * dead-root pruning still applies. With no workspace root
+ * (no-workspace mode) only the network union is seeded.
  *
- * No rewrite when nothing changed (byte-compare before writing).
- * An unknown schema_version or unparseable file skips with a
- * warning and leaves the bytes alone — never rewrite what we
- * don't understand. A symlink in the chain throws
+ * No rewrite when nothing changed (order-insensitive compare
+ * before writing). An unknown schema_version or unparseable file
+ * skips with a warning and leaves the bytes alone — never rewrite
+ * what we don't understand. A symlink in the chain throws
  * PolicySymlinkError. A file that changes under every attempt
  * gives up with a warning after MAX_ATTEMPTS.
  */
 export function ensurePreallowReads(
+	args: EnsureArgs,
+	fs?: PreallowFs,
+): EnsureResult {
+	return withSeedLock(() => ensurePreallowReadsLocked(args, fs));
+}
+
+function ensurePreallowReadsLocked(
 	args: EnsureArgs,
 	fs?: PreallowFs,
 ): EnsureResult {
@@ -304,14 +500,19 @@ export function ensurePreallowReads(
 	const renameSync = fs?.renameSync ?? nodeFs.renameSync;
 	const unlinkSync = fs?.unlinkSync ?? nodeFs.unlinkSync;
 	const hosts = normalizeHosts(args.hosts ?? []);
-	const hostSet = new Set(hosts);
-	const desired: PolicyEntry[] = args.enabled
-		? [
-				...READ_COMMANDS.map((p) => shellEntry(p, args.workspaceRoot)),
-				...hosts.map((h) => networkEntry(h)),
-			]
-		: [];
-	const seededCommands = args.enabled ? READ_COMMANDS.map((p) => [...p]) : [];
+	const wsRoot = args.workspaceRoot;
+	const shell =
+		args.enabled && wsRoot !== undefined
+			? READ_COMMANDS.map((p) => shellEntry(p, wsRoot))
+			: [];
+	const desired: PolicyEntry[] = [
+		...shell,
+		...(args.enabled ? hosts.map((h) => networkEntry(h)) : []),
+	];
+	const seededCommands =
+		args.enabled && wsRoot !== undefined
+			? READ_COMMANDS.map((p) => [...p])
+			: [];
 	const base: EnsureResult = {
 		changed: false,
 		enabled: args.enabled,
@@ -379,12 +580,12 @@ export function ensurePreallowReads(
 			}
 			const host = networkHost(entry);
 			if (host !== null) {
-				// Current hosts are replaced by desired (added when
-				// enabled, removed when disabled); any other tagged
-				// network rule belongs to another workspace's set
-				// and is kept — network rules are never pruned by
-				// content.
-				if (!hostSet.has(host)) kept.push(entry);
+				// Union ownership (D44): tagged network rules are
+				// never kept — desired re-adds exactly the union
+				// (empty when disabled), so anything outside it
+				// belongs to no live preallowed workspace and is
+				// pruned. Untagged network rules never reach this
+				// branch: they are foreign and kept above.
 				continue;
 			}
 			// Tagged but neither a shell nor a network rule (a newer
@@ -392,7 +593,7 @@ export function ensurePreallowReads(
 			kept.push(entry);
 		}
 		const next = [...kept, ...desired];
-		if (JSON.stringify(next) === JSON.stringify(rules)) {
+		if (rulesEqual(next, rules)) {
 			return base;
 		}
 		// Serialization matches muse's own writer: 2-space indent,
@@ -428,7 +629,16 @@ export function ensurePreallowReads(
 			}
 			continue;
 		}
-		renameSync(tmp, file);
+		try {
+			renameSync(tmp, file);
+		} catch (err) {
+			try {
+				unlinkSync(tmp);
+			} catch {
+				// Best effort.
+			}
+			throw err;
+		}
 		return { ...base, changed: true };
 	}
 	return {

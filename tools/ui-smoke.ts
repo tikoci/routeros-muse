@@ -92,8 +92,8 @@ function makeHome(): string {
 // T40 hermeticity: smoke boots share one temp data home (the picker
 // leg below uses its own), never the developer's real registry.
 const SMOKE_DATA_HOME = mktmp("ui-smoke-dh-");
-// T101 hermeticity: all smoke boots seed into this temp config home,
-// never the developer's real approval-policy.json.
+// T101 hermeticity: all smoke boots use this temp dir as their private
+// muse config home — never the developer's real ~/.config/muse.
 const SMOKE_CONFIG_HOME = mktmp("ui-smoke-cfg-");
 
 const failures: string[] = [];
@@ -255,11 +255,15 @@ try {
 	);
 	const preCmds = (await page.locator("#preallow-cmds").textContent()) ?? "";
 	check(
-		"t101 preallow lists the read set",
-		preCmds.includes("centrs retrieve") &&
-			preCmds.includes("quickchr list") &&
-			preCmds.includes("rosetta browse"),
+		"t101 preallow lists exactly the 3-command read set",
+		preCmds.trim() === "centrs retrieve, quickchr list, quickchr doctor",
 		preCmds.slice(0, 160),
+	);
+	const preCfg = (await page.locator("#preallow-cfg").textContent()) ?? "";
+	check(
+		"t101 preallow shows the private config home",
+		preCfg.trim() === SMOKE_CONFIG_HOME,
+		preCfg.slice(0, 160),
 	);
 	check(
 		"t101 preallow toggle defaults on",
@@ -897,7 +901,10 @@ try {
 		check(
 			"t101 preallow idles in no-workspace mode",
 			((await page.locator("#preallow-cmds").textContent()) ?? "").trim() ===
-				"no workspace" && (await page.locator("#preallow-toggle").isDisabled()),
+				"no workspace" &&
+				((await page.locator("#preallow-cfg").textContent()) ?? "").trim() ===
+					"no workspace" &&
+				(await page.locator("#preallow-toggle").isDisabled()),
 		);
 		// A full echo turn must restore the no-workspace copy, not the
 		// workspace one (setRunning placeholder reset is mode-aware).

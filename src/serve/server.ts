@@ -21,8 +21,10 @@ import {
 } from "../lib/fleet";
 import {
 	ensurePreallowReads,
-	normalizeHosts,
+	ensurePrivateHome,
+	privateConfigHome,
 	READ_COMMANDS,
+	unionWorkspaceHosts,
 } from "../lib/preallow";
 import {
 	defaultWorkspacesDir,
@@ -145,10 +147,12 @@ export type ServeOpts = {
 	 */
 	trustWorkspace?: boolean;
 	/**
-	 * muse config-home override for approval-policy seeding
-	 * (T101): tests isolate here. Defaults to XDG_CONFIG_HOME or
-	 * ~/.config. Also forwarded to worker spawns (museConfigHome)
-	 * so the worker reads the same policy file the server seeds.
+	 * Private muse config-home override (T101 round 2, D44): tests
+	 * isolate here. Defaults to
+	 * <dataHome>/routeros-muse/muse-config. Forwarded to worker
+	 * spawns (museConfigHome) so the worker reads the same policy
+	 * file the server seeds; the shared ~/.config/muse is never
+	 * written (auth reaches the worker as a symlink).
 	 */
 	configHome?: string;
 };
@@ -552,6 +556,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// no-workspace picker lists real history. A registry write failure
 	// warns but never blocks the boot.
 	const regFile = registryFile(opts.dataHome);
+	// T101 round 2 (D44): our private muse config home — the
+	// XDG_CONFIG_HOME every worker spawns with, and the only
+	// approval-policy.json we seed. Defaults under the data home;
+	// tests override it directly.
+	const museCfgHome = opts.configHome ?? privateConfigHome(opts.dataHome);
 	const defaultDir = defaultWorkspacesDir(opts.defaultWorkspaceDir);
 	// T93: the picker create flow offers these templates (minimal
 	// default); read once at boot from the package templates dir.
@@ -656,39 +665,79 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		commands: string[];
 		hosts: string[];
 		warnings: string[];
+		configHome: string;
 	};
 	let preallow: PreallowReport | null = null;
 	function preallowState(): PreallowReport | null {
 		return preallow;
 	}
+	// Spawn-time home warnings (re-link failures) stash here and
+	// drain into the next report; capped, workspace mode only.
+	let homeWarnings: string[] = [];
+	function stashHomeWarnings(more: string[]): void {
+		homeWarnings = [...homeWarnings, ...more].slice(-8);
+	}
+	/** Roots feeding the network-rule union: the registry plus this root. */
+	function unionRoots(): string[] {
+		const roots = new Set<string>();
+		for (const e of readRegistry(regFile).entries) roots.add(e.path);
+		if (!noWs) roots.add(root);
+		return [...roots];
+	}
 	/**
-	 * Run the D43 seed for this workspace and refresh the
-	 * report. Never throws: seeding failures (symlinked chain,
-	 * unreadable file, unknown schema, lost races) land as
-	 * warnings and the boot continues.
+	 * Run the D43/D44 seed and refresh the report. Never throws:
+	 * seeding failures (symlinked chain, unreadable file, unknown
+	 * schema, lost races) land as warnings and the boot
+	 * continues. Always ensures the private home first (both
+	 * modes: workers need auth everywhere); no-workspace mode
+	 * seeds the network union only and keeps the report null.
 	 */
 	function refreshPreallow(enabled: boolean): void {
+		const warnings: string[] = [...homeWarnings];
+		homeWarnings = [];
+		try {
+			const home = ensurePrivateHome({ privateHome: museCfgHome });
+			warnings.push(...home.warnings);
+		} catch (err) {
+			warnings.push(err instanceof Error ? err.message : String(err));
+		}
+		const hosts = enabled ? unionWorkspaceHosts(unionRoots()) : [];
+		try {
+			const res = ensurePreallowReads({
+				configHome: museCfgHome,
+				...(noWs ? {} : { workspaceRoot: root }),
+				hosts,
+				enabled,
+			});
+			warnings.push(...res.warnings);
+		} catch (err) {
+			warnings.push(err instanceof Error ? err.message : String(err));
+		}
 		if (noWs) {
 			preallow = null;
 			return;
 		}
-		const hosts = normalizeHosts(readDevices(root).map((d) => d.host ?? ""));
 		const commands = READ_COMMANDS.map((p) => p.join(" "));
+		preallow = {
+			enabled,
+			commands,
+			hosts,
+			warnings,
+			configHome: museCfgHome,
+		};
+	}
+	/**
+	 * Re-ensure the private home (auth symlink) before a worker
+	 * spawn. Never throws: failures stash as warnings for the
+	 * report, and a truly broken home fails the spawn honestly
+	 * as an authRequired turn.
+	 */
+	function ensureHomeQuiet(): void {
 		try {
-			const res = ensurePreallowReads({
-				configHome: opts.configHome,
-				workspaceRoot: root,
-				hosts,
-				enabled,
-			});
-			preallow = { enabled, commands, hosts, warnings: res.warnings };
+			const home = ensurePrivateHome({ privateHome: museCfgHome });
+			stashHomeWarnings(home.warnings);
 		} catch (err) {
-			preallow = {
-				enabled,
-				commands,
-				hosts,
-				warnings: [err instanceof Error ? err.message : String(err)],
-			};
+			stashHomeWarnings([err instanceof Error ? err.message : String(err)]);
 		}
 	}
 	refreshPreallow(readPreallowReads(opts.dataHome));
@@ -843,10 +892,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					mspWhy = "muse not on PATH";
 					throw new Error(mspWhy);
 				}
+				ensureHomeQuiet();
 				const client = await MspClient.spawn({
 					provider,
 					museHome: opts.museHome,
-					museConfigHome: opts.configHome,
+					museConfigHome: museCfgHome,
 					experimental: true,
 					extraArgs: mspExtraArgs,
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
@@ -1042,18 +1092,17 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	} else if (have("muse", tools)) {
 		void (async () => {
 			try {
-				const m = await probeMetaAuth(
-					() =>
-						MspClient.spawn({
-							provider,
-							museHome: opts.museHome,
-							museConfigHome: opts.configHome,
-							experimental: true,
-							extraArgs: mspExtraArgs,
-							env: tools,
-						}),
-					root,
-				);
+				const m = await probeMetaAuth(() => {
+					ensureHomeQuiet();
+					return MspClient.spawn({
+						provider,
+						museHome: opts.museHome,
+						museConfigHome: museCfgHome,
+						experimental: true,
+						extraArgs: mspExtraArgs,
+						env: tools,
+					});
+				}, root);
 				if (m !== "unknown") setMeta(m);
 			} catch {
 				// probe failure is not auth evidence; stays unknown
@@ -1272,6 +1321,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					};
 					if (body.action === "prune") {
 						const { removed } = pruneRegistry(regFile);
+						// D44: the union shrank — re-seed so removed
+						// workspaces' hosts leave the network rules.
+						refreshPreallow(readPreallowReads(opts.dataHome));
 						return json({ ok: true, removed });
 					}
 					if (body.action === "create") {
@@ -1302,6 +1354,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 						if (!made.ok) return json({ ok: false, why: made.why }, 400);
 						const workspace = registerWorkspace(regFile, body.name, made.dir);
+						// D44: a new root joined the network-rule union.
+						refreshPreallow(readPreallowReads(opts.dataHome));
 						return json({
 							ok: true,
 							workspace,
@@ -1395,6 +1449,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						body.text,
 						body.fromTomlEditor === true ? { fromTomlEditor: true } : undefined,
 					);
+					if (res.status === 200 && body.path === "router.toml") {
+						// D44: device hosts feed the network-rule union.
+						refreshPreallow(readPreallowReads(opts.dataHome));
+					}
 					return json(res.body, res.status);
 				}
 				if (p === "/api/toml" && req.method === "GET") {

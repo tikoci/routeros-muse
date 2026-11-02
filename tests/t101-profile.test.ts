@@ -40,9 +40,19 @@ async function getJson(url: string): Promise<Record<string, unknown>> {
 	return (await res.json()) as Record<string, unknown>;
 }
 
-/** Fresh XDG_CONFIG_HOME for the body; restored after. Returns the dir. */
+/**
+ * Fresh XDG_CONFIG_HOME for the body; restored after. Returns the dir.
+ * Seeds a fake auth.json so the private-home ensure stays quiet (in
+ * these tests the private home IS the process config home, so no
+ * link is needed). Auth content is never asserted.
+ */
 async function withCfgHome<T>(fn: (cfg: string) => Promise<T>): Promise<T> {
 	const cfg = mktmp("t101-cfg-");
+	nodeFs.mkdirSync(path.join(cfg, "muse"), { recursive: true });
+	nodeFs.writeFileSync(
+		path.join(cfg, "muse", "auth.json"),
+		'{"providers":{"meta":{"mechanism":"oauth"}}}\n',
+	);
 	const saved = process.env["XDG_CONFIG_HOME"];
 	process.env["XDG_CONFIG_HOME"] = cfg;
 	try {
@@ -168,24 +178,50 @@ describe("T101 Part A: explicit profile per session", () => {
 		});
 	});
 
-	t101("server never writes muse settings.json", async () => {
-		await withCfgHome(async (cfg) => {
-			const { bin, log } = stubT50Bin();
-			await withT50Env(log, async () => {
-				const srv = await startT50Srv(bin, { configHome: cfg });
-				try {
-					await postJson(`${srv.url}api/chat/send`, { text: "hello" });
-					await postJson(`${srv.url}api/chat/access`, { mode: "allowAll" });
-					const dir = path.join(cfg, "muse");
-					expect(nodeFs.readdirSync(dir).sort()).toEqual([
-						"approval-policy.json",
-					]);
-				} finally {
-					await srv.stop();
-				}
-			});
-		});
-	});
+	t101(
+		"round 2: server owns its private home, never the real one",
+		async () => {
+			const real = mktmp("t101-real-");
+			nodeFs.mkdirSync(path.join(real, "muse"), { recursive: true });
+			nodeFs.writeFileSync(
+				path.join(real, "muse", "auth.json"),
+				'{"providers":{"meta":{"mechanism":"oauth"}}}\n',
+			);
+			const saved = process.env["XDG_CONFIG_HOME"];
+			process.env["XDG_CONFIG_HOME"] = real;
+			try {
+				const priv = mktmp("t101-priv-");
+				const { bin, log } = stubT50Bin();
+				await withT50Env(log, async () => {
+					const srv = await startT50Srv(bin, { configHome: priv });
+					try {
+						await postJson(`${srv.url}api/chat/send`, { text: "hello" });
+						await postJson(`${srv.url}api/chat/access`, { mode: "allowAll" });
+						// Private home: our policy + our settings + the auth link.
+						expect(nodeFs.readdirSync(path.join(priv, "muse")).sort()).toEqual([
+							"approval-policy.json",
+							"auth.json",
+							"settings.json",
+						]);
+						expect(
+							nodeFs
+								.lstatSync(path.join(priv, "muse", "auth.json"))
+								.isSymbolicLink(),
+						).toBe(true);
+						// Real home: the planted auth.json only, nothing added.
+						expect(nodeFs.readdirSync(path.join(real, "muse")).sort()).toEqual([
+							"auth.json",
+						]);
+					} finally {
+						await srv.stop();
+					}
+				});
+			} finally {
+				if (saved === undefined) delete process.env["XDG_CONFIG_HOME"];
+				else process.env["XDG_CONFIG_HOME"] = saved;
+			}
+		},
+	);
 });
 
 describe("T101 Part B: server pre-seed wiring", () => {

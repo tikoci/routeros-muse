@@ -396,6 +396,80 @@ boundary (`AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`,
 sandbox+approval with a cleared env; MCP servers run unsandboxed
 (child process / direct socket) with approval still applying.
 
+## D44: private muse config home (round 2)
+
+Our workers spawn with `XDG_CONFIG_HOME=<dataHome>/routeros-muse/muse-config`
+(D44, T101 round 2). Inside it, `muse/` holds our own
+`approval-policy.json` (schema v2, same tagged `reason:"routeros-muse:seed"`
+rules), our own minimal `settings.json` (`{"schema_version":1}` — unknown
+fields make muse exit 3, verified with a real boot), and an `auth.json`
+SYMLINK to the real `${XDG_CONFIG_HOME:-$HOME/.config}/muse/auth.json`,
+re-ensured on every spawn. The shared `~/.config/muse/` is never written.
+Dirs are 0700; symlinked parents are refused.
+
+Why: muse persists approval-policy.json without a lock, so sharing the
+file with other agents on the box risks dropping a rule in the
+rename window (a foreign deny was lost in a probe); a malformed file
+bricks every muse on the box (exit 3); network host rules are
+machine-global and need owned state. The private home removes the
+shared-file race and the blast radius in one move.
+
+Auth shape (orchestrator probes 2026-11-02): auth.json holds a static
+token (no refresh token, no expiry field), so link-per-spawn carries
+no rotation risk; the muse binary reads auth only from
+`$XDG_CONFIG_HOME/muse/auth.json` (`MUSE_AUTH_PATH` is launcher-only).
+If the real auth.json is absent, sessions fail turns with
+`authRequired` (the existing boot-probe/banner path) and Settings
+carries a "not signed in" warning.
+
+Network-rule ownership: the desired host set is the UNION of
+router.toml device hosts over registered workspaces (registry.toml),
+recomputed at boot, toggle, router.toml save, workspace create, and
+registry prune; tagged network rules outside the union are pruned.
+Untagged rules (the owner's own Always-allow choices) are never
+touched. No separate ownership state file: registry.toml +
+router.toml files ARE the state (derived ownership, cannot drift).
+
+Read set as amended 2026-11-02: exactly `centrs retrieve`,
+`quickchr list`, `quickchr doctor`. Dropped: find (-exec/-delete),
+rosetta browse (writes its DB), ls/cat/grep (not workspace-confined).
+
+Concurrency: all seeding serializes in-process (one mutex; the path
+is fully synchronous so run-to-completion does the work and the
+guard makes it explicit). The reread-before-rename guard with
+retries stays. Residual window: a live muse session persisting an
+Always-allow into our private file writes WITHOUT a lock and WITHOUT
+a re-read, so it can still clobber a seed (or a seed can clobber it)
+when the two land in the same instant — smaller than round 1 (only
+our own workers write this file now, not every agent on the box),
+but not zero. Convergence is eventual: the next boot/toggle/edit
+re-seeds our tagged set over whatever the file holds, and muse
+re-persists owner choices on next approval.
+
+Shell environment (probed 2026-11-02, muse 1.4.14): the agent's
+shell tools INHERIT the serve process environment, including
+XDG_CONFIG_HOME — verified live (`session/userShell` under a
+sandboxed profile echoed the fake home back). There is NO clean
+user-settable mechanism to restore/exclude it for tool execution:
+`session/start.config` admits only `mcpServers` (binary-exported
+MSP schema, both surfaces); `settings/readSchema` lists no env key;
+`serve -c environment_policy=...` (and execution./shell./sandbox.
+variants) refuse as unknown keys; `environment_policy`
+(inherit/include_only/exclude) is an internal executor field fed by
+the permission-profile definition, and profile definitions below
+the fixed native rows exist only via enterprise policy planes
+(`muse config status` here: both absent; managed files are
+root-owned system files). Blast radius, bounded by source reads:
+centrs CDB resolution is `$HOME`-based (unaffected), quickchr state
+is `$HOME/.config/quickchr` (unaffected), rosetta reads no
+XDG_CONFIG_HOME (unaffected) — only centrs' user-global
+`centrs.env` settings (resolved under XDG_CONFIG_HOME) do not apply
+to agent-run centrs commands. Options, undecided: PATH-fronted
+env-restoring wrappers for the affected tools (the server already
+fronts PATH per D26); an enterprise managed profile (needs
+root-installed policy, not shippable as a default); an upstream
+per-session env surface; or documenting the gap.
+
 ## Option C verdict: FEASIBLE
 
 Pre-allowing our designed read set under promptUnmatched works via

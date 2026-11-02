@@ -616,7 +616,7 @@ export function makeT50Workspace(): string {
 export type T50SrvOpts = {
 	defaultApprovalMode?: ApprovalMode;
 	dataHome?: string;
-	/** T101: isolated muse config home for approval-policy seeding. */
+	/** T101 round 2: isolated private muse config home. */
 	configHome?: string;
 	/** T101: caller-built workspace (default: minimal, no router.toml). */
 	workspace?: string;
@@ -635,7 +635,9 @@ export async function startT50Srv(
 		provider: "echo",
 		museHome: mktmp("t50-home-"),
 		toolBinDir: bin,
-		configHome: extra?.configHome ?? mktmp("t50-cfg-"),
+		// Round 2: no override by default, so the server derives the
+		// private home from the temp data home (still hermetic).
+		...(extra?.configHome ? { configHome: extra.configHome } : {}),
 		...(extra?.defaultApprovalMode
 			? { defaultApprovalMode: extra.defaultApprovalMode }
 			: {}),

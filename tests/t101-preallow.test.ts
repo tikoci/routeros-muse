@@ -127,29 +127,14 @@ describe("read command set", () => {
 		}
 	});
 
-	test("single-word prefixes are only ls/cat/grep/find; all else two-plus words, never bare", () => {
-		const singles = new Set(["ls", "cat", "grep", "find"]);
-		for (const prefix of READ_COMMANDS) {
-			if (prefix.length === 1) {
-				expect(singles.has(prefix[0] as string)).toBe(true);
-			} else {
-				expect(prefix.length).toBeGreaterThanOrEqual(2);
-			}
-		}
-		// Every required read command is present.
-		const joined = READ_COMMANDS.map((p) => p.join(" "));
-		for (const want of [
-			"centrs retrieve",
-			"quickchr list",
-			"quickchr doctor",
-			"ls",
-			"cat",
-			"grep",
-			"find",
-			"rosetta browse",
-		]) {
-			expect(joined).toContain(want);
-		}
+	test("round 2: exactly centrs retrieve + quickchr list/doctor (D43 as amended)", () => {
+		// find runs -exec/-delete, rosetta browse writes its DB, and
+		// cat/grep/ls are not confined to the workspace: all dropped.
+		expect(READ_COMMANDS).toEqual([
+			["centrs", "retrieve"],
+			["quickchr", "list"],
+			["quickchr", "doctor"],
+		]);
 	});
 });
 
@@ -219,7 +204,7 @@ describe("ensurePreallowReads", () => {
 				durability: "local_persistent",
 				rule: {
 					kind: "shell_command_argv_prefix",
-					argv_prefix: ["ls"],
+					argv_prefix: ["centrs", "retrieve"],
 					workspace_root: ws,
 				},
 				reason: null,
@@ -243,14 +228,14 @@ describe("ensurePreallowReads", () => {
 			// Foreign entries survive deep-equal (key order + values kept).
 			expect(doc.rules).toContainEqual(foreignOther);
 			expect(doc.rules).toContainEqual(foreignSame);
-			// Our tagged ls rule is ADDED, not merged into the foreign one.
-			const lsRules = doc.rules.filter(
+			// Our tagged rule is ADDED, not merged into the foreign one.
+			const sameRules = doc.rules.filter(
 				(r) =>
 					JSON.stringify(
 						(r["rule"] as Record<string, unknown>)["argv_prefix"],
-					) === JSON.stringify(["ls"]),
+					) === JSON.stringify(["centrs", "retrieve"]),
 			);
-			expect(lsRules).toHaveLength(2);
+			expect(sameRules).toHaveLength(2);
 		});
 	});
 
@@ -593,7 +578,7 @@ describe("network rules (probed shape)", () => {
 		});
 	});
 
-	test("tagged network rules for other hosts are kept, never pruned by content", () => {
+	test("round 2: tagged network rules outside the union are pruned", () => {
 		withCfgHome((cfg) => {
 			const ws = mktmp("t101-ws-");
 			nodeFs.mkdirSync(path.dirname(policyFile(cfg)), { recursive: true });
@@ -605,12 +590,14 @@ describe("network rules (probed shape)", () => {
 						{
 							effect: "allow",
 							durability: "local_persistent",
-							rule: { kind: "network", host: "other-ws-router" },
+							rule: { kind: "network", host: "removed-ws-router" },
 							reason: PREALLOW_TAG,
 						},
 					],
 				}),
 			);
+			// The caller passes the recomputed union: the removed
+			// workspace's host is gone from it, so it is pruned.
 			ensurePreallowReads({
 				configHome: cfg,
 				workspaceRoot: ws,
@@ -621,12 +608,12 @@ describe("network rules (probed shape)", () => {
 			const hosts = doc.rules
 				.filter((r) => r["reason"] === PREALLOW_TAG)
 				.map((r) => (r["rule"] as Record<string, unknown>)["host"]);
-			expect(hosts).toContain("other-ws-router");
+			expect(hosts).not.toContain("removed-ws-router");
 			expect(hosts).toContain("h1");
 		});
 	});
 
-	test("enabled:false removes current-host network rules, keeps others and foreign", () => {
+	test("round 2: enabled:false removes every tagged network rule, keeps foreign", () => {
 		withCfgHome((cfg) => {
 			const ws = mktmp("t101-ws-");
 			ensurePreallowReads({
@@ -655,18 +642,18 @@ describe("network rules (probed shape)", () => {
 					rules: [...doc.rules, other, foreign],
 				}),
 			);
+			// Disabled means the union is empty: every tagged rule goes.
 			ensurePreallowReads({
 				configHome: cfg,
 				workspaceRoot: ws,
-				hosts: ["h1"],
+				hosts: [],
 				enabled: false,
 			});
 			const after = readPolicy(cfg);
-			expect(after.rules).toContainEqual(other);
 			expect(after.rules).toContainEqual(foreign);
-			expect(after.rules.filter((r) => r["reason"] === PREALLOW_TAG)).toEqual([
-				other,
-			]);
+			expect(after.rules.filter((r) => r["reason"] === PREALLOW_TAG)).toEqual(
+				[],
+			);
 		});
 	});
 });

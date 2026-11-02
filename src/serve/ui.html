@@ -660,7 +660,8 @@
           <div class="setrow"><label><input type="checkbox" id="preallow-toggle"> Pre-allow read commands for this workspace</label></div>
           <div class="arow"><span class="k">Commands</span><span class="v" id="preallow-cmds">…</span></div>
           <div class="arow"><span class="k">Hosts</span><span class="v" id="preallow-hosts">…</span></div>
-          <div class="setnote">Seeded into your muse approval policy, tagged routeros-muse:seed. Shell rules cover this workspace only; host rules are global per host.</div>
+          <div class="arow"><span class="k">Config home</span><span class="v" id="preallow-cfg">…</span></div>
+          <div class="setnote">Seeded into our private muse approval policy, tagged routeros-muse:seed. Shell rules cover this workspace only; host rules span every registered workspace. Your own muse config is never touched.</div>
           <div class="setnote" id="preallow-warn" style="display:none"></div>
         </div>
         <div class="rblock">
@@ -3048,6 +3049,7 @@
       tog.disabled = true;
       $("preallow-cmds").textContent = "no workspace";
       $("preallow-hosts").textContent = "no workspace";
+      $("preallow-cfg").textContent = "no workspace";
       $("preallow-warn").style.display = "none";
       return;
     }
@@ -3055,6 +3057,7 @@
     tog.checked = pre.enabled === true;
     $("preallow-cmds").textContent = (pre.commands || []).join(", ") || "—";
     $("preallow-hosts").textContent = (pre.hosts || []).join(", ") || "—";
+    $("preallow-cfg").textContent = pre.configHome || "—";
     const w = $("preallow-warn");
     if (pre.warnings && pre.warnings.length) {
       w.textContent = pre.warnings.join(" ");
