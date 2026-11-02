@@ -348,7 +348,7 @@ outcome = "Developer 2026-11-01: OK to pre-seed, as recommended. FYI from the de
 [[decision]]
 id = "D44"
 title = "routeros-muse sessions use a private muse config home (own approval-policy.json)"
-status = "open"
+status = "decided"
 detail = "T101 sol review 2026-11-01: muse writes ~/.config/muse/approval-policy.json without a lock, so our read-modify-rename can drop a rule another agent persists in the rename window (a foreign deny was lost in a probe); a malformed or unknown-field file makes every muse on the box exit 3 at boot; network host rules are machine-global, so ownership across workspaces needs separate state. Option: spawn our muse workers with XDG_CONFIG_HOME=<dataHome>/routeros-muse/muse-config holding our own approval-policy.json and settings.json plus the user's auth (T101 proved temp-config auth works with copies under $HOME; token refresh handling to verify). Pros: no shared-file race, no risk to other agents, our grants and the owner's routeros-muse Always-allow choices stay ours. Cons: auth must be linked or synced, and choices made in routeros-muse don't carry to other muse use."
-decided = ""
-outcome = ""
+decided = "2026-11-02"
+outcome = "Developer 2026-11-02: yes (orchestrator recommendation). Also: experimentalApi stays on for every spawn, and the D43 read set shrinks to centrs retrieve, quickchr list, quickchr doctor (find, cat, grep, ls, rosetta browse dropped: find runs -exec/-delete, rosetta browse writes its DB, cat/grep are not confined to the workspace; agents read files with muse's own tools). Orchestrator probes 2026-11-02: auth.json holds a static access_token/api_key (no refresh token, no expiry field), so link-per-spawn carries no rotation risk; the muse binary reads auth only from $XDG_CONFIG_HOME/muse/auth.json (MUSE_AUTH_PATH is a launcher-only variable). Implementation constraint: XDG_CONFIG_HOME is inherited by the agent's shell tools, and centrs resolves its config under it, so T101 must keep tools on the real config home (muse environment_policy exclude, or equivalent) and prove centrs/quickchr/rosetta still find their config from inside a session."
