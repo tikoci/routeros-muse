@@ -527,11 +527,16 @@ cross-workspace host union and the cross-process seed lock. Round 4
 `<dataHome>/routeros-muse/.muse-config/<workspace-id>/`
 
 - `<workspace-id>` is `<sanitized-basename>-<hash12>`: the
-  workspace dir's basename (readable) plus 12 hex chars of sha256
+  workspace dir's basename (readable, cut to 48 chars so the id
+  stays far below NAME_MAX) plus 12 hex chars of sha256
   over the canonical absolute root (realpath; path.resolve when
   unresolvable). Stable across spellings of the same root; a MOVED
   workspace gets a NEW home — accepted by design, and seeding
-  recreates its rules from scratch on next boot.
+  recreates its rules from scratch on next boot. Symlink aliases of
+  one root share a home; bind-mount aliases may not (accepted).
+- Every tagged rule in a home is that workspace's: a seed replaces
+  all tagged shell rules (whatever root spelling wrote them) with
+  the current root's set, and disabling removes them all.
 - The leading dot marks the dir as managed, not for user editing;
   it is not a security measure.
 - No-workspace mode (D23) gets the fixed
@@ -551,7 +556,10 @@ cross-workspace host union and the cross-process seed lock. Round 4
 - Two servers on the same workspace: WARN ONLY via a `server.pid`
   file in that workspace's home. No blocking, a stale pid is
   silently ignored, symlinks are never followed (neither read nor
-  replaced), and correctness never depends on it.
+  replaced), and correctness never depends on it. The read is
+  O_NOFOLLOW|O_NONBLOCK and regular-files-only; the write is temp +
+  rename, so a FIFO or device at `server.pid` is replaced, never
+  opened. Simultaneous starts can still miss each other (advisory).
 - Chain safety: refuse a symlink at or below
   `<dataHome>/routeros-muse`, now including `.muse-config` and
   `<workspace-id>`; symlinks above it stay allowed. Fail closed:

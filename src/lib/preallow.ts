@@ -127,6 +127,9 @@ export function privateConfigRoot(dataHome?: string): string {
  * workspace gets a new home — accepted by design; seeding
  * recreates its rules. Pure.
  */
+/** Max readable-basename length in a workspace id (D45). */
+export const WORKSPACE_ID_BASE_MAX = 48;
+
 export function workspaceConfigId(workspaceRoot: string): string {
 	let canonical: string;
 	try {
@@ -134,8 +137,14 @@ export function workspaceConfigId(workspaceRoot: string): string {
 	} catch {
 		canonical = path.resolve(workspaceRoot);
 	}
+	// Bounded so <base>-<hash12> stays far below NAME_MAX (255) for
+	// any valid workspace name (round-4 review: a 243-char basename
+	// overflowed). The hash carries uniqueness; base is for humans.
 	const base =
-		path.basename(canonical).replace(/[^A-Za-z0-9._-]+/g, "-") || "ws";
+		path
+			.basename(canonical)
+			.replace(/[^A-Za-z0-9._-]+/g, "-")
+			.slice(0, WORKSPACE_ID_BASE_MAX) || "ws";
 	const hash = nodeCrypto
 		.createHash("sha256")
 		.update(canonical)
@@ -214,8 +223,7 @@ export type EnsureArgs = {
 	configHome?: string;
 	/**
 	 * The served workspace, or undefined in no-workspace mode (then
-	 * no shell rules are seeded and dead-root shell pruning still
-	 * applies).
+	 * no shell rules are seeded and any tagged shell rule is pruned).
 	 */
 	workspaceRoot?: string;
 	/**
@@ -235,6 +243,32 @@ function pidAlive(pid: number): boolean {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Read a small regular file without following a symlink and
+ * without blocking on a FIFO/device: O_NOFOLLOW | O_NONBLOCK, then
+ * fstat must say regular. Null on anything else or any error.
+ */
+function readRegularNoFollow(file: string): string | null {
+	const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = nodeFs.constants;
+	let fd: number;
+	try {
+		fd = nodeFs.openSync(file, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+	} catch {
+		return null;
+	}
+	try {
+		const st = nodeFs.fstatSync(fd);
+		if (!st.isFile() || st.size > 64) return null;
+		const buf = Buffer.alloc(st.size);
+		const n = nodeFs.readSync(fd, buf, 0, st.size, 0);
+		return buf.subarray(0, n).toString("utf8");
+	} catch {
+		return null;
+	} finally {
+		nodeFs.closeSync(fd);
 	}
 }
 
@@ -259,9 +293,9 @@ export function checkServerPid(privateHome: string): {
 	}
 	try {
 		if (!homeLinked) {
-			const st = nodeFs.lstatSync(pidFile);
-			if (!st.isSymbolicLink() && st.isFile()) {
-				const pid = Number(nodeFs.readFileSync(pidFile, "utf8").trim());
+			const text = readRegularNoFollow(pidFile);
+			if (text !== null) {
+				const pid = Number(text.trim());
 				if (
 					Number.isInteger(pid) &&
 					pid > 0 &&
@@ -289,7 +323,21 @@ export function checkServerPid(privateHome: string): {
 	if (!linked && !homeLinked) {
 		try {
 			nodeFs.mkdirSync(privateHome, { recursive: true });
-			nodeFs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o644 });
+			// Temp + rename, never an open of the existing entry: a
+			// FIFO (or any special file) at server.pid is replaced,
+			// not written into (round-4 review: writeFileSync on a
+			// FIFO blocked boot waiting for a reader).
+			const tmp = writeTempExclusive(pidFile, `${process.pid}\n`);
+			try {
+				nodeFs.renameSync(tmp, pidFile);
+			} catch (err) {
+				try {
+					nodeFs.unlinkSync(tmp);
+				} catch {
+					// Best effort.
+				}
+				throw err;
+			}
 		} catch {
 			// Warn-only state: never fail the caller.
 		}
@@ -401,15 +449,6 @@ function networkHost(entry: PolicyEntry): string | null {
 	if (!isRecord(rule)) return null;
 	if (rule["kind"] !== "network") return null;
 	return typeof rule["host"] === "string" ? (rule["host"] as string) : null;
-}
-
-/** A workspace root counts as live when it is still a directory. */
-function rootAlive(root: string): boolean {
-	try {
-		return nodeFs.statSync(root).isDirectory();
-	} catch {
-		return false;
-	}
 }
 
 /**
@@ -679,16 +718,14 @@ function rulesEqual(a: unknown[], b: unknown[]): boolean {
 /**
  * Ensure this workspace's pre-seeded rules in approval-policy.json.
  *
- * Enabled: the current root holds exactly our shell set (stale
- * entries from older seed sets are replaced, never merged), our
- * tagged shell rules for roots that no longer exist are pruned,
- * our tagged rules for other live roots are kept, every foreign
- * entry is preserved in place, and the tagged network rules hold
- * exactly this workspace's hosts (a host this workspace no longer
- * needs is pruned). Disabled: our tagged rules for this root are
- * removed, plus every tagged network rule; dead-root pruning
- * still applies. With no workspace root (no-workspace mode) no
- * shell rules are seeded.
+ * The file is this workspace's own (D45 per-workspace home), so
+ * every tagged rule in it is ours to replace. Enabled: the tagged
+ * shell rules are exactly our set for the current root (rules
+ * written under any other spelling of the root, or by older seed
+ * sets, are replaced), every foreign entry is preserved in place,
+ * and the tagged network rules hold exactly this workspace's hosts.
+ * Disabled: every tagged shell and network rule is removed. With
+ * no workspace root (no-workspace mode) no shell rules are seeded.
  *
  * No rewrite when nothing changed (order-insensitive compare
  * before writing). An unknown schema_version or unparseable file
@@ -733,11 +770,10 @@ function ensurePreallowReadsLocked(
 		seededHosts: args.enabled ? [...hosts] : [],
 		warnings: [],
 	};
-	return ensurePreallowReadsWrite(args, fs, file, desired, base);
+	return ensurePreallowReadsWrite(fs, file, desired, base);
 }
 
 function ensurePreallowReadsWrite(
-	args: EnsureArgs,
 	fs: PreallowFs | undefined,
 	file: string,
 	desired: PolicyEntry[],
@@ -799,10 +835,13 @@ function ensurePreallowReadsWrite(
 				kept.push(entry as PolicyEntry);
 				continue;
 			}
-			const root = shellRoot(entry);
-			if (root !== null) {
-				if (root === args.workspaceRoot) continue; // Replaced.
-				if (rootAlive(root)) kept.push(entry); // Else pruned.
+			if (shellRoot(entry) !== null) {
+				// Per-workspace home (D45): every tagged shell rule
+				// here belongs to this workspace, whatever spelling
+				// of its root wrote it (round-4 review: a symlinked
+				// spelling kept the real path's grants after the
+				// toggle went off). desired re-adds exactly the
+				// current root's set (empty when disabled).
 				continue;
 			}
 			const host = networkHost(entry);

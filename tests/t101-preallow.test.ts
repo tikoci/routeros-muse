@@ -300,7 +300,7 @@ describe("ensurePreallowReads", () => {
 		});
 	});
 
-	test("tagged rules for another live root survive", () => {
+	test("tagged shell rules under another root are replaced (D45: the home is this workspace's own)", () => {
 		withCfgHome((cfg) => {
 			const ws = mktmp("t101-ws-");
 			const other = mktmp("t101-ws-other-");
@@ -336,7 +336,7 @@ describe("ensurePreallowReads", () => {
 						(r["rule"] as Record<string, unknown>)["workspace_root"] ===
 							other && r["reason"] === PREALLOW_TAG,
 				),
-			).toBe(true);
+			).toBe(false);
 		});
 	});
 

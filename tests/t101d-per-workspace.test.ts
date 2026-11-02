@@ -17,6 +17,7 @@ import * as path from "node:path";
 import * as preallow from "../src/lib/preallow";
 import {
 	checkServerPid,
+	configHomeDir,
 	ensurePreallowReads,
 	ensurePrivateHome,
 	museAuthFile,
@@ -627,4 +628,141 @@ describe("schema constants", () => {
 	test("policy schema is still v2", () => {
 		expect(POLICY_SCHEMA_VERSION).toBe(2);
 	});
+});
+
+describe("round-4 review fixes", () => {
+	t101d("a FIFO at server.pid neither blocks nor is written into", () => {
+		const home = mktmp("t101d-fifo-");
+		const pidFile = path.join(home, "server.pid");
+		expect(Bun.spawnSync(["mkfifo", pidFile]).exitCode).toBe(0);
+		// Run in a child so a regression (blocking open/write) fails
+		// by timeout instead of hanging the suite.
+		const r = Bun.spawnSync(
+			[
+				process.execPath,
+				"-e",
+				`const p = require(${JSON.stringify(path.resolve("src/lib/preallow.ts"))}); console.log(JSON.stringify(p.checkServerPid(${JSON.stringify(home)})));`,
+			],
+			{ timeout: 5_000 },
+		);
+		expect(r.exitCode).toBe(0);
+		const st = nodeFs.lstatSync(pidFile);
+		expect(st.isFile()).toBe(true);
+		expect(nodeFs.readFileSync(pidFile, "utf8").trim()).toMatch(/^\d+$/);
+	});
+
+	t101d(
+		"disabling via a symlinked spelling drops grants seeded under the real path",
+		() => {
+			const real = makeWs([]);
+			const alias = path.join(mktmp("t101d-alias-"), "ws-link");
+			nodeFs.symlinkSync(real, alias);
+			const dh = mktmp("t101d-alias-dh-");
+			const priv = privateConfigHome(dh, real);
+			expect(privateConfigHome(dh, alias)).toBe(priv);
+			ensurePreallowReads({
+				configHome: priv,
+				workspaceRoot: real,
+				hosts: [],
+				enabled: true,
+			});
+			expect(
+				readPolicy(priv).rules.filter((r) => r["reason"] === PREALLOW_TAG)
+					.length,
+			).toBe(3);
+			ensurePreallowReads({
+				configHome: priv,
+				workspaceRoot: alias,
+				hosts: [],
+				enabled: false,
+			});
+			expect(
+				readPolicy(priv).rules.filter((r) => r["reason"] === PREALLOW_TAG),
+			).toEqual([]);
+		},
+	);
+
+	t101d("a 243-char workspace name still yields a creatable home", () => {
+		const parent = mktmp("t101d-long-");
+		const ws = path.join(parent, "w".repeat(243));
+		nodeFs.mkdirSync(ws);
+		const id = workspaceConfigId(ws);
+		expect(id.length).toBeLessThanOrEqual(preallow.WORKSPACE_ID_BASE_MAX + 13);
+		const dh = mktmp("t101d-long-dh-");
+		const real = mktmp("t101d-long-real-");
+		expect(() =>
+			ensurePrivateHome({
+				privateHome: privateConfigHome(dh, ws),
+				dataHome: dataHomeDir(dh),
+				realConfigHome: real,
+			}),
+		).not.toThrow();
+	});
+
+	t101d(
+		"an empty XDG_CONFIG_HOME counts as unset (the launcher's -n test)",
+		() => {
+			const saved = process.env["XDG_CONFIG_HOME"];
+			process.env["XDG_CONFIG_HOME"] = "";
+			try {
+				expect(configHomeDir()).toBe(path.join(os.homedir(), ".config"));
+				expect(museAuthFile()).toBe(
+					path.join(os.homedir(), ".config", "muse", "auth.json"),
+				);
+			} finally {
+				if (saved === undefined) delete process.env["XDG_CONFIG_HOME"];
+				else process.env["XDG_CONFIG_HOME"] = saved;
+			}
+		},
+	);
+
+	t101d(
+		"oauth-recheck never spawns a worker on an unsafe home",
+		async () => {
+			const real = mktmp("t101d-rck-real-");
+			nodeFs.mkdirSync(path.join(real, "muse"), { recursive: true });
+			nodeFs.writeFileSync(
+				path.join(real, "muse", "auth.json"),
+				'{"fake":true}\n',
+			);
+			const saved = process.env["XDG_CONFIG_HOME"];
+			process.env["XDG_CONFIG_HOME"] = real;
+			try {
+				const dh = mktmp("t101d-rck-dh-");
+				nodeFs.mkdirSync(path.join(dh, "routeros-muse"), { recursive: true });
+				const fake = mktmp("t101d-rck-fake-");
+				nodeFs.symlinkSync(
+					fake,
+					path.join(dh, "routeros-muse", ".muse-config"),
+				);
+				const ws = makeWs([]);
+				const { bin, log } = stubT50Bin();
+				await withT50Env(log, async () => {
+					const srv = await startT50Srv(bin, {
+						provider: "meta",
+						dataHome: dh,
+						workspace: ws,
+					});
+					try {
+						const r = await fetch(`${srv.url}api/auth/oauth-recheck`, {
+							method: "POST",
+						});
+						expect(r.status).toBe(200);
+						const argvLog = path.join(bin, "argv.log");
+						const argv = nodeFs.existsSync(argvLog)
+							? nodeFs.readFileSync(argvLog, "utf8")
+							: "";
+						expect(argv).not.toMatch(/^serve /m);
+						expect(nodeFs.existsSync(path.join(fake, "muse"))).toBe(false);
+					} finally {
+						await srv.stop();
+					}
+				});
+			} finally {
+				if (saved === undefined) delete process.env["XDG_CONFIG_HOME"];
+				else process.env["XDG_CONFIG_HOME"] = saved;
+			}
+		},
+		60_000,
+	);
 });
