@@ -262,6 +262,47 @@ describe("resolveUiOpen", () => {
 		});
 	});
 
+	t55("credential stores are refused (T109)", () => {
+		const ws = fixture();
+		nodeFs.writeFileSync(path.join(ws, "device.cdb"), "secret\n");
+		nodeFs.writeFileSync(path.join(ws, "other.cdb"), "secret\n");
+		nodeFs.writeFileSync(path.join(ws, "device.md"), "notes\n");
+		for (const rel of ["device.cdb", "other.cdb"]) {
+			const r = resolveUiOpen(ws, rel);
+			expect(r.ok).toBe(false);
+			if (!r.ok) expect(r.why).toMatch(/credential stores are not displayed/);
+		}
+		expect(resolveUiOpen(ws, "device.md")).toEqual({
+			ok: true,
+			kind: "doc",
+		});
+	});
+
+	t55(
+		"credential store check uses the normalized basename, case-insensitively (T109 P2b)",
+		() => {
+			const ws = fixture();
+			nodeFs.writeFileSync(path.join(ws, "device.cdb"), "secret\n");
+			nodeFs.mkdirSync(path.join(ws, "sub"));
+			nodeFs.writeFileSync(path.join(ws, "sub", "DEVICE.CDB"), "secret\n");
+			nodeFs.writeFileSync(path.join(ws, "x.cdb"), "secret\n");
+			for (const rel of ["device.cdb/.", "sub/DEVICE.CDB", "x.cdb"]) {
+				const r = resolveUiOpen(ws, rel);
+				expect(r.ok).toBe(false);
+				if (!r.ok) expect(r.why).toMatch(/credential stores are not displayed/);
+			}
+			// A directory merely named *.cdb is not a credential store file:
+			// the gate is the basename of the file itself, so a doc inside
+			// such a directory stays openable.
+			nodeFs.mkdirSync(path.join(ws, "foo.cdb"));
+			nodeFs.writeFileSync(path.join(ws, "foo.cdb", "bar.md"), "inside\n");
+			expect(resolveUiOpen(ws, "foo.cdb/bar.md")).toEqual({
+				ok: true,
+				kind: "doc",
+			});
+		},
+	);
+
 	t55("missing, directory, and empty paths are refused", () => {
 		const ws = fixture();
 		const missing = resolveUiOpen(ws, "notes/nope.md");
