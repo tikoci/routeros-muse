@@ -1064,11 +1064,11 @@ updated = "2026-11-02"
 [[task]]
 id = "T107"
 title = "Never render the [routeros-muse context] preamble in chat rows"
-status = "needed"
+status = "active"
 detail = "T49 prepends a '[routeros-muse context] target device: {...}' preamble to the turn input when target pills are attached. T49's 'never renders' check covers only the fake-backed page, whose replies don't echo input. With the echo provider, the reply quotes the input and the preamble shows in the agent bubble (T56 smoke shots 47-49). A real agent that quotes its input, or a user-message row rebuilt from session history, would leak it the same way. Decide where to strip or hide it: the user row from displayText only, and agent text left as is, or a marker the UI strips. Ground it with an echo-provider smoke check and a session-history reload."
 evidence = "T56 child report 2026-11-02; out/ui-smoke/47-t56-kept-typing.png (local)"
 blocked_by = []
-agent = ""
+agent = "muse-wonder-1.0 (orch)"
 updated = "2026-11-02"
 
 [[task]]
@@ -1084,11 +1084,11 @@ updated = "2026-11-02"
 [[task]]
 id = "T109"
 title = "Agent file links in chat must open (or not render as links)"
-status = "active"
+status = "done"
 detail = "Developer test drive 2026-11-02: an agent reply linked a workspace file as a markdown link to an absolute local path ([workspace credential store](/home/.../rm-testdrive/device.cdb)), and clicking it does nothing useful in the web UI. Decide the behavior: workspace-relative or absolute workspace paths open in a center tab through the existing viewer (same confinement as ui_open), files we never display (device.cdb, secrets) render as plain text with no link, and outside paths are never links. Ground it with a live reply and a smoke check."
-evidence = "developer test drive 2026-11-02 (rm-testdrive, add-device prompt)"
+evidence = "developer report 2026-11-02 (rm-testdrive reply linked device.cdb, click inert); merged 0fb55b3 (e888d1d + orchestrator fix rounds). Codex reviews: fix-first x3 (preflight P1, decode/nested/status 500, escaped delimiters), round 4 merge-ready 18 probes. Agent bubbles linkify in-workspace md/bare paths; click preflights POST /api/open-check (resolveUiOpen) and opens with server kind; device.cdb/*.cdb never link (both doors, normalized case-insensitive); outside/http label-only. TOCTOU preflight->fetch swap remains T98. Gate green SMOKE GREEN, 612 pass"
 blocked_by = []
-agent = "muse-wonder-1.0 (orch)"
+agent = "muse-spark-1.3 (orch muse-wonder-1.0)"
 updated = "2026-11-02"
 
 [[task]]
