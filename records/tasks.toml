@@ -975,7 +975,7 @@ updated = "2026-11-01"
 id = "T98"
 title = "File route hygiene: no symlink follow, no device.cdb, bounded reads"
 status = "needed"
-detail = "/api/file (src/lib/workspace.ts readFile path, src/serve/server.ts) serves any workspace path and follows symlinks: an internal alias -> device.cdb link returns the CDB bytes, and the tree traverses most hidden dirs. Apply the T83 artifact rule set to the editor route: lstat-walk (no symlinks inside the workspace), O_NOFOLLOW open + fstat + read-from-fd, deny device.cdb and other credential stores by name, keep the 512 KiB editor cap. Fail-first tests. T55 adds an agent-driven caller: ui_open gates the path fd-safely, but the UI then fetches doc/TOML kinds through /api/file, which resolves by pathname (a swap between gate and fetch can show an outside file; muse-wonder review 2026-11-02, CONFIRMED). Make /api/file use the T83 fd-safe walk."
+detail = "/api/file (src/lib/workspace.ts readFile path, src/serve/server.ts) serves any workspace path and follows symlinks: an internal alias -> device.cdb link returns the CDB bytes, and the tree traverses most hidden dirs. Apply the T83 artifact rule set to the editor route: lstat-walk (no symlinks inside the workspace), O_NOFOLLOW open + fstat + read-from-fd, deny device.cdb and other credential stores by name, keep the 512 KiB editor cap. Fail-first tests. T55 adds an agent-driven caller: ui_open gates the path fd-safely, but the UI then fetches doc/TOML kinds through /api/file, which resolves by pathname (a swap between gate and fetch can show an outside file; muse-wonder review 2026-11-02, CONFIRMED). Make /api/file use the T83 fd-safe walk. sol rated the ui_open doc/TOML case P1 (CONFIRMED, review of f22fa59, 2026-11-02): do the fd-safe confinement and the viewer size bound at the actual read."
 evidence = "T83 codex gpt-6.1-sol review 2026-11-01: alias.html -> device.cdb returned 200 FAKE_CDB_SECRET via /api/artifact; noted /api/file already exposes arbitrary workspace files (pre-existing, broader than T83)"
 blocked_by = ["T83"]
 agent = ""
@@ -1038,6 +1038,16 @@ status = "needed"
 detail = "T55 made config.mcpServers ours, and D44 gave sessions a private settings.json. As a result, MCP servers the owner configures in their own muse settings no longer reach routeros-muse sessions. Add the package-pinned rosetta MCP server (D26 tool bundle, stdio) next to routeros_muse in the session config. Seed tagged tool_action allow rules for its read-only tools, under the preallow toggle. Consider centrs mcp the same way. Ground each server's tool names and approval behavior from a live capture first."
 evidence = "developer question 2026-11-02; T55 merged 1e16df0 (multi-server config.mcpServers machinery); D44/D45 private settings.json carries no user mcpServers"
 blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T106"
+title = "T55 follow-ups: dedicated loopback relay listener, ui_open size bounds, no-workspace preallow visibility"
+status = "needed"
+detail = "From sol's review of T55 at f22fa59, run after T56 lands; T56 shares ui.html/server.ts. Already fixed on main in a9da975: the sessionMcp fallback and most selector escaping. Remaining: (1) The relay shares the UI listener and its URL is hard-coded 127.0.0.1, so binding to a specific address (127.0.0.2, or a LAN IP) breaks every bridge call; the a9da975 loopback check also refuses a LAN-IP peer. Serve the relay on its own 127.0.0.1 ephemeral listener and drop the route from the UI listener. (2) ui_open preflight reports 'opened' for files over the viewer limit (9 MiB doc/HTML), and TOML has no bound (over 1 MiB was parsed): enforce each viewer's limit at preflight and at read. (3) No-workspace mode seeds the three ui tool rules, yet status reports preallow:null and the Settings toggle is disabled, so they can't be seen or revoked: expose them, or don't seed them there. (4) Remaining unescaped selector interpolations in ui.html (.ctab data-pane, #wslist data-path/data-file, data-rview): a quoted path breaks ui_open's tab open while the relay reports success. Use CSS.escape or compare dataset values. (5) A spawn whose initialize fails leaves the muse child running (predates T55): kill it on failure. Also note: the bridge token is readable from /proc by an unrestricted same-user shell; sol saw the :ask-me sandbox hide the bridge pid, which matches the documented residual."
+evidence = "sol review of T55 (f22fa59) 2026-11-02, findings CONFIRMED; main a9da975 covers part"
+blocked_by = ["T56"]
 agent = ""
 updated = "2026-11-02"
 
