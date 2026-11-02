@@ -554,12 +554,12 @@ updated = "2026-11-02"
 [[task]]
 id = "T56"
 title = "Failed-send draft restore (t3code GAP1)"
-status = "needed"
+status = "active"
 detail = "Failed chat sends currently destroy the typed prompt (composer clears before ack). Restore prompt plus images plus target pills into the composer on send failure, t3code restore semantics; smoke-gated like every UI slice."
 evidence = "t3code chat review GAP1 (notes/t41-chat-inventory.md); T62 restore rules in notes/t62-resweep.md (restore-if-empty, no interrupted toast, uploads must not strand). T71 review 2026-11-01: send-failure setRunning(false) also kills an active Stopping ticker and can clear a still-live turn; scope the failure path to the failed send (part of this task's send-failure UI)."
 blocked_by = []
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 (orch claude-orch)"
+updated = "2026-11-02"
 
 [[task]]
 id = "T57"
@@ -1027,6 +1027,16 @@ title = "Hide or collapse muse's reminderChild rows in the transcript"
 status = "needed"
 detail = "Live meta sessions emit 'Reminder Child / Reminder child session' rows (kind reminderChild) that the transcript renders as ordinary cards (seen in the T55 live run). The fake MSP never emits them, so smoke never shows them. Decide: hide, or collapse into a muted line; ground the row shape from a live capture first."
 evidence = "T55 live screenshot out/t55-live/run1-final.png (local), 2026-11-02"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T105"
+title = "Ship the trilogy's MCP servers (rosetta first) in the session config"
+status = "needed"
+detail = "T55 made config.mcpServers ours, and D44 gave sessions a private settings.json. As a result, MCP servers the owner configures in their own muse settings no longer reach routeros-muse sessions. Add the package-pinned rosetta MCP server (D26 tool bundle, stdio) next to routeros_muse in the session config. Seed tagged tool_action allow rules for its read-only tools, under the preallow toggle. Consider centrs mcp the same way. Ground each server's tool names and approval behavior from a live capture first."
+evidence = "developer question 2026-11-02; T55 merged 1e16df0 (multi-server config.mcpServers machinery); D44/D45 private settings.json carries no user mcpServers"
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
