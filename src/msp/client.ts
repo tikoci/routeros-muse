@@ -57,6 +57,19 @@ export type MspSession = {
 	[k: string]: unknown;
 };
 
+/** A session's live profile state (captured wire shape). */
+export type PermissionState = {
+	profileId?: string;
+	[k: string]: unknown;
+};
+
+export type SetPermissionProfileResult = {
+	status?: string;
+	applyOutcome?: string;
+	permissionState?: PermissionState;
+	[k: string]: unknown;
+};
+
 export type ViewEvent = {
 	method: string;
 	params: Record<string, unknown>;
@@ -121,6 +134,16 @@ export type MspSpawnOpts = {
 	/** Isolate the config home too (auth.json lives there, not in museHome). */
 	museConfigHome?: string;
 	extraArgs?: string[];
+	/**
+	 * T101: opt into experimentalApi at initialize. The server
+	 * always sets this: session/start permissionProfile only
+	 * takes effect with it (without it the member is ignored —
+	 * permissionState comes back null — and
+	 * session/setPermissionProfile rejects experimentalRequired).
+	 * Verified live on echo (T101 probes): both directions work
+	 * and session/read shows the new state as durable.
+	 */
+	experimental?: boolean;
 	timeoutMs?: number;
 	/**
 	 * Base environment for the child (T51: the server passes its
@@ -186,7 +209,12 @@ export class MspClient {
 		const timeoutMs = opts?.timeoutMs ?? 30_000;
 		await client.call(
 			"initialize",
-			{ clientInfo: { name: "routeros_muse", version: "0.1" } },
+			{
+				clientInfo: { name: "routeros_muse", version: "0.1" },
+				...(opts?.experimental
+					? { capabilities: { experimentalApi: true } }
+					: {}),
+			},
 			timeoutMs,
 		);
 		client.notify("initialized", {});
@@ -204,12 +232,17 @@ export class MspClient {
 		workspaceRoot: string;
 		workspaceRoots?: string[];
 		approvalMode?: ApprovalMode;
+		/** T101/D42: explicit profile per session (stable member). */
+		permissionProfile?: string;
 	}): Promise<{ session: MspSession; viewCursor: string }> {
 		return (await this.call("session/start", {
 			commandId: uuid7(),
 			workspaceRoot: opts.workspaceRoot,
 			...(opts.workspaceRoots ? { workspaceRoots: opts.workspaceRoots } : {}),
 			...(opts.approvalMode ? { approvalMode: opts.approvalMode } : {}),
+			...(opts.permissionProfile
+				? { permissionProfile: opts.permissionProfile }
+				: {}),
 		})) as { session: MspSession; viewCursor: string };
 	}
 
@@ -364,6 +397,24 @@ export class MspClient {
 			mode,
 			sessionId,
 		});
+	}
+
+	/**
+	 * Change a live session's profile (T101/D42). Experimental:
+	 * needs the spawn-time opt-in. Select, never create — the id
+	 * must be in the host catalog or the start/call is
+	 * commandRejected. The host folds
+	 * session/permissionProfileChanged on every accepted commit.
+	 */
+	async sessionSetPermissionProfile(
+		sessionId: string,
+		profileId: string,
+	): Promise<SetPermissionProfileResult> {
+		return (await this.call("session/setPermissionProfile", {
+			commandId: uuid7(),
+			profileId,
+			sessionId,
+		})) as SetPermissionProfileResult;
 	}
 
 	/**

@@ -68,6 +68,7 @@ import {
 	type ApprovalMode,
 	MspClient,
 	MspError,
+	type PermissionState,
 	type ReasoningEffort,
 	type TurnInput,
 	type ViewEvent,
@@ -136,6 +137,13 @@ export type ServeOpts = {
 	 * spawns untrusted. No-workspace mode never passes the flag.
 	 */
 	trustWorkspace?: boolean;
+	/**
+	 * muse config-home override for approval-policy seeding
+	 * (T101): tests isolate here. Defaults to XDG_CONFIG_HOME or
+	 * ~/.config. Also forwarded to worker spawns (museConfigHome)
+	 * so the worker reads the same policy file the server seeds.
+	 */
+	configHome?: string;
 };
 
 /** Reachable LAN URLs for a port (external IPv4 only, no loopback/link-local). */
@@ -159,6 +167,19 @@ export function lanUrls(
 
 export function isLoopbackHost(host: string): boolean {
 	return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/**
+ * T101/D42: the permission profile for an access mode. Ask first
+ * (promptUnmatched) runs sandboxed under :ask-me; Allow all
+ * (allowAll, also --yolo) runs unsandboxed under :unrestricted.
+ * The legacy modes the access route still accepts (onRequest,
+ * denyUnmatched) map to the sandboxed profile: only an explicit
+ * Allow all lifts the sandbox. Never edits muse's settings.json —
+ * the profile rides the wire (session/start + setPermissionProfile).
+ */
+export function profileForAccess(mode: string): ":ask-me" | ":unrestricted" {
+	return mode === "allowAll" ? ":unrestricted" : ":ask-me";
 }
 
 /** Context percent from a usage event; null when the basis has no limit. */
@@ -617,6 +638,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		);
 	}
 	let lastAccess: string | null = defaultAccess();
+	// T101: the profile in effect (or the next session starts in).
+	// Tracks session/start + setPermissionProfile responses and the
+	// permissionProfileChanged fold — never null, like lastAccess.
+	let lastProfile: string | null = profileForAccess(defaultAccess());
+	// T101/D43: pre-seed report for /api/status. Workspace mode
+	// fills this at boot (Part B); no-workspace mode stays null.
+	const preallow: {
+		enabled: boolean;
+		commands: string[];
+		hosts: string[];
+		warnings: string[];
+	} | null = null;
+	function preallowState(): typeof preallow {
+		return preallow;
+	}
 	let sessionStartedAt: number | null = null;
 	const sse = new Set<(line: string) => void>();
 
@@ -712,7 +748,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// the next session starts in (what /api/chat/stats reports
 		// pre-session) — never null, which the UI would read as the
 		// wrong fallback. ensureMain restores the live mode after.
+		// T101: same for the profile.
 		lastAccess = defaultAccess();
+		lastProfile = profileForAccess(defaultAccess());
 		sessionStartedAt = null;
 		if (prev) {
 			try {
@@ -769,6 +807,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				const client = await MspClient.spawn({
 					provider,
 					museHome: opts.museHome,
+					museConfigHome: opts.configHome,
+					experimental: true,
 					extraArgs: mspExtraArgs,
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
 				});
@@ -811,6 +851,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// echoes every session/start + setApprovalMode).
 						const p = ev.params as Record<string, unknown>;
 						if (typeof p["mode"] === "string") lastAccess = p["mode"];
+					}
+					if (ev.method === "session/permissionProfileChanged") {
+						// T101: same fold for the profile (every
+						// accepted setPermissionProfile commit).
+						const p = ev.params as Record<string, unknown>;
+						if (typeof p["profileId"] === "string")
+							lastProfile = p["profileId"];
 					}
 					if (
 						(ev.method === "item/started" ||
@@ -875,9 +922,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				return ensureMain(key);
 			}
 			const approvalMode = defaultAccess();
+			const permissionProfile = profileForAccess(approvalMode);
 			const { session } = await client.sessionStart({
 				workspaceRoot: root,
 				approvalMode,
+				permissionProfile,
 			});
 			if (!isMine() || mainOwner !== key || mspOwner !== key) {
 				const cur = mainPromise;
@@ -891,7 +940,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			mainSession = session.sessionId;
 			// The session runs at this mode now; stopWorker cleared
 			// lastAccess on the way up, so restore the truth here.
+			// T101: the host's permissionState is the truth for the
+			// live profile; fall back to what we asked for when an
+			// older host reports none.
 			lastAccess = approvalMode;
+			const live = session["permissionState"] as PermissionState | undefined;
+			lastProfile =
+				typeof live?.profileId === "string"
+					? live.profileId
+					: permissionProfile;
 			sessionStartedAt = Date.now();
 			mainSettled = true;
 			return mainSession;
@@ -951,6 +1008,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						MspClient.spawn({
 							provider,
 							museHome: opts.museHome,
+							museConfigHome: opts.configHome,
+							experimental: true,
 							extraArgs: mspExtraArgs,
 							env: tools,
 						}),
@@ -1149,6 +1208,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						muse: museVersion,
 						msp: msp ? "connected" : mspWhy ? `unavailable: ${mspWhy}` : "lazy",
 						mainSession,
+						permissionProfile: lastProfile,
+						preallow: preallowState(),
 						tools: await toolInfo(),
 						trustWorkspace: noWs ? null : opts.trustWorkspace !== false,
 					});
@@ -1781,6 +1842,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							// access selector shows it before any turn;
 							// null without one, exactly as before.
 							access: lastAccess,
+							profile: lastProfile,
 						});
 					}
 					const key = workerKey(req);
@@ -1810,6 +1872,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								? (row["reasoningEffort"] as string)
 								: null),
 						access: lastAccess,
+						profile: lastProfile,
 					});
 				}
 				if (p === "/api/chat/models") {
@@ -1905,8 +1968,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const client = await ensureMsp(key);
 					try {
 						await client.sessionSetApprovalMode(sid, body.mode as ApprovalMode);
-						lastAccess = body.mode;
-						return json({ ok: true, mode: body.mode });
 					} catch (err) {
 						if (err instanceof MspError) {
 							return json(
@@ -1916,6 +1977,33 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						}
 						throw err;
 					}
+					lastAccess = body.mode;
+					// T101: the profile follows the mode on the live
+					// session (verified mid-session method). A profile
+					// failure after a mode change reports both
+					// honestly: the mode moved, the profile did not.
+					const want = profileForAccess(body.mode);
+					try {
+						const res = await client.sessionSetPermissionProfile(sid, want);
+						lastProfile =
+							typeof res.permissionState?.profileId === "string"
+								? res.permissionState.profileId
+								: want;
+					} catch (err) {
+						if (err instanceof MspError) {
+							return json(
+								{
+									ok: false,
+									why: `${err.kind}: ${err.message}`,
+									mode: body.mode,
+									profile: lastProfile,
+								},
+								400,
+							);
+						}
+						throw err;
+					}
+					return json({ ok: true, mode: body.mode, profile: lastProfile });
 				}
 				// T50 approval/question surface: thin relays over the MSP
 				// decide/answer/cancel/listPending commands. Choice ids
