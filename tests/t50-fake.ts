@@ -37,6 +37,7 @@ function logLine(line) {
 
 const SESSION = "t50-s1";
 let workspaceRoot = "";
+const turns = [];
 let turnN = 0;
 let apprN = 0;
 let qN = 0;
@@ -255,6 +256,8 @@ rl.on("line", (text) => {
 			.map((p) => p.text)
 			.join("\n");
 		logLine("RECV_TURN turnId=" + t);
+		logLine("TURN_TEXT " + JSON.stringify(textIn));
+		turns.push({ id: t, text: textIn });
 		send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
 		notify("turn/started", { sessionId: SESSION, turnId: t });
 		let held = false;
@@ -467,11 +470,34 @@ rl.on("line", (text) => {
 		return;
 	}
 	if (method === "view/page") {
-		send({ jsonrpc: "2.0", id: id, result: { events: [], nextCursor: null } });
+		// T49 follow-up: history carries the real sent texts (preamble
+		// included), so the server strip + chips path is exercised —
+		// an empty history made the old no-preamble assertion vacuous.
+		const events = turns.map((t) => ({
+			method: "item/completed",
+			params: {
+				sessionId: SESSION,
+				item: { kind: "userMessage", itemId: t.id + "-u", text: t.text },
+			},
+		}));
+		send({ jsonrpc: "2.0", id: id, result: { events: events, nextCursor: null } });
 		return;
 	}
 	if (method === "session/list") {
-		send({ jsonrpc: "2.0", id: id, result: { sessions: [{ sessionId: SESSION, turnCount: turnN }] } });
+		// T49 follow-up: one canned past chat whose first prompt went
+		// out targeted, so the /api/past title strip is exercised.
+		const pastPrompt =
+			"[routeros-muse context] target device: {\"id\":\"gw\",\"name\":\"gw\",\"host\":\"192.168.88.1\"}\n\nWhat did the past decide?";
+		send({
+			jsonrpc: "2.0",
+			id: id,
+			result: {
+				sessions: [
+					{ sessionId: SESSION, turnCount: turnN },
+					{ sessionId: "t50-past1", turnCount: 1, firstUserPrompt: pastPrompt },
+				],
+			},
+		});
 		return;
 	}
 	if (method === "model/list") {
@@ -497,10 +523,14 @@ export function stubT50Bin(): { bin: string; log: string } {
 	const bin = mktmp("t50-bin-");
 	const log = path.join(bin, "msp.log");
 	nodeFs.writeFileSync(path.join(bin, "fake-muse-t50.ts"), T50_FAKE_MUSE);
+	// T49: every spawn appends its argv ($*-joined) so tests can see
+	// the trust flag. One line per worker spawn.
+	const argvLog = path.join(bin, "argv.log");
 	writeShim(
 		bin,
 		"muse",
-		`exec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(bin, "fake-muse-t50.ts"))} "$@"`,
+		`printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}\n` +
+			`exec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(bin, "fake-muse-t50.ts"))} "$@"`,
 	);
 	// Trilogy shadows (same shape as tests/t71-fake.ts): the server
 	// detects the CDB mode through `centrs devices list` at boot, so

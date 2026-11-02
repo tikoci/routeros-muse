@@ -9,7 +9,9 @@
 // set-credentials modal (affordance, context, save, refresh), the
 // T71 stop lifecycle (Stopping ticker, Force stop, SIGTERM note), and
 // the T50 approval/question surface (cards, waiting strip, selector,
-// settings default, late join — all on the scriptable T50 fake).
+// settings default, late join — all on the scriptable T50 fake),
+// and the T49 trust row (on/off/no-workspace) plus device targeting
+// (pill targets become chips; the preamble lands in the turn input).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -210,6 +212,26 @@ try {
 		await page.evaluate(() => typeof window.__smoke?.renderRow === "function"),
 	);
 	await page.screenshot({ path: path.join(OUT, "1-load.png") });
+
+	// T49/D39: workspace mode trusts by default — the Settings row
+	// says on. The panel collapses after so later shots keep their
+	// framing.
+	await page.click('#crail button[data-crview="rview-settings"]');
+	await page.waitForFunction(
+		() => (document.getElementById("set-trust")?.textContent ?? "") !== "…",
+		undefined,
+		{ timeout: 10_000 },
+	);
+	check(
+		"t49 trust row shows on (workspace default)",
+		((await page.locator("#set-trust").textContent()) ?? "").trim() === "on",
+	);
+	check(
+		"t49 unloaded note hides when trusted",
+		(await page.locator("#set-trust-note:visible").count()) === 0,
+	);
+	await page.screenshot({ path: path.join(OUT, "38-t49-trust-on.png") });
+	await page.click("#collapsebtn");
 
 	// Real chat roundtrip through the actual composer.
 	await page.fill("#chatinput", "SMOKE-PROBE-UI");
@@ -764,6 +786,12 @@ try {
 			nwsPlaceholder === "Ask about your devices (no workspace attached)…",
 			nwsPlaceholder ?? "missing",
 		);
+		// T49/D39: no workspace, nothing to trust — the row says so.
+		check(
+			"t49 trust row shows no workspace (no-ws mode)",
+			((await page.locator("#set-trust").textContent()) ?? "").trim() ===
+				"no workspace",
+		);
 		// A full echo turn must restore the no-workspace copy, not the
 		// workspace one (setRunning placeholder reset is mode-aware).
 		await page.fill("#chatinput", "SMOKE-PROBE-NOWS");
@@ -794,6 +822,49 @@ try {
 		await page.screenshot({ path: path.join(OUT, "7-no-workspace.png") });
 	} finally {
 		await nws.stop();
+	}
+
+	// T49/D39: --no-trust-workspace spawns untrusted — the row says
+	// off and the one-line note names what does not load.
+	const untrustedSrv = await startServer({
+		dataHome: SMOKE_DATA_HOME,
+		allowOpenCdb: true,
+		workspace: makeWorkspace(),
+		provider: "echo",
+		museHome: makeHome(),
+		trustWorkspace: false,
+	});
+	try {
+		await page.goto(untrustedSrv.url, { waitUntil: "load" });
+		const untrustedBatch = watchAppBatch(page);
+		await page.waitForFunction(
+			() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+			undefined,
+			{ timeout: 15_000 },
+		);
+		await page.click('#crail button[data-crview="rview-settings"]');
+		await page.waitForFunction(
+			() => (document.getElementById("set-trust")?.textContent ?? "") !== "…",
+			undefined,
+			{ timeout: 10_000 },
+		);
+		check(
+			"t49 trust row shows off when untrusted",
+			((await page.locator("#set-trust").textContent()) ?? "").trim() === "off",
+		);
+		const trustNote =
+			(await page.locator("#set-trust-note").textContent()) ?? "";
+		check(
+			"t49 unloaded note names AGENTS.md and skills",
+			(await page.locator("#set-trust-note:visible").count()) === 1 &&
+				trustNote.includes("AGENTS.md") &&
+				trustNote.includes("skills"),
+			trustNote,
+		);
+		await page.screenshot({ path: path.join(OUT, "39-t49-trust-off.png") });
+		await untrustedBatch;
+	} finally {
+		await untrustedSrv.stop();
 	}
 
 	// T40: the no-workspace picker lists registry entries (live + dead),
@@ -2464,7 +2535,90 @@ try {
 				{ timeout: 15_000 },
 			);
 			check("t50 Reject after reload resolves as abort", true);
-			// The two reloads above fired fresh app batches after
+			// T49 targeting: the smoke-gw card targets into a pill,
+			// the pill travels with the send, the sent bubble shows
+			// a chip (never the raw preamble), and the fake's turn
+			// input carries the validated context line.
+			await page.locator('.dev[data-key="dev-smoke-gw"]').click();
+			await page.waitForSelector("#pdev-add:visible", { timeout: 10_000 });
+			await page.click("#pdev-add");
+			await page.waitForSelector('.tpill[data-dev="smoke-gw"]', {
+				timeout: 5_000,
+			});
+			await page.fill("#chatinput", "T49-TARGET-PROBE");
+			await page.click("#sendbtn");
+			await page.waitForFunction(
+				() =>
+					[...document.querySelectorAll("#pane-chat .msg.agent .body p")].some(
+						(p) => (p.textContent ?? "").includes("t50 done"),
+					),
+				undefined,
+				{ timeout: 30_000 },
+			);
+			const chipTexts = await page
+				.locator("#pane-chat .msg.user .tchip")
+				.allTextContents();
+			check(
+				"t49 sent bubble shows the target chip",
+				chipTexts.some((t) => t.includes("smoke-gw")),
+				chipTexts.join(" | ") || "(no chips)",
+			);
+			const domLeak = await page.evaluate(() =>
+				(document.body.textContent ?? "").includes("[routeros-muse context]"),
+			);
+			check("t49 raw preamble never renders in the DOM", domLeak === false);
+			const t49Turns = nodeFs
+				.readFileSync(t50.log, "utf8")
+				.split("\n")
+				.filter((l) => l.startsWith("TURN_TEXT "))
+				.map((l) => JSON.parse(l.slice("TURN_TEXT ".length)) as string);
+			const t49Turn =
+				t49Turns.find((t) => t.includes("T49-TARGET-PROBE")) ?? "";
+			check(
+				"t49 fake turn input carries the validated preamble",
+				t49Turn.startsWith(
+					`[routeros-muse context] target device: ${JSON.stringify({ id: "smoke-gw", name: "smoke-gw" })}\n\nT49-TARGET-PROBE`,
+				),
+				t49Turn.slice(0, 200),
+			);
+			await page.screenshot({ path: path.join(OUT, "40-t49-target.png") });
+			// T49 follow-up: chips survive reload. History re-renders
+			// the probe bubble from the fake's stored turn text (raw
+			// preamble included), so the server strip + chips path —
+			// not the optimistic send path — is what puts the chip
+			// back. The bubble shows the prose, never the preamble.
+			const t49Reload = watchAppBatch(page);
+			await page.reload({ waitUntil: "load" });
+			await t49Reload;
+			await page.waitForFunction(
+				() =>
+					[...document.querySelectorAll("#pane-chat .msg.user .bubble")].some(
+						(p) => (p.textContent ?? "").includes("T49-TARGET-PROBE"),
+					),
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const reloadedChips = await page
+				.locator(
+					'#pane-chat .msg.user:has(.bubble:text("T49-TARGET-PROBE")) .tchip',
+				)
+				.allTextContents();
+			check(
+				"t49 chip survives reload",
+				reloadedChips.some((t) => t.includes("smoke-gw")),
+				reloadedChips.join(" | ") || "(no chips)",
+			);
+			const reloadedLeak = await page.evaluate(() =>
+				(document.body.textContent ?? "").includes("[routeros-muse context]"),
+			);
+			check(
+				"t49 raw preamble never renders after reload",
+				reloadedLeak === false,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "41-t49-target-reload.png"),
+			});
+			// The reloads above fired fresh app batches after
 			// batchT resolved: prove quiescence before the stop.
 			await page.evaluate(async () => {
 				await Promise.all(

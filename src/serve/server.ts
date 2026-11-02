@@ -9,10 +9,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	type CdbCredentialDetails,
+	type Device,
 	deviceStats,
 	doctorTwins,
+	listCdbDevices,
 	listDevices,
 	listTwins,
+	readDevices,
 	setCdbCredentials,
 	showCdbDevice,
 } from "../lib/fleet";
@@ -127,6 +130,12 @@ export type ServeOpts = {
 	 * or settings.toml [agent] default_access when stored.
 	 */
 	defaultApprovalMode?: ApprovalMode;
+	/**
+	 * D39: spawn the worker with --trust-workspace (default true),
+	 * so the workspace AGENTS.md and .agents/skills load. False
+	 * spawns untrusted. No-workspace mode never passes the flag.
+	 */
+	trustWorkspace?: boolean;
 };
 
 /** Reachable LAN URLs for a port (external IPv4 only, no loopback/link-local). */
@@ -178,6 +187,8 @@ export type TranscriptItem = {
 	kind: string;
 	role?: "user" | "agent";
 	text?: string;
+	/** T49: device chips parsed from the user row's preamble block. */
+	targets?: TargetChip[];
 	tool?: string;
 	status?: string;
 	hint?: string;
@@ -248,7 +259,24 @@ export function transcriptItems(events: ViewEvent[]): TranscriptItem[] {
 		if (kind === "userMessage" || kind === "agentMessage") {
 			const text = str(item["text"]);
 			if (!text) continue;
-			out.push({ kind, role: kind === "userMessage" ? "user" : "agent", text });
+			if (kind === "agentMessage") {
+				// An agent quoting the tag is its own voice and
+				// stays verbatim — the preamble strip is user-only.
+				out.push({ kind, role: "agent", text });
+				continue;
+			}
+			// T49: the send route prepends target context to the stored
+			// user text; rows show the prose plus chips, never the raw
+			// preamble. History and live SSE share this mapper, so one
+			// strip point covers both — and chips survive reload.
+			const parsed = parseTargetPreamble(text);
+			const row: TranscriptItem = {
+				kind,
+				role: "user",
+				text: parsed.text,
+			};
+			if (parsed.targets.length > 0) row.targets = parsed.targets;
+			out.push(row);
 			continue;
 		}
 		if (kind === "toolCall") {
@@ -357,6 +385,100 @@ function json(data: unknown, status = 200): Response {
 	return Response.json(data, { status });
 }
 
+/**
+ * T49 target preamble: exactly one line per device, data-quoted —
+ * the payload is JSON built ONLY from validated inventory fields
+ * (id/label/host/model), never user, cdb, or anything
+ * credential-shaped. JSON quoting neutralizes brackets, parens,
+ * quotes, and newlines, so hostile fields round-trip exactly.
+ */
+const TARGET_CONTEXT_PREFIX = "[routeros-muse context] target device: ";
+
+export function targetPreambleLines(devices: Device[]): string[] {
+	return devices.map((d) => {
+		const name = typeof d.label === "string" && d.label ? d.label : d.id;
+		const payload: Record<string, string> = { id: d.id, name };
+		if (typeof d.host === "string" && d.host) payload["host"] = d.host;
+		if (typeof d.model === "string" && d.model) payload["model"] = d.model;
+		return `${TARGET_CONTEXT_PREFIX}${JSON.stringify(payload)}`;
+	});
+}
+
+/**
+ * Send-time forgery neutralizer: any user line starting with the
+ * context tag (after optional whitespace) gets a backslash before
+ * the bracket, so the agent sees escaped user text — never server
+ * context. The display never un-escapes; the backslash stays visible.
+ */
+const FORGED_CONTEXT_LINE = /^(\s*)\[routeros-muse context\]/;
+
+export function escapeForgedContextLines(text: string): string {
+	return text
+		.split("\n")
+		.map((line) =>
+			FORGED_CONTEXT_LINE.test(line)
+				? line.replace(FORGED_CONTEXT_LINE, "$1\\[routeros-muse context]")
+				: line,
+		)
+		.join("\n");
+}
+
+export type TargetChip = { id: string; name: string; host?: string };
+
+function parseContextLine(line: string): TargetChip | null {
+	if (!line.startsWith(TARGET_CONTEXT_PREFIX)) return null;
+	let obj: unknown;
+	try {
+		obj = JSON.parse(line.slice(TARGET_CONTEXT_PREFIX.length));
+	} catch {
+		return null;
+	}
+	if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+	const rec = obj as Record<string, unknown>;
+	if (typeof rec["id"] !== "string") return null;
+	const chip: TargetChip = {
+		id: rec["id"],
+		name:
+			typeof rec["name"] === "string" && rec["name"] ? rec["name"] : rec["id"],
+	};
+	if (typeof rec["host"] === "string" && rec["host"]) chip.host = rec["host"];
+	return chip;
+}
+
+/**
+ * Split a leading generated preamble block (grammar lines + one
+ * blank separator) from the user prose. Anything else — escaped
+ * forgeries, mid-text quotes, a block without its blank line —
+ * stays verbatim with zero targets.
+ */
+export function parseTargetPreamble(text: string): {
+	targets: TargetChip[];
+	text: string;
+} {
+	const lines = text.split("\n");
+	const targets: TargetChip[] = [];
+	let i = 0;
+	for (; i < lines.length; i++) {
+		const chip = parseContextLine(lines[i] ?? "");
+		if (!chip) break;
+		targets.push(chip);
+	}
+	if (targets.length === 0) return { targets, text };
+	if (i >= lines.length || lines[i] !== "") return { targets: [], text };
+	return { targets, text: lines.slice(i + 1).join("\n") };
+}
+
+/**
+ * Strip a leading generated preamble block (plus its blank
+ * separator) so history never shows the raw context the send route
+ * prepended. Grammar-exact: only tag + valid JSON object with a
+ * string id counts — ordinary prose starting with the tag was
+ * escaped at send and can no longer match.
+ */
+export function stripTargetPreamble(text: string): string {
+	return parseTargetPreamble(text).text;
+}
+
 export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const noWs = opts.noWorkspace === true;
 	if (noWs && opts.workspace !== undefined) {
@@ -448,6 +570,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const uiHtml = await Bun.file(UI_PATH).text();
 	const provider =
 		opts.provider ?? process.env["ROUTEROS_MUSE_PROVIDER"] ?? "meta";
+	// D39: the worker loads the workspace AGENTS.md + .agents/skills
+	// only under --trust-workspace. Default on; the start flag opts
+	// out; no-workspace mode has no workspace to trust. Every
+	// `muse serve` spawn (worker + auth probes) carries the same args.
+	const trustWorkspace = !noWs && opts.trustWorkspace !== false;
+	const mspExtraArgs = trustWorkspace ? ["--trust-workspace"] : [];
 
 	// MSP host: one client, one main session, lazy-started. Both inits
 	// are promise-gated (single-flight): page load fires history + past
@@ -641,6 +769,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				const client = await MspClient.spawn({
 					provider,
 					museHome: opts.museHome,
+					extraArgs: mspExtraArgs,
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
 				});
 				client.onNotification((ev) => {
@@ -814,7 +943,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	);
 	if (provider === "echo") {
 		metaAuth = "authed";
-	} else if (have("muse")) {
+	} else if (have("muse", tools)) {
 		void (async () => {
 			try {
 				const m = await probeMetaAuth(
@@ -822,6 +951,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						MspClient.spawn({
 							provider,
 							museHome: opts.museHome,
+							extraArgs: mspExtraArgs,
 							env: tools,
 						}),
 					root,
@@ -993,6 +1123,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							MspClient.spawn({
 								provider,
 								museHome: opts.museHome,
+								extraArgs: mspExtraArgs,
 								env: tools,
 							}),
 						root,
@@ -1002,8 +1133,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				if (p === "/api/status") {
 					let museVersion: string | null = null;
-					if (have("muse")) {
-						const r = await run(["muse", "--version"], { timeoutMs: 10_000 });
+					// The probe resolves under the server's fronted
+					// tools env (T50 spawn gate), never ambient PATH.
+					if (have("muse", tools)) {
+						const r = await run(["muse", "--version"], {
+							timeoutMs: 10_000,
+							env: tools,
+						});
 						museVersion = r.stdout.trim().split("\n")[0] || null;
 					}
 					return json({
@@ -1014,6 +1150,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						msp: msp ? "connected" : mspWhy ? `unavailable: ${mspWhy}` : "lazy",
 						mainSession,
 						tools: await toolInfo(),
+						trustWorkspace: noWs ? null : opts.trustWorkspace !== false,
 					});
 				}
 				if (p === "/api/workspaces" && req.method === "GET") {
@@ -1296,6 +1433,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const body = (await req.json()) as {
 						text?: string;
 						images?: { base64Data: string; mediaType: string }[];
+						targets?: unknown;
 					};
 					if (typeof body.text !== "string" || !body.text.trim()) {
 						return json({ ok: false, why: "need {text}" }, 400);
@@ -1313,7 +1451,53 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const key = workerKey(req);
 					const sid = await ensureMain(key);
 					const client = await ensureMsp(key);
-					const input: TurnInput[] = [{ type: "text", text: body.text }];
+					// T49: validate pill targets against the same
+					// inventory the device list shows (router.toml in
+					// workspace mode, the CDB without one) and prepend
+					// one context line per known id. Unknown ids drop
+					// silently — a stale pill must never steer — and
+					// the client-sent name/host are ignored: the line
+					// is rebuilt from the inventory, never trusted.
+					const seen = new Set<string>();
+					const valid: Device[] = [];
+					if (Array.isArray(body.targets)) {
+						let inventory: Device[];
+						if (noWs) {
+							const listed = await listCdbDevices(
+								cdbFile ?? undefined,
+								envFor(req),
+							);
+							inventory = listed.ok ? listed.devices : [];
+						} else {
+							inventory = readDevices(root);
+						}
+						const byId = new Map(inventory.map((d) => [d.id, d]));
+						for (const t of body.targets) {
+							const id = (t as Record<string, unknown> | null)?.["id"];
+							if (typeof id !== "string" || seen.has(id)) continue;
+							seen.add(id);
+							const dev = byId.get(id);
+							if (dev) valid.push(dev);
+						}
+					}
+					const preamble = targetPreambleLines(valid);
+					// muse clips user text near 64 KiB; an oversized
+					// block would arrive as broken JSON and break
+					// history, so refuse it outright.
+					if (preamble.join("\n").length > 8_192) {
+						return json(
+							{ ok: false, why: "target context exceeds 8192 characters" },
+							400,
+						);
+					}
+					// Forged context lines in the user text are
+					// escaped before the real block is prepended,
+					// so the agent can tell server context from
+					// user prose that merely quotes the tag.
+					const safe = escapeForgedContextLines(body.text);
+					const text =
+						preamble.length > 0 ? `${preamble.join("\n")}\n\n${safe}` : safe;
+					const input: TurnInput[] = [{ type: "text", text }];
 					for (const img of body.images ?? []) {
 						input.push({
 							type: "image",
@@ -1973,7 +2157,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								typeof s.name === "string" && s.name
 									? s.name
 									: typeof s["firstUserPrompt"] === "string"
-										? (s["firstUserPrompt"] as string).slice(0, 60)
+										? stripTargetPreamble(s["firstUserPrompt"] as string).slice(
+												0,
+												60,
+											)
 										: "untitled session",
 							age:
 								typeof s["updatedAt"] === "string"

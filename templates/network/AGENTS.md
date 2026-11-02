@@ -31,7 +31,7 @@ owner docs, it does not replace them.
 - Work: `operations/` (proposals with owner + definition of done).
 - Generated code/projects: `work/` (see `work/README.md`).
 - Proof: `checks/`, `reports/`, `decisions.md`.
-- Guides: `skills/` — load on demand, never all at once. Start with
+- Guides: `.agents/skills/` — load on demand, never all at once. Start with
   the skill matching the `workspace.toml` home type, plus
   `network-workspace-bootstrap` for layout/handoff questions.
 - Unshaped thought: `inbox/` or `whiteboard/` — no form, no tax.

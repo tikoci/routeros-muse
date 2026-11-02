@@ -9,7 +9,7 @@ options for when circumstances require them, never prerequisites.
 ## Instantiate (N=1 start)
 
 1. Copy this tree to the new home (private git repo, local dir, or
-   router disk — see `skills/` for the home guides).
+   router disk — see `.agents/skills/` for the home guides).
 2. Edit `workspace.toml`: home type, repo URL, tool pins, backup record.
 3. Edit `router.toml`: your one box (site-location-role id, label on
    the unit; serial binds at unbox, never before).
@@ -34,7 +34,7 @@ only when a second box or a second human appears.
 - `checks/` — how to run the checker; verdict log.
 - `reports/` — views that cite data + time.
 - `decisions.md` — the decision log (id/date/title/decision/why).
-- `skills/` — home guides + lifecycle workflow (load on demand).
+- `.agents/skills/` — home guides + lifecycle workflow (load on demand).
 - `inbox/` + `whiteboard/` — unshaped work, no formality tax.
 
 ## Rules that hold everywhere

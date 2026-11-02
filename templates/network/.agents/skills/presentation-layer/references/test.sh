@@ -46,7 +46,9 @@ print("ok svg: parses as XML")
 EOF
 [ $? -ne 0 ] && fail=1
 
-"$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+# Chromium litters $TMPDIR (url_fetcher dirs); point it at the
+# trap-cleaned work dir so the gate tmpdir stays clean.
+TMPDIR="$work" "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
   --virtual-time-budget=3000 --screenshot="$work/out/views-board.png" \
   --window-size=1080,1350 "file://$work/out/shot.html" >/dev/null 2>&1
 if [ -f "$work/out/views-board.png" ]; then echo "ok png: rendered";

@@ -1,4 +1,4 @@
-# skills/ — load on demand
+# .agents/skills/ — load on demand
 
 Guides for the agent, loaded when their trigger fires — never all at
 once. Your `workspace.toml` home type names exactly one home skill;

@@ -46,7 +46,9 @@ if python3 "$refs/render-sheet.py" --spec "$refs/fixtures/bad-sheets.json" \
   echo "ok schema: stop-less step rejected"
 else echo "FAIL schema: broken spec accepted"; fail=1; fi
 
-"$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+# Chromium litters $TMPDIR (url_fetcher dirs); point it at the
+# trap-cleaned work dir so the gate tmpdir stays clean.
+TMPDIR="$work" "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
   --virtual-time-budget=3000 --screenshot="$work/out/sheet.png" \
   --window-size=1080,1350 "file://$page" >/dev/null 2>&1
 if [ -f "$work/out/sheet.png" ]; then echo "ok png: rendered";

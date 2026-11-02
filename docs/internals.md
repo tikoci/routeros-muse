@@ -83,9 +83,18 @@ source, dir, and detected versions.
 `serve` starts a Bun server over the workspace, bound to 127.0.0.1 by default; `--host` overrides the bind address (no other network restriction exists).
 `src/msp/client.ts` drives `muse serve` over stdio JSONL
 (single-flight host init — page load races once split the drive
-grant); `src/serve/server.ts` bridges chat (send/history/SSE stream),
+grant); the server spawns it with `--trust-workspace` by default
+(D39; `start --no-trust-workspace` opts out, no-workspace mode never
+passes it — no workspace to trust), `/api/status` reports
+`trustWorkspace` (true/false/null), and the Settings pane shows it.
+`src/serve/server.ts` bridges chat (send/history/SSE stream;
 tree, recents, files (TOML validate-before-save), devices (router.toml
 devices; live stats need a bound host), twins, alerts, and past chats;
+chat send carries the composer's device pills as validated targets
+(ids checked against router.toml — the CDB in no-workspace mode —
+with one `[routeros-muse context]` line per known device prepended
+to the turn text, stripped back out of history; the UI shows chips
+on the sent bubble, never the raw preamble);
 history carries structured transcript rows (toolCall/subagent cards
 with raw-text fallback) and live SSE rows ride the same mapper, with
 tool output/diff bodies openable in middle tabs via item/readOutput
@@ -143,7 +152,11 @@ The scaffold copies recursively, substitutes `{{name}}` in
 devices init`. `minimal` is the runnable minimum the UI populates
 from; `network` is the full starter. Both scaffold and pass
 workspace validation; templates resolve via the package root so
-bunx/npm installs find them. The picker create flow and `init`
+bunx/npm installs find them. The network template's 55 skills live
+at `.agents/skills/<name>/SKILL.md` (D40) — the path muse loads
+project skills from under trust — and the scaffold copies
+dot-directories, so init lands them there; `bun
+tools/check-skills.ts` gates their shape against that root. The picker create flow and `init`
 share this path (`scaffoldWorkspace` for create-at-default,
 `scaffoldIntoDir` for init-in-place with its never-overwrite
 conflict list). Init assumes no concurrent adversary in the

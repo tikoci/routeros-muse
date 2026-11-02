@@ -8,13 +8,19 @@ fails=0
 pass() { echo "ok: $1"; }
 fail() { echo "FAIL: $1"; fails=$((fails + 1)); }
 
-# 1. planner exits 0 on the fixture
-if OUT=$(python3 "$HERE/plan-from-capture.py" "$FIX" 2>"$HERE/.stderr"); then
+# 1. planner exits 0 on the fixture. The planner's stderr goes to a
+# TMPDIR scratch file (trap-cleaned), never beside the source: a kill
+# between redirect and cleanup must not litter the skill tree.
+STDERR=$(mktemp "${TMPDIR:-/tmp}/vendor-conversion-stderr-XXXXXX")
+cleanup() { rm -f "$STDERR"; [ -n "${TMPD:-}" ] && rm -rf "$TMPD"; }
+trap cleanup EXIT
+trap 'cleanup; exit 143' INT TERM
+if OUT=$(python3 "$HERE/plan-from-capture.py" "$FIX" 2>"$STDERR"); then
   pass "planner exit 0 on fixture"
 else
-  fail "planner exit non-zero on fixture"; cat "$HERE/.stderr"
+  fail "planner exit non-zero on fixture"; cat "$STDERR"
 fi
-rm -f "$HERE/.stderr"
+rm -f "$STDERR"
 
 # 2. every STEP line carries exactly one provenance marker
 TOTAL=$(printf '%s\n' "$OUT" | grep -c '^- STEP ' || true)

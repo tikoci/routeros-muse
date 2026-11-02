@@ -7,7 +7,7 @@ by every session before anything else.
 ## [home]
 
 - `type`: one of `private-git`, `router-container`, `router-disk`,
-  `single-copy`. Matches exactly one skill under `skills/`.
+  `single-copy`. Matches exactly one skill under `.agents/skills/`.
 - `repo`: clone URL of the canonical repo (git homes) or `local`
   with a path note (non-git homes).
 - `canonical`: `true` on exactly one copy. Every other copy sets

@@ -208,6 +208,9 @@
   .tpill button:hover { color: var(--text); }
   .tadd { background: none; border: 1px dashed var(--border); border-radius: 16px; color: var(--muted); font: 600 11.5px var(--sans); padding: 2px 10px; cursor: pointer; }
   .tadd:hover { color: var(--text); border-color: var(--accent); }
+  .tchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; justify-content: flex-end; }
+  .tchip { display: inline-flex; align-items: center; gap: 5px; background: var(--green-dim); border: 1px solid rgba(63,185,80,.4); color: var(--text); border-radius: 12px; padding: 1px 9px; font: 600 11px var(--sans); }
+  .tchip .cdot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
 
   .statusbar { display: flex; align-items: center; gap: 6px; padding: 7px 20px 9px; background: var(--panel-2); border-top: 1px solid var(--border-soft); position: relative; }
   .statpop { display: none; position: absolute; right: 12px; bottom: calc(100% + 8px); width: 264px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; z-index: 40; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
@@ -669,6 +672,8 @@
           <div class="setrow"><span>Workspace</span><code id="set-ws">…</code></div>
           <div class="setrow"><span>Provider</span><code id="set-prov">…</code></div>
           <div class="setrow"><span>Auth</span><code id="set-auth">…</code></div>
+          <div class="setrow"><span>Workspace trust</span><code id="set-trust">…</code></div>
+          <div class="setnote" id="set-trust-note" style="display:none">The workspace's AGENTS.md and skills are not loaded.</div>
           <div class="setrow"><span>Device registry</span><code>winbox.cdb</code></div>
           <div class="setrow"><label><input type="checkbox" checked> Ask before write-shaped runs</label></div>
           <div class="setrow"><label><input type="checkbox" checked> Compact the main chat automatically</label></div>
@@ -1293,8 +1298,10 @@
       closePicker();
     }
   });
-  // right subviews
-  document.querySelectorAll(".rbar button").forEach((b) =>
+  // right subviews (T49: the fold button shares the bar but is not
+  // a tab — wiring it here threw on its missing data-rview and
+  // stripped the active view; it keeps its own handler below).
+  document.querySelectorAll(".rbar button:not(.collapse)").forEach((b) =>
     b.addEventListener("click", () => {
       document.querySelectorAll(".rbar button").forEach((x) => x.classList.remove("active"));
       document.querySelectorAll(".rview").forEach((x) => x.classList.remove("active"));
@@ -1805,7 +1812,7 @@
 
   function renderRow(row) {
     if (!row || typeof row !== "object") return null;
-    if (row.kind === "userMessage") return bubble("user", row.text || "");
+    if (row.kind === "userMessage") return bubble("user", row.text || "", row.targets);
     if (row.kind === "agentMessage") return bubble("agent", row.text || "");
     if (row.kind === "toolCall") return toolCard(row);
     if (row.kind === "subagent") return subagentCard(row);
@@ -1904,7 +1911,23 @@
     bootAfterAuth().finally(() => { RELOCKING = false; });
   }
 
-  function bubble(role, text) {
+  // T49: the pills above the composer, resolved against the device
+  // list the pills were built from (ids match data-dev). The server
+  // re-validates against its inventory and drops unknown ids.
+  function pillTargets() {
+    const devs = window.__devices || [];
+    const out = [];
+    for (const p of document.querySelectorAll(".tpill")) {
+      const id = p.dataset.dev;
+      const d = devs.find((x) => x.id === id) || {};
+      const t = { id, name: d.label || d.id || id };
+      if (d.host) t.host = d.host;
+      out.push(t);
+    }
+    return out;
+  }
+
+  function bubble(role, text, targets) {
     const wrap = document.createElement("div");
     wrap.className = "msg " + role;
     if (role === "user") {
@@ -1912,6 +1935,23 @@
       b.className = "bubble";
       b.textContent = text;
       wrap.appendChild(b);
+      // T49: the sent targets ride as chips under the bubble. The raw
+      // preamble the server prepends is never rendered.
+      if (targets && targets.length) {
+        const chips = document.createElement("div");
+        chips.className = "tchips";
+        for (const t of targets) {
+          const c = document.createElement("span");
+          c.className = "tchip";
+          c.title = t.host ? t.id + " · " + t.host : t.id;
+          const dot = document.createElement("span");
+          dot.className = "cdot";
+          c.appendChild(dot);
+          c.appendChild(document.createTextNode(t.name || t.id));
+          chips.appendChild(c);
+        }
+        wrap.appendChild(chips);
+      }
     } else {
       const who = document.createElement("div");
       who.className = "who";
@@ -1932,9 +1972,9 @@
     m.scrollTop = m.scrollHeight;
   }
 
-  function appendMsg(role, text) {
+  function appendMsg(role, text, targets) {
     const wasBottom = atBottom(msgsEl());
-    msgsEl().appendChild(bubble(role, text));
+    msgsEl().appendChild(bubble(role, text, targets));
     if (wasBottom || role === "user") tail();
     else markUnread(true);
   }
@@ -1950,9 +1990,12 @@
     // programmatic resume.
     const images = pendingImages;
     pendingImages = [];
+    // T49: capture the pill targets in the same atomic prefix as the
+    // images (T69): they travel with this send, and only this send.
+    const targets = pillTargets();
     STOP_EPOCH++;
     stopNote(null);
-    appendMsg("user", text);
+    appendMsg("user", text, targets);
     $("chatinput").value = "";
     fitInput();
     setRunning(true);
@@ -1960,7 +2003,7 @@
       const r = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, images }),
+        body: JSON.stringify({ text, images, targets }),
       });
       const j = await r.json();
       if (!j.ok) {
@@ -2885,6 +2928,10 @@
       NO_WS = j.workspace == null || j.mode === "no-workspace";
       if (!AGENT_RUNNING) $("chatinput").placeholder = composerIdlePlaceholder();
       $("set-prov").textContent = j.provider;
+      // D39: live trust row. Null means no workspace to trust.
+      const tw = j.trustWorkspace;
+      $("set-trust").textContent = tw == null ? "no workspace" : (tw ? "on" : "off");
+      $("set-trust-note").style.display = tw === false ? "" : "none";
       if (NO_WS) {
         // No-workspace mode is picker-first: reveal the Workspaces tab
         // and land on it (workspace mode keeps it hidden).

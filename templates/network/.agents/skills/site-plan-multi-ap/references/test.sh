@@ -43,7 +43,9 @@ if [ "$WARNLINES" = "1" ] && [ "$WARNCOUNT" = "1" ]; then
 else echo "FAIL md: warnings lines=$WARNLINES count=$WARNCOUNT"; fail=1; fi
 
 # window height must cover the stacked panels: 150 + 2 floors*(420+40) = 1070
-"$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+# Chromium litters $TMPDIR (url_fetcher dirs); point it at the
+# trap-cleaned work dir so the gate tmpdir stays clean.
+TMPDIR="$work" "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
   --virtual-time-budget=3000 --screenshot="$work/out/site-plan.png" \
   --window-size=1080,1350 "file://$work/out/shot.html" >/dev/null 2>&1
 if [ -f "$work/out/site-plan.png" ]; then echo "ok png: rendered";

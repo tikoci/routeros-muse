@@ -3,7 +3,7 @@
 ## Ownership (per directory, never two-way)
 
 - Agent-owned (`router.toml`, `inventory/`, `operations/`, `work/`,
-  `skills/`, `reports/`, `decisions.md`, docs): canonical HERE. Edit freely.
+  `.agents/skills/`, `reports/`, `decisions.md`, docs): canonical HERE. Edit freely.
 - Router-owned (pulls under `observations/`): read-only evidence.
   Never edit a pull — re-pull, or fix the router.
 - One home is canonical (`workspace.toml`). Second copies carry age

@@ -40,7 +40,7 @@ From the template README (layout rules):
   not progress (home-single-copy §1).
 - Git homes lay the fuller skeleton (home-private-git §1):
   `START-HERE`, `AGENTS.md`, `workspace.toml`, `inventory/
-  observations/ operations/ work/ checks/ skills/ reports/
+  observations/ operations/ work/ checks/ .agents/skills/ reports/
   inbox/` plus `whiteboard/`.
   Single-copy starts smaller (START-HERE + workspace.toml +
   inventory/observations/operations + inbox) and adds the rest when
@@ -63,7 +63,7 @@ From conventions.md + workspace-schema.md (writer/sync rules):
 
 | Directory class | Writer | Direction |
 |---|---|---|
-| Agent-owned (`router.toml`, `inventory/`, `operations/`, `skills/`, `reports/`, `decisions.md`, docs) | this workspace | canonical here; edit freely |
+| Agent-owned (`router.toml`, `inventory/`, `operations/`, `.agents/skills/`, `reports/`, `decisions.md`, docs) | this workspace | canonical here; edit freely |
 | Router-owned (pulls under `observations/`) | the pull recipe | pull only; never edit a pull — re-pull or fix the router |
 | Second copies of anything | nobody (reference) | age manifests; never sync back, never merge |
 
