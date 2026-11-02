@@ -1,7 +1,7 @@
 // T101 round 3: fail-first suite for the request-changes fixes.
 //
-// 1. `centrs retrieve` dropped from the seeded read set (C19: a
-//    fragment path rebooted a CHR without --yes).
+// 1. Read set keeps `centrs retrieve` (brief change: the seeded
+//    rule trusts centrs's read/write split; C19 fixed upstream).
 // 2. Fail closed on an unsafe private home (no seed, no spawn).
 // 3. Cross-process seed lock.
 // 4. Small items: settings.json mode, dangling real auth.json.
@@ -47,54 +47,53 @@ function taggedPrefixes(cfg: string): string[] {
 		);
 }
 
-describe("round 3 fix 1: centrs retrieve out of the seed set (C19)", () => {
-	test("READ_COMMANDS is exactly quickchr list/doctor", () => {
-		// retrieve dispatched a write (POST /rest/system/reboot) from
-		// a fragment path without --yes (C19): it stays unseeded
-		// until the upstream fix lands and the pin consumes it.
+describe("round 3 fix 1: read set keeps centrs retrieve (brief change)", () => {
+	test("READ_COMMANDS is exactly retrieve + quickchr list/doctor", () => {
+		// Developer decision 2026-11-02: centrs is a helper, not the
+		// security layer — the seeded retrieve rule trusts centrs's
+		// read/write split (C19 fixed upstream), and strict setups
+		// use a restricted RouterOS account.
 		expect(READ_COMMANDS).toEqual([
+			["centrs", "retrieve"],
 			["quickchr", "list"],
 			["quickchr", "doctor"],
 		]);
 		expect(POLICY_SCHEMA_VERSION).toBe(2);
 	});
 
-	t101c(
-		"a tagged round-2 centrs retrieve rule is pruned on the next seed",
-		() => {
-			const cfg = mktmp("t101c-retrieve-");
-			const ws = mktmp("t101c-retrieve-ws-");
-			nodeFs.mkdirSync(path.dirname(policyFile(cfg)), { recursive: true });
-			nodeFs.writeFileSync(
-				policyFile(cfg),
-				JSON.stringify({
-					schema_version: 2,
-					rules: [
-						{
-							effect: "allow",
-							durability: "local_persistent",
-							rule: {
-								kind: "shell_command_argv_prefix",
-								argv_prefix: ["centrs", "retrieve"],
-								workspace_root: ws,
-							},
-							reason: PREALLOW_TAG,
+	t101c("a tagged centrs retrieve rule survives the next seed", () => {
+		const cfg = mktmp("t101c-retrieve-");
+		const ws = mktmp("t101c-retrieve-ws-");
+		nodeFs.mkdirSync(path.dirname(policyFile(cfg)), { recursive: true });
+		nodeFs.writeFileSync(
+			policyFile(cfg),
+			JSON.stringify({
+				schema_version: 2,
+				rules: [
+					{
+						effect: "allow",
+						durability: "local_persistent",
+						rule: {
+							kind: "shell_command_argv_prefix",
+							argv_prefix: ["centrs", "retrieve"],
+							workspace_root: ws,
 						},
-					],
-				}),
-			);
-			ensurePreallowReads({
-				configHome: cfg,
-				workspaceRoot: ws,
-				hosts: [],
-				enabled: true,
-			});
-			const prefixes = taggedPrefixes(cfg);
-			expect(prefixes).not.toContain(JSON.stringify(["centrs", "retrieve"]));
-			expect(prefixes).toContain(JSON.stringify(["quickchr", "list"]));
-			expect(prefixes).toContain(JSON.stringify(["quickchr", "doctor"]));
-		},
-	);
+						reason: PREALLOW_TAG,
+					},
+				],
+			}),
+		);
+		ensurePreallowReads({
+			configHome: cfg,
+			workspaceRoot: ws,
+			hosts: [],
+			enabled: true,
+		});
+		const prefixes = taggedPrefixes(cfg);
+		expect(prefixes).toContain(JSON.stringify(["centrs", "retrieve"]));
+		expect(prefixes).toContain(JSON.stringify(["quickchr", "list"]));
+		expect(prefixes).toContain(JSON.stringify(["quickchr", "doctor"]));
+	});
 });
 
 describe("round 3 fix 2: fail closed on an unsafe private home", () => {

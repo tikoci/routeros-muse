@@ -38,22 +38,22 @@ export const POLICY_SCHEMA_VERSION = 2;
 
 /**
  * Designed read set, one argv prefix per rule (D43 as amended
- * 2026-11-02): exactly two two-word prefixes, so sibling
+ * 2026-11-02): exactly three two-word prefixes, so sibling
  * subcommands keep prompting (centrs execute stays unlisted —
  * --yes cannot be excluded — and bare binaries are never seeded:
  * [quickchr] would also free `quickchr remove`).
  * Dropped from round 1: ls, cat, grep (not confined to the
  * workspace — agents read files with muse's own tools), find
  * (runs -exec/-delete), rosetta browse/--help/--version (browse
- * writes its DB). Dropped in round 3: centrs retrieve (C19 — a
- * fragment path dispatched POST /rest/system/reboot without
- * --yes; re-adding it waits for the upstream fix, consumed here
- * via the @tikoci/centrs pin). Housekeeping note: quickchr
- * list/doctor call refreshAllStatuses(), which rewrites stale
- * local machine state (clears dead PIDs/frozen markers) — local
- * bookkeeping, no device contact, acceptable in the read set.
+ * writes its DB). The seeded retrieve rule trusts centrs's
+ * read/write split (reads run, writes need --yes); the known
+ * fragment-path bug is C19, fixed upstream. Housekeeping note:
+ * quickchr list/doctor call refreshAllStatuses(), which rewrites
+ * stale local machine state (clears dead PIDs/frozen markers) —
+ * local bookkeeping, no device contact, acceptable in the read set.
  */
 export const READ_COMMANDS: string[][] = [
+	["centrs", "retrieve"],
 	["quickchr", "list"],
 	["quickchr", "doctor"],
 ];

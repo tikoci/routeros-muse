@@ -92,8 +92,9 @@ describe("private home path", () => {
 });
 
 describe("read set (D43 as amended)", () => {
-	test("exactly quickchr list/doctor, nothing else (C19)", () => {
+	test("exactly centrs retrieve + quickchr list/doctor, nothing else", () => {
 		expect(READ_COMMANDS).toEqual([
+			["centrs", "retrieve"],
 			["quickchr", "list"],
 			["quickchr", "doctor"],
 		]);
@@ -426,7 +427,7 @@ describe("network union ownership (D44)", () => {
 				JSON.stringify((r["rule"] as Record<string, unknown>)["argv_prefix"]),
 			);
 			expect(prefixes).not.toContain(JSON.stringify(["ls"]));
-			expect(prefixes).toContain(JSON.stringify(["quickchr", "list"]));
+			expect(prefixes).toContain(JSON.stringify(["centrs", "retrieve"]));
 		});
 	});
 });
@@ -607,7 +608,11 @@ describe("T101b server wiring (D44)", () => {
 					const status = await getJson(`${srv.url}api/status`);
 					const pre = status["preallow"] as Record<string, unknown>;
 					expect(pre["configHome"]).toBe(priv);
-					expect(pre["commands"]).toEqual(["quickchr list", "quickchr doctor"]);
+					expect(pre["commands"]).toEqual([
+						"centrs retrieve",
+						"quickchr list",
+						"quickchr doctor",
+					]);
 				} finally {
 					await srv.stop();
 				}

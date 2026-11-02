@@ -430,17 +430,16 @@ Untagged rules (the owner's own Always-allow choices) are never
 touched. No separate ownership state file: registry.toml +
 router.toml files ARE the state (derived ownership, cannot drift).
 
-Read set as amended 2026-11-02 (round 3): exactly `quickchr
-list`, `quickchr doctor`. Dropped: find (-exec/-delete), rosetta
-browse (writes its DB), ls/cat/grep (not workspace-confined), and
-`centrs retrieve` — C19: `centrs retrieve
---quickchr <vm> '/system/reboot#' --no-validate` rebooted a
-disposable CHR without --yes (fragment handling drops the appended
-/print, so the wire request is POST /rest/system/reboot). A
-pre-allowed command must be incapable of dispatching a write, so
-retrieve stays unseeded until the upstream centrs fix lands and is
-consumed here via the `@tikoci/centrs` pin; existing tagged
-retrieve rules are pruned by the next seed (same-root replacement).
+Read set as amended 2026-11-02: exactly `centrs retrieve`,
+`quickchr list`, `quickchr doctor`. Dropped: find (-exec/-delete),
+rosetta browse (writes its DB), ls/cat/grep (not workspace-confined).
+On `centrs retrieve` (developer decision 2026-11-02): centrs is a
+helper, not routeros-muse's security layer — RouterOS only reveals
+RO/RW/policy at run time, so the seeded rule trusts centrs's
+read/write split (reads run, writes need --yes). The known
+fragment-path reboot bug is C19, being fixed upstream. Anyone who
+needs "never reboot" should use a restricted RouterOS account —
+that is the real boundary for strict setups.
 Housekeeping, documented not alarming: `quickchr list`/`doctor`
 call refreshAllStatuses(), which rewrites stale LOCAL machine
 state (clears dead PIDs/frozen markers) — bookkeeping under
@@ -534,13 +533,12 @@ the workspace's absolute root:
 ]}
 ```
 
-Concrete read set at feasibility time (each its own two-word
-prefix; never the bare binary — `[quickchr]` would also free
-`quickchr remove`): `centrs retrieve`, `rosetta` (+ subcommand
-words as needed), `quickchr list`, `quickchr doctor`, `ls`, `cat`,
-`grep`, `find`. SUPERSEDED: the live set is `quickchr list`,
-`quickchr doctor` only — see the D44 section above (C19 removed
-`centrs retrieve`; the rest were cut in round 2).
+Concrete read set (each its own two-word prefix; never the bare
+binary — `[quickchr]` would also free `quickchr remove`):
+`centrs retrieve`, `rosetta` (+ subcommand words as needed),
+`quickchr list`, `quickchr doctor`, `ls`, `cat`, `grep`, `find`.
+AMENDED in round 2 (see the D44 section above): the live set is
+`centrs retrieve`, `quickchr list`, `quickchr doctor`.
 Still prompting, live-verified: `centrs execute` (second word
 differs — P3 both directions), any write outside the workspace
 (shell approval under promptUnmatched; hard-blocked by the sandbox

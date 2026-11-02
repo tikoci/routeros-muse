@@ -127,11 +127,11 @@ describe("read command set", () => {
 		}
 	});
 
-	test("round 3: exactly quickchr list/doctor (D43 as amended, C19)", () => {
-		// find runs -exec/-delete, rosetta browse writes its DB,
-		// cat/grep/ls are not confined to the workspace, and centrs
-		// retrieve dispatched a write without --yes (C19): all dropped.
+	test("round 2: exactly centrs retrieve + quickchr list/doctor (D43 as amended)", () => {
+		// find runs -exec/-delete, rosetta browse writes its DB, and
+		// cat/grep/ls are not confined to the workspace: all dropped.
 		expect(READ_COMMANDS).toEqual([
+			["centrs", "retrieve"],
 			["quickchr", "list"],
 			["quickchr", "doctor"],
 		]);
@@ -204,7 +204,7 @@ describe("ensurePreallowReads", () => {
 				durability: "local_persistent",
 				rule: {
 					kind: "shell_command_argv_prefix",
-					argv_prefix: ["quickchr", "list"],
+					argv_prefix: ["centrs", "retrieve"],
 					workspace_root: ws,
 				},
 				reason: null,
@@ -233,7 +233,7 @@ describe("ensurePreallowReads", () => {
 				(r) =>
 					JSON.stringify(
 						(r["rule"] as Record<string, unknown>)["argv_prefix"],
-					) === JSON.stringify(["quickchr", "list"]),
+					) === JSON.stringify(["centrs", "retrieve"]),
 			);
 			expect(sameRules).toHaveLength(2);
 		});
