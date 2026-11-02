@@ -62,7 +62,9 @@ print(f"ok kml: {len(pms)} Placemarks, device coords match fixtures")
 EOF
 [ $? -ne 0 ] && fail=1
 
-"$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+# Chromium litters $TMPDIR (url_fetcher dirs); point it at the
+# trap-cleaned work dir so the gate tmpdir stays clean.
+TMPDIR="$work" "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
   --virtual-time-budget=3000 --screenshot="$work/out/map.png" \
   --window-size=1080,1350 "file://$html" >/dev/null 2>&1
 if [ -f "$work/out/map.png" ]; then echo "ok png: rendered";
