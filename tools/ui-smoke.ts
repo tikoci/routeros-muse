@@ -240,6 +240,17 @@ try {
 		"smoke hook exposed",
 		await page.evaluate(() => typeof window.__smoke?.renderRow === "function"),
 	);
+	check(
+		"t104 reminderChild rows are not rendered",
+		await page.evaluate(
+			() =>
+				window.__smoke?.renderRow({
+					kind: "reminderChild",
+					text: "Reminder child session",
+					status: "completed",
+				}) === null,
+		),
+	);
 	await page.screenshot({ path: path.join(OUT, "1-load.png") });
 
 	// T49/D39: workspace mode trusts by default — the Settings row

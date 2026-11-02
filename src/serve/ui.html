@@ -1867,6 +1867,9 @@
     if (row.kind === "agentMessage") return bubble("agent", row.text || "");
     if (row.kind === "toolCall") return toolCard(row);
     if (row.kind === "subagent") return subagentCard(row);
+    // T104: muse's background reminder helpers (skill/goal/verify)
+    // are session plumbing, not conversation: never rendered.
+    if (row.kind === "reminderChild") return null;
     return genericCard(row);
   }
 

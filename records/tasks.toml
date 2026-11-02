@@ -1023,19 +1023,19 @@ updated = "2026-11-01"
 
 [[task]]
 id = "T104"
-title = "Hide or collapse muse's reminderChild rows in the transcript"
+title = "reminderChild rows: hidden from the transcript; log session data to the JS console"
 status = "needed"
-detail = "Live meta sessions emit 'Reminder Child / Reminder child session' rows (kind reminderChild) that the transcript renders as ordinary cards (seen in the T55 live run). The fake MSP never emits them, but real muse does even with the echo provider (smoke shots), several marked failed. Decide: hide, or collapse into a muted line; ground the row shape from a live capture first."
-evidence = "T55 live screenshot out/t55-live/run1-final.png (local), 2026-11-02; T56 smoke shot out/ui-smoke/47-t56-kept-typing.png: muse emits them with the echo provider too, several with a red failed badge, which reads as an error to an end user"
+detail = "What they are, from live captures: muse runs background reminder helpers (reminderAgentId skill-reminder, goal-reminder, verify-reminder) as child sessions on every turn and streams their progress as reminderChild items (inProgress, then completed; failed under the echo provider). DONE: renderRow returns null for reminderChild, so they are never shown (developer 2026-11-02: session data, hide). REMAINING: log hidden session data (reminderChild and any other item kinds we drop) to the browser console, e.g. console.debug with the item, so it can be inspected without cluttering chat. Decide the level and the format, and keep the console-clean smoke checks honest (debug, not error)."
+evidence = "T55 live screenshot out/t55-live/run1-final.png (local), 2026-11-02; T56 smoke shot out/ui-smoke/47-t56-kept-typing.png: muse emits them with the echo provider too, several with a red failed badge, which reads as an error to an end user; hide shipped on main with smoke check t104 (gate 558/0); captures out/t55-live/*.jsonl (local)"
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
 
 [[task]]
 id = "T105"
-title = "Ship the trilogy's MCP servers (rosetta first) in the session config"
+title = "Ship the trilogy's MCP servers (centrs and rosetta) in the session config"
 status = "needed"
-detail = "T55 made config.mcpServers ours, and D44 gave sessions a private settings.json. As a result, MCP servers the owner configures in their own muse settings no longer reach routeros-muse sessions. Add the package-pinned rosetta MCP server (D26 tool bundle, stdio) next to routeros_muse in the session config. Seed tagged tool_action allow rules for its read-only tools, under the preallow toggle. Consider centrs mcp the same way. Ground each server's tool names and approval behavior from a live capture first."
+detail = "T55 made config.mcpServers ours, and D44 gave sessions a private settings.json. As a result, MCP servers the owner configures in their own muse settings no longer reach routeros-muse sessions. Add the package-pinned rosetta MCP server (D26 tool bundle, stdio) next to routeros_muse in the session config. Seed tagged tool_action allow rules for its read-only tools, under the preallow toggle. Consider centrs mcp the same way. Ground each server's tool names and approval behavior from a live capture first. Priority raised by the developer test drive 2026-11-02: asked to add a device, the agent ran many shell tool calls and still fell back to terminal instructions. centrs mcp is needed, not optional."
 evidence = "developer question 2026-11-02; T55 merged 1e16df0 (multi-server config.mcpServers machinery); D44/D45 private settings.json carries no user mcpServers"
 blocked_by = []
 agent = ""
@@ -1077,6 +1077,26 @@ title = "Smoke flake: stray net::ERR_CONNECTION_REFUSED console errors"
 status = "needed"
 detail = "One gate run in four on 2026-11-02 (T56 branch) failed 'console errors are only the expected resource loads' with two ERR_CONNECTION_REFUSED entries. The check aggregates the whole run, so the leg is unknown. Likely a page still polling or reconnecting (SSE/status) to a server a later step stopped. Make the console collector record the URL and leg, then close or navigate pages before srv.stop (or scope the excuse to that teardown). A gate that flakes erodes trust (D28)."
 evidence = "/dev/shm/gate-t56.log (local, transient); reruns green twice"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T109"
+title = "Agent file links in chat must open (or not render as links)"
+status = "needed"
+detail = "Developer test drive 2026-11-02: an agent reply linked a workspace file as a markdown link to an absolute local path ([workspace credential store](/home/.../rm-testdrive/device.cdb)), and clicking it does nothing useful in the web UI. Decide the behavior: workspace-relative or absolute workspace paths open in a center tab through the existing viewer (same confinement as ui_open), files we never display (device.cdb, secrets) render as plain text with no link, and outside paths are never links. Ground it with a live reply and a smoke check."
+evidence = "developer test drive 2026-11-02 (rm-testdrive, add-device prompt)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T110"
+title = "Add-device with credentials: hand off to the UI's credential dialog, not the terminal"
+status = "needed"
+detail = "Developer test drive 2026-11-02, prompt: add 192.168.74.1 to devices, user robot-admin, how can I get you the password securely? The agent ran many tool calls, then said secrets must never enter chat and told the developer to seed the CDB from their own terminal. The secret rule is right, but the UI already has a device card with Set credentials. Give the agent a path that keeps the password out of chat and out of argv: a ui_* tool (e.g. ui_add_device / ui_request_credentials) that opens the Add Device or credentials dialog prefilled with host and user, so the owner types the password in the UI; centrs mcp (T105) for the CDB write; and a workspace skill for the add-device flow so it doesn't fumble through shell calls. Needs the encrypted-CDB story (centrs#558) for the real login path."
+evidence = "developer test drive 2026-11-02"
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
