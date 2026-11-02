@@ -1733,6 +1733,31 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					};
 					return json({ recents: listRecents(root, cx) });
 				}
+				// T109 P1: chat-link preflight. Anchors in agent bubbles
+				// preflight here before the UI opens anything: the gate is
+				// resolveUiOpen (symlinks, credential stores, size), the
+				// same check as the ui_open relay. Workspace mode only.
+				if (p === "/api/open-check" && req.method === "POST") {
+					if (noWs) return json({ ok: false, why: "no workspace attached" });
+					// T109 re-review: malformed/null JSON and oversized
+					// paths are 400s, never 500s.
+					let body: unknown;
+					try {
+						body = await req.json();
+					} catch {
+						return json({ ok: false, why: "invalid json" }, 400);
+					}
+					if (
+						body === null ||
+						typeof body !== "object" ||
+						typeof (body as { path?: unknown }).path !== "string"
+					)
+						return json({ ok: false, why: "need {path}" }, 400);
+					const rel = (body as { path: string }).path;
+					if (rel.length > 4096)
+						return json({ ok: false, why: "path too long" }, 400);
+					return json(resolveUiOpen(root, rel));
+				}
 				if (p === "/api/file" && req.method === "GET") {
 					const rel = url.searchParams.get("path") ?? "";
 					const res = readWorkspaceFile(root, rel);

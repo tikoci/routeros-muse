@@ -111,6 +111,8 @@
   .msg.agent .body { background: var(--panel); border: 1px solid var(--border-soft); border-radius: 12px; padding: 10px 14px; }
   .msg .body p { margin: 0 0 8px; white-space: pre-wrap; }
   .msg .body p:last-child { margin-bottom: 0; }
+  .msg.agent .body a { color: var(--accent); text-decoration: underline; }
+  .msg.agent .body a:visited { color: var(--accent); }
   .compact { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 11.5px; padding: 2px 4px; }
   .compact::before, .compact::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
 
@@ -1332,6 +1334,35 @@
     if (b.classList.contains("docrow")) setWsExpanded(false);
     if (b.closest(".overlay")) closePicker();
   }
+  // T109 P1: chat anchors preflight on the server (resolveUiOpen)
+  // before opening — the client cannot see symlinks or sizes. Refusals
+  // toast honestly and open nothing; the returned kind routes the open,
+  // never the client guess.
+  async function chatOpenChecked(a) {
+    const rel = a.dataset.apath;
+    let j = null;
+    try {
+      const r = await fetch("/api/open-check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: rel }),
+      });
+      j = await r.json();
+    } catch (e) {
+      showToast("unavailable: " + (e && e.message ? e.message : e), "warn");
+      return;
+    }
+    if (!j || !j.ok) {
+      showToast("unavailable: " + ((j && j.why) || "refused"), "warn");
+      return;
+    }
+    const base = rel.split("/").pop();
+    if (j.kind === "toml") { renderToml(rel); openSlot("pane-toml", rel, base); }
+    else if (j.kind === "artifact") { renderArtifact(rel, false, null); openSlot("pane-artifact", rel, base); }
+    else { renderDoc(rel); openSlot("pane-doc", rel, base); }
+    topWorkspace(rel);
+    closePicker();
+  }
   document.addEventListener("click", (e) => {
     const tp = e.target.closest(".tpill button");
     if (tp) { dropTarget(tp.closest(".tpill").dataset.dev); return; }
@@ -1341,6 +1372,8 @@
     if (b) { openTarget(b); return; }
     const a = e.target.closest("[data-apath]");
     if (a) {
+      e.preventDefault();
+      if (a.dataset.chatlink != null) { chatOpenChecked(a); return; }
       const p = a.dataset.apath;
       if (p.endsWith(".toml")) { renderToml(p); openSlot("pane-toml", p, p.split("/").pop()); }
       else if (isArtifact(p)) { renderArtifact(p, false, null); openSlot("pane-artifact", p, p.split("/").pop()); }
@@ -2078,6 +2111,204 @@
     return out;
   }
 
+  // T109: agent bubbles link workspace files. The WS root is captured
+  // from /api/status (null in no-workspace mode: nothing linkifies).
+  // Markdown links [label](target) and bare absolute paths render as
+  // <a> only when the target resolves inside the workspace and is not
+  // a never-display name; anything else stays literal text (markdown
+  // form shows the label, bare form stays as written). Labels and
+  // targets are agent-controlled text: createElement + textContent
+  // only, never innerHTML. Anchors carry the workspace-relative path
+  // in data-apath so the existing tree-click routing opens them.
+  let WSROOT = null;
+  // T109 P2a: false until /api/status lands. While pending, agent text
+  // renders plain and unmarked so the catch-up can linkify it once the
+  // root is known. No-workspace still sets this true (root known null)
+  // so refused targets consume to label-only permanently.
+  let WSSTATUS = false;
+  // T109 never-display list (mirrors resolveUiOpen server-side): the
+  // workspace credential store, by basename only, case-insensitively.
+  // Tight on purpose.
+  function chatNeverDisplay(rel) {
+    const leaf = rel.split("/").pop().toLowerCase();
+    return leaf === "device.cdb" || leaf.endsWith(".cdb");
+  }
+  function chatRelOf(target) {
+    if (!WSROOT || typeof target !== "string" || !target) return null;
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return null;
+    if (target.startsWith("//") || target.startsWith("~")) return null;
+    let rel;
+    if (target[0] === "/") {
+      if (target !== WSROOT && !target.startsWith(WSROOT + "/")) return null;
+      rel = target.slice(WSROOT.length).replace(/^\/+/, "");
+    } else {
+      rel = target;
+    }
+    const parts = [];
+    for (const seg of rel.split("/")) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        if (!parts.length) return null;
+        parts.pop();
+        continue;
+      }
+      parts.push(seg);
+    }
+    rel = parts.join("/");
+    if (!rel || chatNeverDisplay(rel)) return null;
+    return rel;
+  }
+  function chatLink(p, label, rel) {
+    const a = document.createElement("a");
+    a.href = "#";
+    a.dataset.apath = rel;
+    // T109 P1: chat anchors preflight on the server before opening.
+    a.dataset.chatlink = "1";
+    a.title = rel;
+    a.textContent = label === "" ? rel : label;
+    p.appendChild(a);
+  }
+  function chatAppendPaths(p, seg) {
+    const re = /\/[^\s"'<>\]]+/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(seg)) !== null) {
+      const start = m.index;
+      if (start > 0 && !/[\s\(\["'>]/.test(seg[start - 1])) continue;
+      let raw = m[0];
+      let trail = "";
+      // T109 P3a: a trailing backtick (inline-code close) is punctuation.
+      const tm = /[.,;:!?)\`]+$/.exec(raw);
+      if (tm) {
+        if (raw.length === tm[0].length) continue;
+        trail = tm[0];
+        raw = raw.slice(0, -trail.length);
+      }
+      const rel = chatRelOf(raw);
+      p.appendChild(document.createTextNode(seg.slice(last, start)));
+      if (rel) chatLink(p, raw, rel);
+      else p.appendChild(document.createTextNode(raw));
+      last = start + m[0].length;
+      if (trail) p.appendChild(document.createTextNode(trail));
+    }
+    p.appendChild(document.createTextNode(seg.slice(last)));
+  }
+  // T109 re-review: markdown destinations may escape parens/backslash
+  // and percent-encode spaces. Decode before confinement; a malformed
+  // percent escape makes the target unsupported (plain, never a link).
+  function chatDecodeDest(dest) {
+    let d = dest.replace(/\\([()\\])/g, "$1");
+    if (d.includes("%")) {
+      try {
+        d = decodeURIComponent(d);
+      } catch {
+        return null;
+      }
+    }
+    return d;
+  }
+  function chatAppendText(p, text) {
+    // T109 P2a: root unknown — render plain, leave unmarked for catch-up.
+    if (!WSSTATUS) {
+      p.appendChild(document.createTextNode(text ?? ""));
+      return;
+    }
+    let last = 0;
+    let i = 0;
+    while (i < text.length) {
+      const lb = text.indexOf("[", i);
+      if (lb === -1) break;
+      // T109 re-review: balanced label brackets. A nested construct
+      // (image-in-link) is rejected whole below, never interior-linked.
+      let ldepth = 1;
+      let rb = -1;
+      for (let s = lb + 1; s < text.length; s++) {
+        // Escaped brackets are label text, not delimiters.
+        if (text[s] === "\\") { s++; continue; }
+        if (text[s] === "[") ldepth++;
+        else if (text[s] === "]" && --ldepth === 0) { rb = s; break; }
+      }
+      if (rb === -1) break;
+      if (text[rb + 1] !== "(") { i = rb + 1; continue; }
+      // T109 P2c: balanced-paren destination (nested parens allowed,
+      // no whitespace). Unbalanced-to-end renders literally, safest.
+      let depth = 1;
+      let k = rb + 2;
+      let bad = false;
+      let dest = null;
+      let end = -1;
+      while (k < text.length) {
+        const c = text[k];
+        // Escaped parens are destination text, not delimiters.
+        if (c === "\\") { k += 2; continue; }
+        if (c === "(") depth++;
+        else if (c === ")") {
+          depth--;
+          if (depth === 0) { dest = text.slice(rb + 2, k); end = k + 1; break; }
+        } else if (c === " " || c === "\t" || c === "\n" || c === "\r") {
+          bad = true;
+          break;
+        }
+        k++;
+      }
+      if (dest === null) {
+        if (!bad) {
+          p.appendChild(document.createTextNode(text.slice(last)));
+          last = text.length;
+          break;
+        }
+        i = rb + 1;
+        continue;
+      }
+      if (dest === "") { i = rb + 1; continue; }
+      const label = text.slice(lb + 1, rb);
+      // T109 re-review: nested label (image-in-link) — the whole
+      // construct stays literal; its interior is never linkified.
+      // Escaped brackets in the label do not count as nesting.
+      let nested = false;
+      for (let s = 0; s < label.length; s++) {
+        if (label[s] === "\\") { s++; continue; }
+        if (label[s] === "[") { nested = true; break; }
+      }
+      if (nested) {
+        chatAppendPaths(p, text.slice(last, lb));
+        p.appendChild(document.createTextNode(text.slice(lb, end)));
+        last = end;
+        i = end;
+        continue;
+      }
+      // T109 P3a: image syntax is never a file link — alt as plain text.
+      if (text[lb - 1] === "!") {
+        chatAppendPaths(p, text.slice(last, lb - 1));
+        p.appendChild(document.createTextNode(label));
+        last = end;
+        i = end;
+        continue;
+      }
+      const decoded = chatDecodeDest(dest);
+      const rel = decoded === null ? null : chatRelOf(decoded);
+      chatAppendPaths(p, text.slice(last, lb));
+      if (rel) chatLink(p, label, rel);
+      else p.appendChild(document.createTextNode(label));
+      last = end;
+      i = end;
+    }
+    chatAppendPaths(p, text.slice(last));
+    // Mark paragraphs linkified against a known root; paragraphs built
+    // before the status landed stay unmarked for the catch-up pass.
+    p.dataset.chatlinks = "done";
+  }
+  // T109 P2a/P3b: reparse original text of unmarked MESSAGE paragraphs
+  // only (.chatmd inside .msg.agent, never tool/subagent .tcard cards).
+  function chatCatchUp() {
+    for (const p of document.querySelectorAll(
+      "#chatmsgs .msg.agent:not(.tcard) .body p.chatmd:not([data-chatlinks])",
+    )) {
+      const t = p.textContent;
+      p.textContent = "";
+      chatAppendText(p, t ?? "");
+    }
+  }
   function bubble(role, text, targets) {
     const wrap = document.createElement("div");
     wrap.className = "msg " + role;
@@ -2110,7 +2341,10 @@
       const body = document.createElement("div");
       body.className = "body";
       const p = document.createElement("p");
-      p.textContent = text;
+      // T109 P3b: message paragraphs carry the marker the catch-up
+      // selects on — cards never linkify.
+      p.className = "chatmd";
+      chatAppendText(p, text);
       body.appendChild(p);
       wrap.appendChild(who);
       wrap.appendChild(body);
@@ -2845,7 +3079,9 @@
       if (row && (row.kind === "userMessage" || row.kind === "agentMessage")) {
         if (row.kind !== "agentMessage" || !row.text) return;
         if (streamItem && (!id || streamItem.id === id)) {
-          streamItem.el.querySelector(".body p").textContent = row.text;
+          const pe = streamItem.el.querySelector(".body p");
+          pe.textContent = "";
+          chatAppendText(pe, row.text);
           if (atBottom(msgsEl())) tail(); else markUnread(true);
         } else {
           appendMsg("agent", row.text);
@@ -3147,10 +3383,23 @@
   async function loadStatus() {
     try {
       const j = await getJSON("/api/status");
+      // T109 re-review: a failed status (500 {ok:false}) must not
+      // publish readiness — pending chat links stay un-consumed and
+      // a later good status linkifies them.
+      if (!j || j.ok === false || !("workspace" in j))
+        throw new Error("status unavailable");
       $("set-muse").textContent = j.muse || "muse ?";
       $("set-conn").textContent = j.msp === "connected" ? "connected" : j.msp;
       $("set-ws").textContent = j.workspace || "no workspace";
       NO_WS = j.workspace == null || j.mode === "no-workspace";
+      WSROOT = typeof j.workspace === "string" && j.workspace
+        ? j.workspace.replace(/\/+$/, "") || null
+        : null;
+      WSSTATUS = true;
+      // T109 catch-up: agent paragraphs rendered before the root landed
+      // (history wins the boot race) linkify now, exactly once. Later
+      // paragraphs are marked at creation.
+      chatCatchUp();
       if (!AGENT_RUNNING) $("chatinput").placeholder = composerIdlePlaceholder();
       $("set-prov").textContent = j.provider;
       // D39: live trust row. Null means no workspace to trust.
@@ -3900,7 +4149,11 @@
   // checks. Local-only prototype surface, not a public API.
   // test-only: lets the smoke drive dispatch with an attached image
   // without driving the file picker (T69 double-send proof).
-  window.__smoke = { renderRow, renderPatch, renderOutput, pushImage: (img) => pendingImages.push(img), stagedCount: () => pendingImages.length, recoverPending };
+  window.__smoke = { renderRow, renderPatch, renderOutput, pushImage: (img) => pendingImages.push(img), stagedCount: () => pendingImages.length, recoverPending, chatCatchUp, loadStatus,
+    // T109 P2a boot-race simulation: suspend the status, render, then
+    // land the status and catch up. Smoke-only.
+    wsPending: () => { WSSTATUS = false; },
+    wsReady: () => { WSSTATUS = true; chatCatchUp(); } };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the
   // post-save refresh across, same window-property idiom as __devices.

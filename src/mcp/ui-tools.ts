@@ -157,6 +157,14 @@ export function resolveUiOpen(root: string, rel: string): UiOpenResult {
 	if (typeof rel !== "string" || !rel) return { ok: false, why: "need {path}" };
 	const full = safeJoin(root, rel);
 	if (!full) return { ok: false, why: "path escapes the workspace" };
+	// T109: credential stores are never displayed, through either door
+	// (ui_open relay or the chat link path). Tight list: the workspace
+	// credential store name and any *.cdb, by basename of the NORMALIZED
+	// full path, case-insensitively — the raw rel lies ("device.cdb/."
+	// has basename ".", "DEVICE.CDB" dodges a case-sensitive match).
+	const leaf = path.basename(full).toLowerCase();
+	if (leaf === "device.cdb" || leaf.endsWith(".cdb"))
+		return { ok: false, why: "refused: credential stores are not displayed" };
 	const base = path.resolve(root);
 	const parts = path.relative(base, full).split(path.sep);
 	let cursor = base;

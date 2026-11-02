@@ -6,9 +6,11 @@
 // open-in-tab wiring, the T39 lock/unlock/bypass flow, the T64
 // missing-CDB guidance, the no-workspace mode, the T40
 // no-workspace picker (list/open/prune/create), the T48
-// set-credentials modal (affordance, context, save, refresh), the
-// T71 stop lifecycle (Stopping ticker, Force stop, SIGTERM note), and
-// the T50 approval/question surface (cards, waiting strip, selector,
+// set-credentials modal (affordance, context, save, refresh), the T109
+// agent file links (workspace targets open in tabs; cdb/outside/http
+// stay literal), the T71 stop lifecycle (Stopping ticker, Force stop,
+// SIGTERM note), and the T50 approval/question surface (cards, waiting
+// strip, selector,
 // settings default, late join — all on the scriptable T50 fake),
 // and the T49 trust row (on/off/no-workspace) plus device targeting
 // (pill targets become chips; the preamble lands in the turn input),
@@ -47,6 +49,10 @@ type SmokeHook = {
 	pushImage: (img: { base64Data: string; mediaType: string }) => void;
 	stagedCount: () => number;
 	recoverPending: () => Promise<void>;
+	chatCatchUp: () => void;
+	wsPending: () => void;
+	wsReady: () => void;
+	loadStatus: () => Promise<void>;
 };
 
 declare global {
@@ -218,6 +224,14 @@ page.on("pageerror", (err) =>
 let twinsFetches = 0;
 page.on("request", (req) => {
 	if (new URL(req.url()).pathname === "/api/twins") twinsFetches++;
+});
+// T109 re-review: count viewer fetches so refused chat clicks can
+// prove they never reached a viewer route.
+let viewerFetches = 0;
+page.on("request", (req) => {
+	const pn = new URL(req.url()).pathname;
+	if (pn === "/api/file" || pn === "/api/artifact" || pn === "/api/toml")
+		viewerFetches++;
 });
 
 try {
@@ -1112,6 +1126,462 @@ try {
 		wrapping,
 	);
 	await page.screenshot({ path: path.join(OUT, "3-cards.png") });
+
+	// T109: agent bubbles link workspace files; credential stores and
+	// outside paths stay literal text. Fixtures land in the live smoke
+	// workspace; absolute targets reuse its real root at runtime.
+	const t109status = (await (await fetch(`${srv.url}api/status`)).json()) as {
+		workspace: string;
+	};
+	const t109root = t109status.workspace;
+	nodeFs.writeFileSync(
+		path.join(t109root, "notes.md"),
+		"# t109 notes\nlink me\n",
+	);
+	nodeFs.mkdirSync(path.join(t109root, "reports"), { recursive: true });
+	nodeFs.writeFileSync(
+		path.join(t109root, "reports", "r.html"),
+		"<p>t109 report</p>\n",
+	);
+	const t109text = [
+		"T109-PROBE see [notes](notes.md) and",
+		`[abs](${t109root}/reports/r.html) plus`,
+		`[cred](${t109root}/device.cdb) and`,
+		"[ext](https://example.com/x) and",
+		"[out](/etc/passwd) plus",
+		`bare ${t109root}/notes.md here`,
+		"and markup [a <b>bold</b> label](notes.md).",
+	].join(" ");
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, t109text);
+	const t109row = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-PROBE",
+	});
+	check(
+		"t109 displayable targets linkify",
+		(await t109row.locator("a[data-apath]").count()) === 4,
+		`got ${await t109row.locator("a[data-apath]").count()}`,
+	);
+	const t109attrs = await t109row.locator("a[data-apath]").evaluateAll((els) =>
+		els.map((e) => ({
+			href: e.getAttribute("href"),
+			rel: (e as HTMLElement).dataset["apath"],
+			title: (e as HTMLElement).title,
+			text: (e as HTMLElement).textContent,
+		})),
+	);
+	check(
+		"t109 anchors carry href # plus rel-only data",
+		t109attrs.length === 4 &&
+			t109attrs.every(
+				(a) => a.href === "#" && a.rel != null && a.title === a.rel,
+			) &&
+			JSON.stringify(t109attrs.map((a) => a.rel)) ===
+				JSON.stringify(["notes.md", "reports/r.html", "notes.md", "notes.md"]),
+		JSON.stringify(t109attrs),
+	);
+	const t109anchorTexts = t109attrs.map((a) => a.text ?? "");
+	check(
+		"t109 labels render as text (cdb/outside/http absent)",
+		t109anchorTexts.includes("notes") &&
+			t109anchorTexts.includes("abs") &&
+			t109anchorTexts.includes(`${t109root}/notes.md`) &&
+			t109anchorTexts.includes("a <b>bold</b> label") &&
+			!t109anchorTexts.some((t) => ["cred", "ext", "out"].includes(t)),
+		JSON.stringify(t109anchorTexts),
+	);
+	const t109body = (await t109row.locator(".body").textContent()) ?? "";
+	check(
+		"t109 refused labels stay literal text",
+		t109body.includes("cred") &&
+			t109body.includes("ext") &&
+			t109body.includes("out") &&
+			t109body.includes("a <b>bold</b> label") &&
+			(await t109row.locator("b").count()) === 0,
+		t109body.slice(0, 200),
+	);
+	const t109decor = await t109row
+		.locator('a[data-apath="notes.md"]')
+		.first()
+		.evaluate((e) => ({
+			deco: getComputedStyle(e).textDecorationLine,
+			color: getComputedStyle(e).color,
+		}));
+	check(
+		"t109 agent links are underlined accent links",
+		t109decor.deco.includes("underline") &&
+			t109decor.color !== "rgb(0, 0, 238)",
+		JSON.stringify(t109decor),
+	);
+	await t109row.locator('a[data-apath="notes.md"]').first().click();
+	await page.waitForSelector("#pane-doc.active", { timeout: 10_000 });
+	await page.waitForFunction(
+		() =>
+			(document.getElementById("doc-body")?.textContent ?? "").includes(
+				"link me",
+			),
+		undefined,
+		{ timeout: 10_000 },
+	);
+	check(
+		"t109 notes link opens the doc tab with its body",
+		(await page.locator("#pane-doc.active").count()) === 1,
+	);
+	// A missing target still links client-side (the client cannot stat)
+	// but the T109 P1 preflight refuses the click: toast, no navigation,
+	// no /api/file fetch.
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, "T109-GONE see [gone](notes/gone.md).");
+	const t109gone = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-GONE",
+	});
+	check(
+		"t109 missing target still linkifies (preflight refuses)",
+		(await t109gone.locator('a[data-apath="notes/gone.md"]').count()) === 1,
+	);
+	// The notes click above left the center on the doc tab; come back to
+	// chat so the second link is clickable.
+	await page.locator('.ctab[data-pane="pane-chat"]').click();
+	await page.waitForSelector("#pane-chat.active", { timeout: 10_000 });
+	const t109fetchesBeforeGone = viewerFetches;
+	await t109gone.locator('a[data-apath="notes/gone.md"]').click();
+	await page.waitForFunction(
+		() =>
+			[...document.querySelectorAll("#toasts .toast")].some((t) =>
+				(t.textContent ?? "").includes("no such file"),
+			),
+		undefined,
+		{ timeout: 10_000 },
+	);
+	check(
+		"t109 missing file click toasts instead of navigating",
+		((await page.locator("#doc-body").textContent()) ?? "").includes("link me"),
+		`doc-body: ${((await page.locator("#doc-body").textContent()) ?? "").slice(0, 80)}`,
+	);
+	check(
+		"t109 missing file click made no viewer fetch and kept the chat tab",
+		viewerFetches === t109fetchesBeforeGone &&
+			(await page.locator("#pane-chat.active").count()) === 1,
+		`fetches ${t109fetchesBeforeGone}->${viewerFetches}`,
+	);
+	// T109 P1: a symlink alias to an outside file linkifies client-side
+	// (the client cannot see symlinks) but the preflight refuses the
+	// click — the outside bytes never reach any tab. POSIX-only: Windows
+	// needs privileges for symlinks.
+	if (process.platform !== "win32") {
+		const t109secret = "t109-outside-bytes-marker";
+		const t109outsideFile = path.join(mktmp("ui-smoke-outside-"), "secret.txt");
+		nodeFs.writeFileSync(t109outsideFile, `outside ${t109secret}\n`);
+		nodeFs.symlinkSync(t109outsideFile, path.join(t109root, "alias.md"));
+		nodeFs.symlinkSync(
+			path.join(t109root, "notes.md"),
+			path.join(t109root, "evil.cdb"),
+		);
+		await page.evaluate((text) => {
+			const box = document.querySelector("#pane-chat .msgs");
+			if (!box) throw new Error("chat transcript missing");
+			const hook = window.__smoke;
+			if (!hook) throw new Error("smoke hook missing");
+			box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+			box.scrollTop = box.scrollHeight;
+		}, "T109-SYMLINK see [alias](alias.md) here.");
+		const t109sym = page.locator("#pane-chat .msg.agent", {
+			hasText: "T109-SYMLINK",
+		});
+		check(
+			"t109 symlink alias linkifies client-side",
+			(await t109sym.locator('a[data-apath="alias.md"]').count()) === 1,
+		);
+		const t109fetchesBeforeSym = viewerFetches;
+		await t109sym.locator('a[data-apath="alias.md"]').click();
+		await page.waitForFunction(
+			() =>
+				[...document.querySelectorAll("#toasts .toast")].some((t) =>
+					(t.textContent ?? "").includes("symlink"),
+				),
+			undefined,
+			{ timeout: 10_000 },
+		);
+		const t109afterSym = await page.evaluate(() => ({
+			doc: document.getElementById("doc-body")?.textContent ?? "",
+			chat: document.querySelector("#pane-chat .msgs")?.textContent ?? "",
+		}));
+		check(
+			"t109 symlink click refuses without exposing outside bytes",
+			!t109afterSym.doc.includes(t109secret) &&
+				!t109afterSym.chat.includes(t109secret),
+			`doc: ${t109afterSym.doc.slice(0, 80)}`,
+		);
+		check(
+			"t109 symlink click made no viewer fetch and kept the chat tab",
+			viewerFetches === t109fetchesBeforeSym &&
+				(await page.locator("#pane-chat.active").count()) === 1,
+			`fetches ${t109fetchesBeforeSym}->${viewerFetches}`,
+		);
+		// A symlink NAMED like a credential store never linkifies at all.
+		await page.evaluate((text) => {
+			const box = document.querySelector("#pane-chat .msgs");
+			if (!box) throw new Error("chat transcript missing");
+			const hook = window.__smoke;
+			if (!hook) throw new Error("smoke hook missing");
+			box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+			box.scrollTop = box.scrollHeight;
+		}, "T109-CDBALIAS see [evil](evil.cdb) end.");
+		const t109cdbalias = page.locator("#pane-chat .msg.agent", {
+			hasText: "T109-CDBALIAS",
+		});
+		check(
+			"t109 cdb-named alias never linkifies",
+			(await t109cdbalias.locator("a[data-apath]").count()) === 0 &&
+				((await t109cdbalias.locator(".body").textContent()) ?? "").includes(
+					"evil",
+				),
+		);
+	}
+	// T109 P2a: a paragraph rendered before the status lands stays plain
+	// and unmarked, then linkifies when the status arrives.
+	await page.evaluate(() => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		hook.wsPending();
+		box.appendChild(
+			hook.renderRow({
+				kind: "agentMessage",
+				text: "T109-RACE see [notes](notes.md).",
+			}),
+		);
+		box.scrollTop = box.scrollHeight;
+	});
+	const t109race = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-RACE",
+	});
+	check(
+		"t109 boot-race renders plain before the status lands",
+		(await t109race.locator("a[data-apath]").count()) === 0,
+	);
+	await page.evaluate(() => window.__smoke?.wsReady());
+	check(
+		"t109 boot-race linkifies once the status lands",
+		(await t109race.locator('a[data-apath="notes.md"]').count()) === 1,
+	);
+	// T109 P2c: a parenthesized destination linkifies whole; an
+	// unbalanced one renders literally, never truncated.
+	nodeFs.writeFileSync(path.join(t109root, "b(1).md"), "# paren note\n");
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, "T109-PAREN see [a](b(1).md) and [u](v(2.md end.");
+	const t109paren = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-PAREN",
+	});
+	const t109parenRels = await t109paren
+		.locator("a[data-apath]")
+		.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset["apath"]));
+	check(
+		"t109 parenthesized destination linkifies whole",
+		JSON.stringify(t109parenRels) === JSON.stringify(["b(1).md"]),
+		JSON.stringify(t109parenRels),
+	);
+	const t109parenBody = (await t109paren.locator(".body").textContent()) ?? "";
+	check(
+		"t109 unbalanced destination renders literally",
+		t109parenBody.includes("[u](v(2.md"),
+		t109parenBody.slice(0, 160),
+	);
+	// T109 P3a: a trailing backtick is punctuation; image syntax never
+	// becomes a file link (alt stays plain text).
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, `T109-TICK see bare ${t109root}/notes.md\` plus ![pic](notes.md) end.`);
+	const t109tick = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-TICK",
+	});
+	const t109tickRels = await t109tick
+		.locator("a[data-apath]")
+		.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset["apath"]));
+	check(
+		"t109 backtick trims and image syntax stays plain",
+		JSON.stringify(t109tickRels) === JSON.stringify(["notes.md"]),
+		JSON.stringify(t109parenRels) + " / " + JSON.stringify(t109tickRels),
+	);
+	const t109tickBody = (await t109tick.locator(".body").textContent()) ?? "";
+	check(
+		"t109 image alt renders as plain text",
+		t109tickBody.includes("pic") && !t109tickBody.includes("![pic]"),
+		t109tickBody.slice(0, 200),
+	);
+	// T109 P3b: tool/subagent cards never linkify, even under catch-up.
+	await page.evaluate(() => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(
+			hook.renderRow({
+				kind: "t109custom",
+				text: "T109-CARD see [notes](notes.md).",
+			}),
+		);
+		box.appendChild(
+			hook.renderRow({
+				kind: "subagent",
+				objective: "T109-SUB see [notes](notes.md).",
+				status: "completed",
+			}),
+		);
+		box.scrollTop = box.scrollHeight;
+		hook.chatCatchUp();
+	});
+	const t109card = page.locator("#pane-chat .msg.agent.tcard", {
+		hasText: "T109-CARD",
+	});
+	const t109sub = page.locator("#pane-chat .msg.agent.tcard", {
+		hasText: "T109-SUB",
+	});
+	check(
+		"t109 cards stay untouched by linkify and catch-up",
+		(await t109card.locator("a[data-apath]").count()) === 0 &&
+			(await t109sub.locator("a[data-apath]").count()) === 0 &&
+			(((await t109card.locator(".body").textContent()) ?? "").includes(
+				"[notes](notes.md)",
+			) ||
+				((await t109sub.locator(".body").textContent()) ?? "").includes(
+					"[notes](notes.md)",
+				)),
+	);
+	// T109 re-review: escaped/encoded destinations decode before
+	// confinement; nested image-in-link constructs stay literal.
+	nodeFs.writeFileSync(path.join(t109root, "hello world.md"), "# spaced\n");
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, "T109-DECODE see [esc](b\\(1\\).md) and [enc](hello%20world.md) end.");
+	const t109dec = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-DECODE",
+	});
+	const t109decRels = await t109dec
+		.locator("a[data-apath]")
+		.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset["apath"]));
+	check(
+		"t109 escaped and encoded destinations decode then linkify",
+		JSON.stringify(t109decRels) ===
+			JSON.stringify(["b(1).md", "hello world.md"]),
+		JSON.stringify(t109decRels),
+	);
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, "T109-NEST see [![alt](notes.md)](reports/r.html) end.");
+	const t109nest = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-NEST",
+	});
+	check(
+		"t109 nested image-in-link stays literal, interior not linkified",
+		(await t109nest.locator("a[data-apath]").count()) === 0 &&
+			(((await t109nest.locator(".body").textContent()) ?? "").includes(
+				"[![alt](notes.md)](reports/r.html)",
+			) as boolean),
+		((await t109nest.locator(".body").textContent()) ?? "").slice(0, 160),
+	);
+	// T109 round 3: escaped delimiters are not delimiters — \( \) in
+	// destinations, \[ in labels.
+	nodeFs.writeFileSync(path.join(t109root, "a)b.md"), "# escaped paren\n");
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, "T109-ESC see [x](a\\)b.md) and [a \\[ b](notes.md) then [ok](notes.md) end.");
+	const t109esc = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-ESC",
+	});
+	const t109escRels = await t109esc
+		.locator("a[data-apath]")
+		.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset["apath"]));
+	check(
+		"t109 escaped delimiters do not misparse destinations or labels",
+		JSON.stringify(t109escRels) ===
+			JSON.stringify(["a)b.md", "notes.md", "notes.md"]),
+		JSON.stringify(t109escRels),
+	);
+	// T109 re-review: a failed /api/status (500) must NOT publish
+	// readiness — pending paragraphs keep their original text and
+	// linkify on the next good status, through the real loadStatus.
+	await page.route("**/api/status", (route) =>
+		route.fulfill({
+			status: 500,
+			contentType: "application/json",
+			body: JSON.stringify({ ok: false, why: "boom" }),
+		}),
+	);
+	await page.evaluate(() => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		hook.wsPending();
+		box.appendChild(
+			hook.renderRow({
+				kind: "agentMessage",
+				text: "T109-STATUS see [notes](notes.md).",
+			}),
+		);
+		box.scrollTop = box.scrollHeight;
+		return hook.loadStatus();
+	});
+	const t109stat = page.locator("#pane-chat .msg.agent", {
+		hasText: "T109-STATUS",
+	});
+	const t109statBody1 = (await t109stat.locator(".body").textContent()) ?? "";
+	check(
+		"t109 failed status leaves pending links un-consumed",
+		(await t109stat.locator("a[data-apath]").count()) === 0 &&
+			t109statBody1.includes("[notes](notes.md)"),
+		t109statBody1.slice(0, 160),
+	);
+	await page.unroute("**/api/status");
+	await page.evaluate(() => window.__smoke?.loadStatus());
+	check(
+		"t109 next good status linkifies the pending links",
+		(await t109stat.locator('a[data-apath="notes.md"]').count()) === 1,
+	);
+	await page.screenshot({ path: path.join(OUT, "t109-links.png") });
+	// Leave the center where the next leg expects it (chat tab).
+	await page.locator('.ctab[data-pane="pane-chat"]').click();
+	await page.waitForSelector("#pane-chat.active", { timeout: 10_000 });
 
 	// Open-in-tab wiring: fake ref must open the pane with an honest error.
 	await page
@@ -3963,6 +4433,11 @@ try {
 	// query params); match on pathname only.
 	const EXPECTED_FAILED: FailedResponse[] = [
 		{ status: 400, method: "GET", pathname: "/api/chat/output" },
+		// T109 re-review: the deliberately injected /api/status 500
+		// (route-intercepted) proves failed status publishes nothing.
+		{ status: 500, method: "GET", pathname: "/api/status" },
+		// T109 P1: refused chat-link clicks preflight to a 200
+		// {ok:false} toast — no /api/file fetch, no failure to excuse.
 		{ status: 401, method: "POST", pathname: "/api/auth/unlock" },
 		{ status: 400, method: "POST", pathname: "/api/workspaces" },
 		{
