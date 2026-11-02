@@ -272,3 +272,12 @@ statement = "Skills should come from one managed source (likely tikoci/routeros-
 source = "developer design thinking 2026-11-01 (D40 follow-up); skills-surface research 2026-11-01: plugin channel = machine-level cache, workspace copy = session truth"
 informs = ["T100"]
 updated = "2026-11-01"
+
+[[concept]]
+id = "K31"
+title = "routeros-muse manages the muse login"
+status = "proposed"
+statement = "Later, a setting chooses where the muse login comes from. In 'inherit' mode (today's behavior, D44) the private home links the user's own muse auth.json. In a routeros-muse-owned mode, our UI runs the OAuth device flow itself, shows who is logged in, and writes the resulting auth.json straight into the private muse home: our own copy, not a copy of the user's. That mode could be per workspace. The developer named this as concept flushing, not current work. Prior art: the muse launcher's device flow (auth.meta.com /oidc/device/authorization/, device_code grant), and the user_email/user_full_name fields in auth.json (read only to display, never logged)."
+source = "developer 2026-11-02, during T101 (auth carry-over question)"
+informs = ["T101"]
+updated = "2026-11-02"
