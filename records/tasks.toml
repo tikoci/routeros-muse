@@ -16,10 +16,10 @@ id = "T2"
 title = "Run rosetta CLI probe handoff"
 status = "done"
 detail = "Execute notes/rosetta-cli-prompt.md in the rosetta checkout; feeds R1/R3/R4."
-evidence = "notes/t2-rosetta-cli.md (critic-verified; R1/R3/R4 follow-through open)"
+evidence = "notes/t2-rosetta-cli.md (critic-verified); T103 GitHub audit 2026-11-02: R1 rosetta#54 closed, gap-table comment already posted; remaining R1/R3 work in tikoci/rosetta#221/#223/#224 (open), docs PRs #216/#217 merged; R4 tikoci/rosetta#168 open (download substitution, not DB coexistence)."
 blocked_by = []
 agent = "habitat-c"
-updated = "2026-10-28"
+updated = "2026-11-02"
 
 [[task]]
 id = "T3"
@@ -216,20 +216,20 @@ id = "T22"
 title = "Centrs golden-path alignment"
 status = "done"
 detail = "Surface centrs gaps for container plus dashboard path and align with centrs plans as separate track."
-evidence = "notes/t22-centrs-align.md (critic-verified; draft only, nothing filed)"
+evidence = "notes/t22-centrs-align.md (critic-verified draft); T103 published 2026-11-02: MCP transfer https://github.com/tikoci/centrs/issues/593; directory upload https://github.com/tikoci/centrs/issues/594; serving design https://github.com/tikoci/centrs/issues/595. Existing fetch upload #548, session handle #401, transfer hardening #147, output warning #542 and onboarding #150 retained. C12 is served-code discipline, not a full Node tooling port; #595 carries that constraint."
 blocked_by = []
 agent = "habitat-c"
-updated = "2026-10-28"
+updated = "2026-11-02"
 
 [[task]]
 id = "T23"
 title = "Centrs follow-through wave (post-prerelease)"
 status = "needed"
 detail = "Prerelease condition is now satisfied by the package bundle (centrs 0.1.9-next.24); re-triage the remaining need list against current upstream, verify fixes in the consumer and resume follow-through. No longer blocked on the old prerelease/PR status."
-evidence = "T80 2026-11-01: installed trilogy versions read from package metadata; GitHub read confirms #541 and #547 merged. Original brief: notes/centrs-followup-prompt.md. C7 old #547 association was incorrect (that PR fixes C2)."
+evidence = "T80 2026-11-01: bundle 0.1.9-next.24; #541/#547 merged. T103 issue handoff 2026-11-02: C1=tikoci/centrs#542; C2=#546 closed, consumer L2 verification pending; C7=https://github.com/tikoci/centrs/issues/588; C8=https://github.com/tikoci/centrs/issues/589; C9=https://github.com/tikoci/centrs/issues/590; C10=https://github.com/tikoci/centrs/issues/591; C11=https://github.com/tikoci/centrs/issues/592. C13-C19 existing open issues respectively #551/#558/#581/#582/#583/#587/#586. T22 feature handoff #593/#594/#595. Historical C7-C10 #518 is a coordination reference, not their GitHub issue; #547 fixes C2 only. New historical reports explicitly require current-main reproduction; this task remains needed for consumer verification. Original brief: notes/centrs-followup-prompt.md."
 blocked_by = []
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[task]]
 id = "T24"
@@ -1039,4 +1039,14 @@ detail = "T55 made config.mcpServers ours, and D44 gave sessions a private setti
 evidence = "developer question 2026-11-02; T55 merged 1e16df0 (multi-server config.mcpServers machinery); D44/D45 private settings.json carries no user mcpServers"
 blocked_by = []
 agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T103"
+title = "Publish cross-repo needs as standalone upstream issues"
+status = "done"
+detail = "Developer-requested issue-only pass: deduplicate centrs/quickchr/rosetta needs against open and closed GitHub issues, file missing reports with self-contained context, and record issue numbers here. No product changes or upstream implementation; T23 retains consumer verification."
+evidence = "Filed 9 standalone issues after all-state GitHub searches: centrs#588-#595 (C7-C11 plus T22 MCP/directory-upload/serving), rosetta R7 defaults https://github.com/tikoci/rosetta/issues/251. Existing mappings: T2/T22/T23 evidence above; Q3 https://github.com/tikoci/quickchr/issues/210 and https://github.com/tikoci/quickchr/issues/232 open, diagnostics PR #226 merged, live sandbox verification pending; Q1 #211 closed, Q2/S1-S4 already landed. R5 existing https://github.com/tikoci/rosetta/issues/174 and https://github.com/tikoci/rosetta/issues/230; sibling ros-help.db read-only SELECT ros_version,count(*) FROM command_versions WHERE ros_version LIKE '7.26%' GROUP BY ros_version returned beta1=44691/beta3=44740 (release_tag v0.12.0-next.123), so old 7.25rc1 ceiling is stale, published artifact completeness unverified. R6 https://github.com/tikoci/rosetta/issues/167 open. R7 RF https://github.com/tikoci/rosetta/issues/233 and https://github.com/tikoci/rosetta/issues/235 open (#190 closed after split). C12 no tooling port per developer narrowing; served-code rule already in template. Product/needs files untouched; task references are the handoff overlay. Validation: make gate log /tmp/routeros-muse-upstream-triage-gate.log completed with Biome/tsc clean, 521 pass/0 fail, SMOKE GREEN, tmpdir clean; make -C records check passes (105 tasks). This validates the issue-only change, not later concurrent product commits."
+blocked_by = []
+agent = "codex-upstream-triage"
 updated = "2026-11-02"
