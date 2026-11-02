@@ -300,10 +300,10 @@ outcome = "No coord list/post obligation going forward; the new repo AGENTS.md o
 [[decision]]
 id = "D38"
 title = "Ask-first maps to promptUnmatched (onRequest gates nothing)"
-status = "open"
+status = "decided"
 detail = "Live meta capture 2026-11-01 (docs/design/t50-t55-wire-shapes.md, muse 1.4.14): under onRequest, bash ls/rm and write_file ran with approvalId null; real prompts (approval/request + approval/decide) only fire under promptUnmatched. Recommendation: map the UI 'Ask first' (and the server default) to promptUnmatched, landing together with T50's approval surface so requests never wait unanswered; until then avoid real-router sessions."
-decided = ""
-outcome = ""
+decided = "2026-11-01"
+outcome = "Developer 2026-11-01: option A now. promptUnmatched IS Ask first (the mislabel is the core bug) and is the default; start over-prompting, then whitelist our designed read allows once the permissions explorer reports. onRequest is not mapped in the selector for now (it only gates MCP tools, and we load no MCP server today; revisit when D41 ui_* MCP or rosetta MCP lands). The default access mode becomes a user setting. Router-side least privilege (T47) is the long-term boundary. Ships with T50 so prompts never wait unanswered. Probe 2026-11-01: onRequest shell reached loopback and LAN with no approval (out/wire-capture/d38/, local)."
 
 [[decision]]
 id = "D39"

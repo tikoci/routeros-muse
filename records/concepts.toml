@@ -263,3 +263,12 @@ statement = "The muse-app/VM session designs in the shared workspace (plan, prop
 source = "developer pivot 2026-10-31 (D10)"
 informs = ["T29", "T30", "T31", "T15"]
 updated = "2026-10-31"
+
+[[concept]]
+id = "K30"
+title = "One managed home for skills"
+status = "proposed"
+statement = "Skills should come from one managed source (likely tikoci/routeros-skills, organized by metadata, branches or Pages) rather than being copied per template; routeros-muse installs a declared set into .agents/skills with provenance, offers updates, and checks the loaded list via skill/list. Surfaced by D40; deeper round of work after the demo path."
+source = "developer design thinking 2026-11-01 (D40 follow-up)"
+informs = ["T100"]
+updated = "2026-11-01"
