@@ -9,7 +9,13 @@
 // Subcommands:
 //   session-probe  initialize + session/start + skill/list + model/list (no model calls)
 //   turn           full session + one turn; scripted approval/question policies
+//   raw            initialize + session/start + scripted extra method calls (JSON, no model calls)
 //   mcp-server     trivial stdio MCP server exposing ui_show_note(text) (B2 probe)
+//
+// Shared flags:
+//   --experimental             opt into experimentalApi at initialize
+//   --permission-profile=<id>  session/start permissionProfile (stable member)
+//   --capabilities=a,b         requestedCapabilities at initialize
 //
 // Research-only: no dependency on src/ (self-contained, zero deps).
 
@@ -322,6 +328,8 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 	const mcpConfigPath = flags.get("mcp-config");
 
 	const caps = (flags.get("capabilities") ?? "").split(",").filter(Boolean);
+	const experimental = flags.get("experimental") === "true";
+	const permissionProfile = flags.get("permission-profile");
 	const cap = await Capture.spawn({
 		provider,
 		extraServeArgs,
@@ -331,10 +339,17 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 	try {
 		const init = (await cap.call("initialize", {
 			clientInfo: { name: "msp_capture", version: "0.1" },
-			...(caps.length ? { capabilities: { requestedCapabilities: caps } } : {}),
+			...(caps.length || experimental
+				? {
+						capabilities: {
+							...(caps.length ? { requestedCapabilities: caps } : {}),
+							...(experimental ? { experimentalApi: true } : {}),
+						},
+					}
+				: {}),
 		})) as Frame;
 		console.log(
-			`initialize: server=${JSON.stringify((init["serverInfo"] as Frame) ?? null)} durability=${String(init["sessionDurability"] ?? "?")} granted=${JSON.stringify(init["grantedCapabilities"] ?? null)}`,
+			`initialize: server=${JSON.stringify((init["serverInfo"] as Frame) ?? null)} durability=${String(init["sessionDurability"] ?? "?")} granted=${JSON.stringify(init["grantedCapabilities"] ?? null)} experimentalApi=${String(init["experimentalApi"] ?? "?")} museHome=${String(init["museHome"] ?? "?")} sandbox=${String((init["sandboxAvailability"] as string) ?? "?")}`,
 		);
 		cap.notify("initialized", {});
 		const startParams: Frame = {
@@ -342,6 +357,7 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 			workspaceRoot: workspace,
 			approvalMode,
 		};
+		if (permissionProfile) startParams["permissionProfile"] = permissionProfile;
 		if (mcpConfigPath) {
 			const cfg = JSON.parse(await Bun.file(mcpConfigPath).text()) as Frame;
 			startParams["config"] = { mcpServers: cfg };
@@ -353,7 +369,7 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 		)) as Frame;
 		const session = started["session"] as Frame;
 		console.log(
-			`session/start: sessionId=${String(session["sessionId"])} status=${String(session["status"] ?? "?")}`,
+			`session/start: sessionId=${String(session["sessionId"])} status=${String(session["status"] ?? "?")} approvalMode=${JSON.stringify(session["approvalMode"] ?? null)} permissionState=${JSON.stringify(session["permissionState"] ?? null)}`,
 		);
 		const skills = (await cap.call("skill/list", {
 			sessionId: session["sessionId"],
@@ -389,7 +405,6 @@ async function sessionProbe(flags: Map<string, string>): Promise<void> {
 
 // ---------- turn ----------
 
-type ApprovalPolicy = "once" | "session" | "deny" | "never";
 type UserInputPolicy = "first" | "cancel" | "never";
 
 async function turnCmd(flags: Map<string, string>): Promise<void> {
@@ -399,8 +414,10 @@ async function turnCmd(flags: Map<string, string>): Promise<void> {
 	const prompt = need(flags, "prompt");
 	const museHome = flags.get("muse-home");
 	const approvalMode = flags.get("approval-mode") ?? "onRequest";
-	const approvalPolicy = (flags.get("approve") ?? "never") as ApprovalPolicy;
+	const approvalPolicy = (flags.get("approve") ?? "never") as string;
 	const userInputPolicy = (flags.get("answer") ?? "never") as UserInputPolicy;
+	const experimental = flags.get("experimental") === "true";
+	const permissionProfile = flags.get("permission-profile");
 	const decideDelayMs = Number(flags.get("decide-delay-ms") ?? "1500");
 	const settleWaitMs = Number(flags.get("settle-wait-ms") ?? "90000");
 	const turnTimeoutMs = Number(flags.get("timeout-ms") ?? "420000");
@@ -459,8 +476,16 @@ async function turnCmd(flags: Map<string, string>): Promise<void> {
 						) ??
 						choices.find((c) => String(c["decision"]) === "denied") ??
 						choices.find((c) => String(c["decision"]) === "abort");
+				} else if (approvalPolicy.startsWith("choice:")) {
+					const want = approvalPolicy.slice("choice:".length);
+					pick = choices.find((c) => String(c["choiceId"]) === want);
 				} else {
-					const scope = approvalPolicy === "session" ? "session" : "once";
+					const scope =
+						approvalPolicy === "session"
+							? "session"
+							: approvalPolicy === "persist"
+								? "localPersistent"
+								: "once";
 					pick =
 						choices.find(
 							(c) =>
@@ -583,18 +608,25 @@ async function turnCmd(flags: Map<string, string>): Promise<void> {
 	try {
 		const initRes = (await cap.call("initialize", {
 			clientInfo: { name: "msp_capture", version: "0.1" },
-			...(caps.length ? { capabilities: { requestedCapabilities: caps } } : {}),
+			...(caps.length || experimental
+				? {
+						capabilities: {
+							...(caps.length ? { requestedCapabilities: caps } : {}),
+							...(experimental ? { experimentalApi: true } : {}),
+						},
+					}
+				: {}),
 		})) as Frame;
-		if (caps.length)
-			console.log(
-				`grantedCapabilities: ${JSON.stringify(initRes["grantedCapabilities"] ?? null)}`,
-			);
+		console.log(
+			`grantedCapabilities: ${JSON.stringify(initRes["grantedCapabilities"] ?? null)} experimentalApi=${String(initRes["experimentalApi"] ?? "?")} museHome=${String(initRes["museHome"] ?? "?")} sandbox=${String((initRes["sandboxAvailability"] as string) ?? "?")}`,
+		);
 		cap.notify("initialized", {});
 		const startParams: Frame = {
 			commandId: uuid7(),
 			workspaceRoot: workspace,
 			approvalMode,
 		};
+		if (permissionProfile) startParams["permissionProfile"] = permissionProfile;
 		if (mcpConfigPath) {
 			const cfg = JSON.parse(await Bun.file(mcpConfigPath).text()) as Frame;
 			startParams["config"] = { mcpServers: cfg };
@@ -672,6 +704,113 @@ async function turnCmd(flags: Map<string, string>): Promise<void> {
 		}
 		console.log(`--- agent texts (${agentTexts.length}) ---`);
 		for (const a of agentTexts) console.log(a.slice(0, 2000));
+		console.log(`methods seen: ${[...cap.methodsSeen].sort().join(" ")}`);
+	} finally {
+		await cap.close();
+	}
+}
+
+// ---------- raw: scripted method calls, no model ----------
+//
+// --raw-calls (or --raw-calls-file): JSON array of {method, params?}.
+// In params, "$S" = sessionId, "$C" = fresh UUIDv7 per call.
+// Each result (or error) prints to stdout; every frame lands in --out.
+
+async function rawCmd(flags: Map<string, string>): Promise<void> {
+	const provider = flags.get("provider") ?? "meta";
+	const workspace = need(flags, "workspace");
+	const out = need(flags, "out");
+	const museHome = flags.get("muse-home");
+	const approvalMode = flags.get("approval-mode") ?? "onRequest";
+	const experimental = flags.get("experimental") === "true";
+	const permissionProfile = flags.get("permission-profile");
+	const extraServeArgs = (flags.get("serve-args") ?? "")
+		.split(" ")
+		.filter(Boolean);
+	const mcpConfigPath = flags.get("mcp-config");
+	const caps = (flags.get("capabilities") ?? "").split(",").filter(Boolean);
+	let callsSrc = flags.get("raw-calls") ?? "";
+	const callsFile = flags.get("raw-calls-file");
+	if (callsFile) callsSrc = await Bun.file(callsFile).text();
+	if (!callsSrc) {
+		console.error("missing --raw-calls or --raw-calls-file");
+		process.exit(2);
+	}
+	const calls = JSON.parse(callsSrc) as { method: string; params?: unknown }[];
+
+	const cap = await Capture.spawn({
+		provider,
+		extraServeArgs,
+		museHome,
+		logPath: out,
+	});
+	try {
+		const init = (await cap.call("initialize", {
+			clientInfo: { name: "msp_capture", version: "0.1" },
+			...(caps.length || experimental
+				? {
+						capabilities: {
+							...(caps.length ? { requestedCapabilities: caps } : {}),
+							...(experimental ? { experimentalApi: true } : {}),
+						},
+					}
+				: {}),
+		})) as Frame;
+		console.log(
+			`initialize: experimentalApi=${String(init["experimentalApi"] ?? "?")} granted=${JSON.stringify(init["grantedCapabilities"] ?? null)} museHome=${String(init["museHome"] ?? "?")} sandbox=${String((init["sandboxAvailability"] as string) ?? "?")}`,
+		);
+		cap.notify("initialized", {});
+		const startParams: Frame = {
+			commandId: uuid7(),
+			workspaceRoot: workspace,
+			approvalMode,
+		};
+		if (permissionProfile) startParams["permissionProfile"] = permissionProfile;
+		if (mcpConfigPath) {
+			const cfg = JSON.parse(await Bun.file(mcpConfigPath).text()) as Frame;
+			startParams["config"] = { mcpServers: cfg };
+		}
+		let sessionId = "";
+		try {
+			const started = (await cap.call(
+				"session/start",
+				startParams,
+				120_000,
+			)) as Frame;
+			const session = started["session"] as Frame;
+			sessionId = String(session["sessionId"]);
+			console.log(
+				`session/start: sessionId=${sessionId} status=${String(session["status"] ?? "?")} approvalMode=${JSON.stringify(session["approvalMode"] ?? null)} permissionState=${JSON.stringify(session["permissionState"] ?? null)}`,
+			);
+		} catch (e) {
+			console.log(`session/start FAILED: ${e}`);
+		}
+		const subst = (v: unknown): unknown => {
+			if (v === "$S") return sessionId;
+			if (v === "$C") return uuid7();
+			if (Array.isArray(v)) return v.map(subst);
+			if (typeof v === "object" && v !== null) {
+				const o: Record<string, unknown> = {};
+				for (const [k, val] of Object.entries(v)) o[k] = subst(val);
+				return o;
+			}
+			return v;
+		};
+		for (const c of calls) {
+			const params = subst(c.params ?? {}) as Frame;
+			try {
+				const res = await cap.call(c.method, params, 60_000);
+				console.log(`--- ${c.method} OK ---`);
+				console.log(JSON.stringify(res, null, 1).slice(0, 4000));
+			} catch (e) {
+				console.log(`--- ${c.method} FAILED: ${e} ---`);
+			}
+		}
+		const settleMs = Number(flags.get("settle-ms") ?? "0");
+		if (settleMs > 0) {
+			console.log(`settling ${settleMs}ms for trailing events...`);
+			await new Promise((r) => setTimeout(r, settleMs));
+		}
 		console.log(`methods seen: ${[...cap.methodsSeen].sort().join(" ")}`);
 	} finally {
 		await cap.close();
@@ -807,10 +946,11 @@ async function mcpServer(): Promise<void> {
 const { cmd, flags } = args(process.argv.slice(2));
 if (cmd === "session-probe") await sessionProbe(flags);
 else if (cmd === "turn") await turnCmd(flags);
+else if (cmd === "raw") await rawCmd(flags);
 else if (cmd === "mcp-server") await mcpServer();
 else {
 	console.error(
-		"usage: msp-capture.ts <session-probe|turn|mcp-server> [flags]",
+		"usage: msp-capture.ts <session-probe|turn|raw|mcp-server> [flags]",
 	);
 	process.exit(2);
 }
