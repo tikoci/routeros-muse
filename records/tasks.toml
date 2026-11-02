@@ -1025,8 +1025,8 @@ updated = "2026-11-01"
 id = "T104"
 title = "Hide or collapse muse's reminderChild rows in the transcript"
 status = "needed"
-detail = "Live meta sessions emit 'Reminder Child / Reminder child session' rows (kind reminderChild) that the transcript renders as ordinary cards (seen in the T55 live run). The fake MSP never emits them, so smoke never shows them. Decide: hide, or collapse into a muted line; ground the row shape from a live capture first."
-evidence = "T55 live screenshot out/t55-live/run1-final.png (local), 2026-11-02"
+detail = "Live meta sessions emit 'Reminder Child / Reminder child session' rows (kind reminderChild) that the transcript renders as ordinary cards (seen in the T55 live run). The fake MSP never emits them, but real muse does even with the echo provider (smoke shots), several marked failed. Decide: hide, or collapse into a muted line; ground the row shape from a live capture first."
+evidence = "T55 live screenshot out/t55-live/run1-final.png (local), 2026-11-02; T56 smoke shot out/ui-smoke/47-t56-kept-typing.png: muse emits them with the echo provider too, several with a red failed badge, which reads as an error to an end user"
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
@@ -1059,4 +1059,14 @@ detail = "Developer-requested issue-only pass: deduplicate centrs/quickchr/roset
 evidence = "Filed 9 standalone issues after all-state GitHub searches: centrs#588-#595 (C7-C11 plus T22 MCP/directory-upload/serving), rosetta R7 defaults https://github.com/tikoci/rosetta/issues/251. Existing mappings: T2/T22/T23 evidence above; Q3 https://github.com/tikoci/quickchr/issues/210 and https://github.com/tikoci/quickchr/issues/232 open, diagnostics PR #226 merged, live sandbox verification pending; Q1 #211 closed, Q2/S1-S4 already landed. R5 existing https://github.com/tikoci/rosetta/issues/174 and https://github.com/tikoci/rosetta/issues/230; sibling ros-help.db read-only SELECT ros_version,count(*) FROM command_versions WHERE ros_version LIKE '7.26%' GROUP BY ros_version returned beta1=44691/beta3=44740 (release_tag v0.12.0-next.123), so old 7.25rc1 ceiling is stale, published artifact completeness unverified. R6 https://github.com/tikoci/rosetta/issues/167 open. R7 RF https://github.com/tikoci/rosetta/issues/233 and https://github.com/tikoci/rosetta/issues/235 open (#190 closed after split). C12 no tooling port per developer narrowing; served-code rule already in template. Product/needs files untouched; task references are the handoff overlay. Validation: make gate log /tmp/routeros-muse-upstream-triage-gate.log completed with Biome/tsc clean, 521 pass/0 fail, SMOKE GREEN, tmpdir clean; make -C records check passes (105 tasks). This validates the issue-only change, not later concurrent product commits."
 blocked_by = []
 agent = "codex-upstream-triage"
+updated = "2026-11-02"
+
+[[task]]
+id = "T107"
+title = "Never render the [routeros-muse context] preamble in chat rows"
+status = "needed"
+detail = "T49 prepends a '[routeros-muse context] target device: {...}' preamble to the turn input when target pills are attached. T49's 'never renders' check covers only the fake-backed page, whose replies don't echo input. With the echo provider, the reply quotes the input and the preamble shows in the agent bubble (T56 smoke shots 47-49). A real agent that quotes its input, or a user-message row rebuilt from session history, would leak it the same way. Decide where to strip or hide it: the user row from displayText only, and agent text left as is, or a marker the UI strips. Ground it with an echo-provider smoke check and a session-history reload."
+evidence = "T56 child report 2026-11-02; out/ui-smoke/47-t56-kept-typing.png (local)"
+blocked_by = []
+agent = ""
 updated = "2026-11-02"
