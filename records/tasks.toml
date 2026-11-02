@@ -554,9 +554,9 @@ updated = "2026-11-02"
 [[task]]
 id = "T56"
 title = "Failed-send draft restore (t3code GAP1)"
-status = "active"
+status = "done"
 detail = "Failed chat sends currently destroy the typed prompt (composer clears before ack). Restore prompt plus images plus target pills into the composer on send failure, t3code restore semantics; smoke-gated like every UI slice."
-evidence = "t3code chat review GAP1 (notes/t41-chat-inventory.md); T62 restore rules in notes/t62-resweep.md (restore-if-empty, no interrupted toast, uploads must not strand). T71 review 2026-11-01: send-failure setRunning(false) also kills an active Stopping ticker and can clear a still-live turn; scope the failure path to the failed send (part of this task's send-failure UI)."
+evidence = "t3code chat review GAP1 (notes/t41-chat-inventory.md); T62 restore rules in notes/t62-resweep.md (restore-if-empty, no interrupted toast, uploads must not strand). T71 review 2026-11-01: send-failure setRunning(false) also kills an active Stopping ticker and can clear a still-live turn; scope the failure path to the failed send (part of this task's send-failure UI).; merged b0cc133 (f1bca93 + orchestrator review fixes 951ea82: run-state ownership via STOP_EPOCH, image dedupe across the merge, smoke barriers + overlap/dup legs that fail on the old UI); sol reviewed; main gate 558/0, smoke green"
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-02"
@@ -1067,6 +1067,16 @@ title = "Never render the [routeros-muse context] preamble in chat rows"
 status = "needed"
 detail = "T49 prepends a '[routeros-muse context] target device: {...}' preamble to the turn input when target pills are attached. T49's 'never renders' check covers only the fake-backed page, whose replies don't echo input. With the echo provider, the reply quotes the input and the preamble shows in the agent bubble (T56 smoke shots 47-49). A real agent that quotes its input, or a user-message row rebuilt from session history, would leak it the same way. Decide where to strip or hide it: the user row from displayText only, and agent text left as is, or a marker the UI strips. Ground it with an echo-provider smoke check and a session-history reload."
 evidence = "T56 child report 2026-11-02; out/ui-smoke/47-t56-kept-typing.png (local)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T108"
+title = "Smoke flake: stray net::ERR_CONNECTION_REFUSED console errors"
+status = "needed"
+detail = "One gate run in four on 2026-11-02 (T56 branch) failed 'console errors are only the expected resource loads' with two ERR_CONNECTION_REFUSED entries. The check aggregates the whole run, so the leg is unknown. Likely a page still polling or reconnecting (SSE/status) to a server a later step stopped. Make the console collector record the URL and leg, then close or navigate pages before srv.stop (or scope the excuse to that teardown). A gate that flakes erodes trust (D28)."
+evidence = "/dev/shm/gate-t56.log (local, transient); reruns green twice"
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
