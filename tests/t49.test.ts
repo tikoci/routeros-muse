@@ -513,6 +513,32 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		expect(stripTargetPreamble(turn).length).toBeGreaterThan(0);
 	});
 
+	test("past titles strip the target preamble", async () => {
+		const t50 = stubT50Bin();
+		await withT50Env(t50.log, async () => {
+			const srv = await startServer({
+				dataHome: mktmp("t49-dh-"),
+				allowOpenCdb: true,
+				workspace: makeT49Workspace(),
+				provider: "echo",
+				museHome: mktmp("t49-home-"),
+				toolBinDir: t50.bin,
+			});
+			try {
+				await fetch(`${srv.url}api/chat/history`);
+				const p = (await (
+					await fetch(`${srv.url}api/past`)
+				).json()) as {
+					pasts: { id: string; name: string }[];
+				};
+				const past = p.pasts.find((s) => s.id === "t50-past1");
+				expect(past?.name).toBe("What did the past decide?");
+			} finally {
+				await srv.stop();
+			}
+		});
+	});
+
 	test("history rows carry stripped prose plus chips", async () => {
 		const t50 = stubT50Bin();
 		await withT50Env(t50.log, async () => {
