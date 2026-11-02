@@ -494,11 +494,11 @@ updated = "2026-11-01"
 [[task]]
 id = "T50"
 title = "Approval/question surface plus meta wire-shape repro"
-status = "needed"
+status = "active"
 detail = "Main session runs approvalMode onRequest but onStream drops every non-turn/item notification, so an agent approval request or user question waits forever with no UI. Repro against live meta, capture the wire shapes, then build the surface. Companion to the T45 SSE half of the stall."
 evidence = "user report 2026-11-01; T45 fixes the transport half only; t3code approval/question patterns inventoried in notes/t41-chat-inventory.md (GAP2-3) for the surface design; T62 inputs in notes/t62-resweep.md (kinds/options/questions/dedupe/feedback; no transport work needed); live meta capture 2026-11-01 merged 97f6bd8 (docs/design/t50-t55-wire-shapes.md, tools/msp-capture.ts; raw out/wire-capture/20261101T210403Z local): approval/request+approval/decide only under promptUnmatched (onRequest gates nothing, see D38); request_user_input -> userInput/request answered by userInput/answer; never-answered stays pending indefinitely; UI onStream drops approval/*, userInput/*, session/*"
 blocked_by = []
-agent = ""
+agent = "muse-spark-1.3 (orch claude-orch)"
 updated = "2026-11-01"
 
 [[task]]
