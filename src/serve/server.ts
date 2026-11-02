@@ -187,6 +187,8 @@ export type TranscriptItem = {
 	kind: string;
 	role?: "user" | "agent";
 	text?: string;
+	/** T49: device chips parsed from the user row's preamble block. */
+	targets?: TargetChip[];
 	tool?: string;
 	status?: string;
 	hint?: string;
@@ -257,16 +259,24 @@ export function transcriptItems(events: ViewEvent[]): TranscriptItem[] {
 		if (kind === "userMessage" || kind === "agentMessage") {
 			const text = str(item["text"]);
 			if (!text) continue;
+			if (kind === "agentMessage") {
+				// An agent quoting the tag is its own voice and
+				// stays verbatim — the preamble strip is user-only.
+				out.push({ kind, role: "agent", text });
+				continue;
+			}
 			// T49: the send route prepends target context to the stored
-			// user text; rows show the prose, never the raw preamble.
-			// User rows only — an agent quoting the tag is its own
-			// voice and stays verbatim. History and live SSE share
-			// this mapper, so one strip point covers both.
-			out.push({
+			// user text; rows show the prose plus chips, never the raw
+			// preamble. History and live SSE share this mapper, so one
+			// strip point covers both — and chips survive reload.
+			const parsed = parseTargetPreamble(text);
+			const row: TranscriptItem = {
 				kind,
-				role: kind === "userMessage" ? "user" : "agent",
-				text: kind === "userMessage" ? stripTargetPreamble(text) : text,
-			});
+				role: "user",
+				text: parsed.text,
+			};
+			if (parsed.targets.length > 0) row.targets = parsed.targets;
+			out.push(row);
 			continue;
 		}
 		if (kind === "toolCall") {

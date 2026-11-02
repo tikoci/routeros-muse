@@ -37,6 +37,7 @@ function logLine(line) {
 
 const SESSION = "t50-s1";
 let workspaceRoot = "";
+const turns = [];
 let turnN = 0;
 let apprN = 0;
 let qN = 0;
@@ -256,6 +257,7 @@ rl.on("line", (text) => {
 			.join("\n");
 		logLine("RECV_TURN turnId=" + t);
 		logLine("TURN_TEXT " + JSON.stringify(textIn));
+		turns.push({ id: t, text: textIn });
 		send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
 		notify("turn/started", { sessionId: SESSION, turnId: t });
 		let held = false;
@@ -468,7 +470,17 @@ rl.on("line", (text) => {
 		return;
 	}
 	if (method === "view/page") {
-		send({ jsonrpc: "2.0", id: id, result: { events: [], nextCursor: null } });
+		// T49 follow-up: history carries the real sent texts (preamble
+		// included), so the server strip + chips path is exercised —
+		// an empty history made the old no-preamble assertion vacuous.
+		const events = turns.map((t) => ({
+			method: "item/completed",
+			params: {
+				sessionId: SESSION,
+				item: { kind: "userMessage", itemId: t.id + "-u", text: t.text },
+			},
+		}));
+		send({ jsonrpc: "2.0", id: id, result: { events: events, nextCursor: null } });
 		return;
 	}
 	if (method === "session/list") {

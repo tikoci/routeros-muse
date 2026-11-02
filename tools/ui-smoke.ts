@@ -2577,12 +2577,48 @@ try {
 			check(
 				"t49 fake turn input carries the validated preamble",
 				t49Turn.startsWith(
-					"[routeros-muse context] target device: smoke-gw (id smoke-gw)\n\nT49-TARGET-PROBE",
+					`[routeros-muse context] target device: ${JSON.stringify({ id: "smoke-gw", name: "smoke-gw" })}\n\nT49-TARGET-PROBE`,
 				),
-				t49Turn.slice(0, 160),
+				t49Turn.slice(0, 200),
 			);
 			await page.screenshot({ path: path.join(OUT, "40-t49-target.png") });
-			// The two reloads above fired fresh app batches after
+			// T49 follow-up: chips survive reload. History re-renders
+			// the probe bubble from the fake's stored turn text (raw
+			// preamble included), so the server strip + chips path —
+			// not the optimistic send path — is what puts the chip
+			// back. The bubble shows the prose, never the preamble.
+			const t49Reload = watchAppBatch(page);
+			await page.reload({ waitUntil: "load" });
+			await t49Reload;
+			await page.waitForFunction(
+				() =>
+					[...document.querySelectorAll("#pane-chat .msg.user .bubble")].some(
+						(p) => (p.textContent ?? "").includes("T49-TARGET-PROBE"),
+					),
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const reloadedChips = await page
+				.locator(
+					'#pane-chat .msg.user:has(.bubble:text("T49-TARGET-PROBE")) .tchip',
+				)
+				.allTextContents();
+			check(
+				"t49 chip survives reload",
+				reloadedChips.some((t) => t.includes("smoke-gw")),
+				reloadedChips.join(" | ") || "(no chips)",
+			);
+			const reloadedLeak = await page.evaluate(() =>
+				(document.body.textContent ?? "").includes("[routeros-muse context]"),
+			);
+			check(
+				"t49 raw preamble never renders after reload",
+				reloadedLeak === false,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "41-t49-target-reload.png"),
+			});
+			// The reloads above fired fresh app batches after
 			// batchT resolved: prove quiescence before the stop.
 			await page.evaluate(async () => {
 				await Promise.all(

@@ -1812,7 +1812,7 @@
 
   function renderRow(row) {
     if (!row || typeof row !== "object") return null;
-    if (row.kind === "userMessage") return bubble("user", row.text || "");
+    if (row.kind === "userMessage") return bubble("user", row.text || "", row.targets);
     if (row.kind === "agentMessage") return bubble("agent", row.text || "");
     if (row.kind === "toolCall") return toolCard(row);
     if (row.kind === "subagent") return subagentCard(row);

@@ -512,4 +512,47 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		expect(stripTargetPreamble(turn)).toBe(turn);
 		expect(stripTargetPreamble(turn).length).toBeGreaterThan(0);
 	});
+
+	test("history rows carry stripped prose plus chips", async () => {
+		const t50 = stubT50Bin();
+		await withT50Env(t50.log, async () => {
+			const srv = await startServer({
+				dataHome: mktmp("t49-dh-"),
+				allowOpenCdb: true,
+				workspace: makeT49Workspace(),
+				provider: "echo",
+				museHome: mktmp("t49-home-"),
+				toolBinDir: t50.bin,
+			});
+			try {
+				const r = await fetch(`${srv.url}api/chat/send`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						text: "why is the link slow?",
+						targets: [{ id: "gw", name: "gw" }],
+					}),
+				});
+				expect(r.status).toBe(200);
+				await pollTurns(t50.log, 1);
+				const h = (await (
+					await fetch(`${srv.url}api/chat/history`)
+				).json()) as {
+					ok: boolean;
+					items: Record<string, unknown>[];
+				};
+				expect(h.ok).toBe(true);
+				expect(h.items.filter((i) => i["kind"] === "userMessage")).toEqual([
+					{
+						kind: "userMessage",
+						role: "user",
+						text: "why is the link slow?",
+						targets: [{ id: "gw", name: "gw", host: "192.168.88.1" }],
+					},
+				]);
+			} finally {
+				await srv.stop();
+			}
+		});
+	});
 });
