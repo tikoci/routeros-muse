@@ -39,7 +39,7 @@ import * as nodeCrypto from "node:crypto";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { mcpToolName, UI_TOOL_NAMES } from "../mcp/ui-tools";
+import { SEED_TOOL_NAMES } from "../mcp/trilogy-tools";
 import { readDevices } from "./fleet";
 import { dataHomeDir } from "./registry";
 
@@ -237,6 +237,12 @@ export type EnsureArgs = {
 	hosts?: string[];
 	/** False removes our tagged rules for this workspace instead. */
 	enabled: boolean;
+	/**
+	 * The tool_action seed set (T105): narrowed by the caller to
+	 * servers whose bundle entries resolved, so no rules are seeded
+	 * for tools no session has. Defaults to the full seed set.
+	 */
+	seedTools?: string[];
 };
 
 function pidAlive(pid: number): boolean {
@@ -793,8 +799,12 @@ function ensurePreallowReadsLocked(
 		...(args.enabled ? hosts.map((h) => networkEntry(h)) : []),
 		// The ui_* tools ride the same toggle (T55): seeded whenever
 		// preallow is on, in workspace and no-workspace homes alike.
+		// T105: the read-only centrs + rosetta MCP tools ride it too
+		// (tagged tool_action rules, global like the ui ones — the
+		// home itself is per-workspace, D45). Mixed/write tools are
+		// never seeded: per-op scoping is impossible (P7).
 		...(args.enabled
-			? UI_TOOL_NAMES.map((t) => toolEntry(mcpToolName(t)))
+			? (args.seedTools ?? SEED_TOOL_NAMES).map((t) => toolEntry(t))
 			: []),
 	];
 	const seededCommands =

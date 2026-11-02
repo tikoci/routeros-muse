@@ -77,14 +77,19 @@ import {
 	writeWorkspaceFile,
 } from "../lib/workspace";
 import {
-	mcpToolName,
+	CENTRS_MCP_SERVER,
+	centrsEntry,
+	ROSETTA_MCP_SERVER,
+	rosettaEntry,
+	seedToolNames,
+	sessionMcpServers,
+} from "../mcp/trilogy-tools";
+import {
 	mintMcpToken,
 	NOTIFY_TEXT_MAX,
 	resolveUiOpen,
 	stripMcpPrefix,
 	tokensEqual,
-	UI_TOOL_NAMES,
-	uiMcpServers,
 } from "../mcp/ui-tools";
 import {
 	type ApprovalMode,
@@ -136,6 +141,13 @@ export type ServeOpts = {
 	 * stub bin dir. Defaults to the package's own node_modules/.bin.
 	 */
 	toolBinDir?: string;
+	/**
+	 * Override for the package root used to resolve the trilogy MCP
+	 * bundle entries (T105): tests point at a stub bundle. Defaults
+	 * to the detected package root (null when unknown — both
+	 * trilogy servers then omit, honestly).
+	 */
+	packageRoot?: string | null;
 	/**
 	 * XDG data-home override for the workspaces registry (T40): tests
 	 * isolate here. Defaults to the real XDG_DATA_HOME.
@@ -688,13 +700,39 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const mcpBridge = fileURLToPath(
 		new URL("../mcp/ui-bridge.ts", import.meta.url),
 	);
+	// T105: the trilogy MCP bundle entries resolve once at boot
+	// (absolute paths, D26). A missing entry omits only that server
+	// — the worker still starts — and warns once here, the same
+	// honest-degradation shape toolInfo uses for missing binaries.
+	const trilogyPkgRoot =
+		opts.packageRoot !== undefined ? opts.packageRoot : packageRoot();
+	const trilogyResolved = {
+		centrs: centrsEntry(trilogyPkgRoot) !== null,
+		rosetta: rosettaEntry(trilogyPkgRoot) !== null,
+	};
+	for (const [name, entry] of [
+		[CENTRS_MCP_SERVER, centrsEntry(trilogyPkgRoot)],
+		[ROSETTA_MCP_SERVER, rosettaEntry(trilogyPkgRoot)],
+	] as const) {
+		if (!entry) {
+			console.error(
+				`MCP server '${name}' omitted: bundle entry missing under ` +
+					`${trilogyPkgRoot ?? "(unknown package root)"} — ` +
+					`the worker still starts without it`,
+			);
+		}
+	}
+	// Only resolved servers' tools are seeded/reported (review fix).
+	const resolvedSeedTools = seedToolNames(trilogyResolved);
 	function mcpServers(): Record<string, McpServerConfig> {
-		return uiMcpServers({
+		return sessionMcpServers({
 			bridge: mcpBridge,
 			bun: process.execPath,
 			url: `http://127.0.0.1:${relay.port}/`,
 			token: mcpToken,
-		});
+			cdbFile,
+			pkgRoot: trilogyPkgRoot,
+		}).servers;
 	}
 
 	// MSP host: one client, one main session, lazy-started. Both inits
@@ -801,6 +839,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					...(noWs ? {} : { workspaceRoot: root }),
 					hosts,
 					enabled,
+					seedTools: resolvedSeedTools,
 				});
 				warnings.push(...res.warnings);
 			} catch (err) {
@@ -818,7 +857,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			enabled,
 			commands,
 			hosts,
-			tools: enabled ? [...UI_TOOL_NAMES].map(mcpToolName) : [],
+			tools: enabled ? [...resolvedSeedTools] : [],
 			warnings,
 			configHome: museCfgHome,
 			homeError,

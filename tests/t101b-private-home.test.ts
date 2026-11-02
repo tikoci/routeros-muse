@@ -26,7 +26,7 @@ import {
 	workspaceConfigId,
 	workspaceHosts,
 } from "../src/lib/preallow";
-import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
+import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
@@ -541,9 +541,7 @@ describe("no-workspace seeding", () => {
 			).toBe(false);
 			expect(taggedHosts(priv)).toEqual(["h1"]);
 			// T55: the ui tool set seeds in no-workspace homes too.
-			expect(taggedTools(priv)).toEqual(
-				[...UI_TOOL_NAMES].map(mcpToolName).sort(),
-			);
+			expect(taggedTools(priv)).toEqual([...SEED_TOOL_NAMES].sort());
 		});
 	});
 
@@ -597,10 +595,8 @@ describe("no-workspace seeding", () => {
 			// T55: no shell or host rules, but the ui tool set still seeds.
 			expect(res.changed).toBe(true);
 			expect(nodeFs.existsSync(policyFile(priv))).toBe(true);
-			expect(taggedTools(priv)).toEqual(
-				[...UI_TOOL_NAMES].map(mcpToolName).sort(),
-			);
-			expect(readPolicy(priv).rules).toHaveLength(UI_TOOL_NAMES.length);
+			expect(taggedTools(priv)).toEqual([...SEED_TOOL_NAMES].sort());
+			expect(readPolicy(priv).rules).toHaveLength(SEED_TOOL_NAMES.length);
 		});
 	});
 });
@@ -801,14 +797,12 @@ describe("T101b server wiring (D44)", () => {
 					// T55: the ui tool set seeds (its tools exist in
 					// no-workspace sessions too). T106: the report
 					// carries them (empty commands/hosts), not null.
-					expect(taggedTools(priv)).toEqual(
-						[...UI_TOOL_NAMES].map(mcpToolName).sort(),
-					);
-					expect(readPolicy(priv).rules).toHaveLength(UI_TOOL_NAMES.length);
+					expect(taggedTools(priv)).toEqual([...SEED_TOOL_NAMES].sort());
+					expect(readPolicy(priv).rules).toHaveLength(SEED_TOOL_NAMES.length);
 					const status = await getJson(`${srv.url}api/status`);
 					const pre = status["preallow"] as Record<string, unknown>;
 					expect(pre["enabled"]).toBe(true);
-					expect(pre["tools"]).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+					expect(pre["tools"]).toEqual(SEED_TOOL_NAMES);
 					expect(pre["commands"]).toEqual([]);
 					expect(pre["hosts"]).toEqual([]);
 				} finally {

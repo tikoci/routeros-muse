@@ -32,7 +32,7 @@ import {
 	workspaceHosts,
 } from "../src/lib/preallow";
 import { dataHomeDir } from "../src/lib/registry";
-import { UI_TOOL_NAMES } from "../src/mcp/ui-tools";
+import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { museAuthFile as agentMuseAuthFile } from "../src/steps/agent";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
@@ -672,7 +672,7 @@ describe("round-4 review fixes", () => {
 				readPolicy(priv).rules.filter((r) => r["reason"] === PREALLOW_TAG)
 					.length,
 				// T55: the shell set plus the ui tool set.
-			).toBe(READ_COMMANDS.length + UI_TOOL_NAMES.length);
+			).toBe(READ_COMMANDS.length + SEED_TOOL_NAMES.length);
 			ensurePreallowReads({
 				configHome: priv,
 				workspaceRoot: alias,

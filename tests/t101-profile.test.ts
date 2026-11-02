@@ -13,7 +13,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { PREALLOW_TAG, policyFile, READ_COMMANDS } from "../src/lib/preallow";
-import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
+import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { profileForAccess, startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
@@ -366,7 +366,7 @@ describe("T101 Part B: server pre-seed wiring", () => {
 					// tools (empty commands/hosts) instead of null.
 					const pre = status["preallow"] as Record<string, unknown>;
 					expect(pre["enabled"]).toBe(true);
-					expect(pre["tools"]).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+					expect(pre["tools"]).toEqual(SEED_TOOL_NAMES);
 					expect(pre["commands"]).toEqual([]);
 					expect(pre["hosts"]).toEqual([]);
 					const rules = (
@@ -374,7 +374,7 @@ describe("T101 Part B: server pre-seed wiring", () => {
 							rules: Record<string, unknown>[];
 						}
 					).rules;
-					expect(rules).toHaveLength(UI_TOOL_NAMES.length);
+					expect(rules).toHaveLength(SEED_TOOL_NAMES.length);
 					expect(
 						rules
 							.map(
@@ -382,7 +382,7 @@ describe("T101 Part B: server pre-seed wiring", () => {
 									(r["rule"] as Record<string, unknown>)["tool_name"] as string,
 							)
 							.sort(),
-					).toEqual([...UI_TOOL_NAMES].map(mcpToolName).sort());
+					).toEqual([...SEED_TOOL_NAMES].sort());
 				} finally {
 					await srv.stop();
 				}

@@ -32,6 +32,7 @@ import * as path from "node:path";
 import { chromium, type Page, type Request } from "playwright";
 import { READ_COMMANDS } from "../src/lib/preallow";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
+import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
@@ -334,7 +335,7 @@ try {
 	check(
 		"t55 policy file holds our tagged ui tool set",
 		JSON.stringify([...oursTools].sort()) ===
-			JSON.stringify([...UI_TOOL_NAMES].map(mcpToolName).sort()),
+			JSON.stringify([...SEED_TOOL_NAMES].sort()),
 		oursTools.join(",") || "(none)",
 	);
 	const pollOurs = async (want: number): Promise<number> => {
@@ -348,7 +349,7 @@ try {
 	await page.locator("#preallow-toggle").uncheck();
 	check("t101 toggle off removes our rules", (await pollOurs(0)) === 0);
 	await page.locator("#preallow-toggle").check();
-	const reseeded = READ_COMMANDS.length + UI_TOOL_NAMES.length;
+	const reseeded = READ_COMMANDS.length + SEED_TOOL_NAMES.length;
 	check(
 		"t101 toggle on re-seeds our rules",
 		(await pollOurs(reseeded)) === reseeded,

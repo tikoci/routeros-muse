@@ -11,12 +11,8 @@ import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { toolEnv } from "../src/lib/tools";
 import { ARTIFACT_MAX_BYTES, readTomlSections } from "../src/lib/workspace";
-import {
-	mcpToolName,
-	RELAY_URL_ENV,
-	resolveUiOpen,
-	UI_TOOL_NAMES,
-} from "../src/mcp/ui-tools";
+import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
+import { RELAY_URL_ENV, resolveUiOpen } from "../src/mcp/ui-tools";
 import { MspClient } from "../src/msp/client";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
@@ -288,7 +284,7 @@ describe("no-workspace preallow visibility (item 3)", () => {
 			const pre = st["preallow"] as Record<string, unknown> | null;
 			expect(pre).not.toBeNull();
 			expect(pre?.["enabled"]).toBe(true);
-			expect(pre?.["tools"]).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+			expect(pre?.["tools"]).toEqual(SEED_TOOL_NAMES);
 			expect(pre?.["commands"]).toEqual([]);
 			expect(pre?.["hosts"]).toEqual([]);
 		} finally {
@@ -320,7 +316,7 @@ describe("no-workspace preallow visibility (item 3)", () => {
 			>;
 			pre = st["preallow"] as Record<string, unknown>;
 			expect(pre["enabled"]).toBe(true);
-			expect(pre["tools"]).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+			expect(pre["tools"]).toEqual(SEED_TOOL_NAMES);
 		} finally {
 			await srv.stop();
 		}
