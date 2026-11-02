@@ -744,6 +744,44 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		expect(stripTargetPreamble(turn)).toBe("why is the link slow?");
 	});
 
+	test("an oversized target context is refused, never sent", async () => {
+		// sol re-review: muse clips user text near 64 KiB, so an
+		// unbounded inventory label arrived as broken JSON in history.
+		const dir = mktmp("t49-ws-");
+		nodeFs.writeFileSync(
+			path.join(dir, "workspace.toml"),
+			"canonical = true\n",
+		);
+		nodeFs.writeFileSync(
+			path.join(dir, "router.toml"),
+			`[[device]]\nid = "gw"\nlabel = "${"x".repeat(20_000)}"\nhost = "192.168.88.1"\n`,
+		);
+		const t50 = stubT50Bin();
+		await withT50Env(t50.log, async () => {
+			const srv = await startServer({
+				dataHome: mktmp("t49-dh-"),
+				allowOpenCdb: true,
+				workspace: dir,
+				provider: "echo",
+				museHome: mktmp("t49-home-"),
+				toolBinDir: t50.bin,
+			});
+			try {
+				const r = await fetch(`${srv.url}api/chat/send`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ text: "status?", targets: [{ id: "gw" }] }),
+				});
+				expect(r.status).toBe(400);
+				const j = (await r.json()) as { ok: boolean; why: string };
+				expect(j.ok).toBe(false);
+				expect(j.why).toMatch(/exceeds 8192/);
+			} finally {
+				await srv.stop();
+			}
+		});
+	});
+
 	test("a tag-only message stays a non-empty bubble", async () => {
 		const turn = await sendWithWs(
 			makeT49Workspace(),

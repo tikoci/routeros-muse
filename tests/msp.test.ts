@@ -280,3 +280,57 @@ describe("spawn environment", () => {
 		30_000,
 	);
 });
+
+describe("runTurn coalesced completion (T49 re-review)", () => {
+	// A stub `muse serve` that answers turn/start and emits that turn's
+	// turn/completed in ONE write: a listener installed only after the
+	// turn/start await would miss it and time out.
+	test("completion delivered with the turn/start response is not lost", async () => {
+		const dir = mktmp("t49-coalesce-");
+		const stub = path.join(dir, "muse");
+		nodeFs.writeFileSync(
+			stub,
+			`#!/usr/bin/env bun
+const dec = new TextDecoder();
+let buf = "";
+for await (const chunk of Bun.stdin.stream()) {
+	buf += dec.decode(chunk);
+	let i;
+	while ((i = buf.indexOf("\\n")) >= 0) {
+		const line = buf.slice(0, i);
+		buf = buf.slice(i + 1);
+		if (!line.trim()) continue;
+		const m = JSON.parse(line);
+		if (m.id === undefined) continue;
+		if (m.method === "turn/start") {
+			const resp = { jsonrpc: "2.0", id: m.id, result: { turnId: "tc-1" } };
+			const done = { jsonrpc: "2.0", method: "turn/completed",
+				params: { sessionId: m.params.sessionId, turnId: "tc-1", terminal: "completed" } };
+			process.stdout.write(JSON.stringify(resp) + "\\n" + JSON.stringify(done) + "\\n");
+		} else {
+			process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: {} }) + "\\n");
+		}
+	}
+}
+`,
+		);
+		nodeFs.chmodSync(stub, 0o755);
+		const env = toolEnv(dir);
+		const c = await MspClient.spawn({
+			provider: "echo",
+			env,
+			timeoutMs: 5_000,
+		});
+		try {
+			const out = await c.runTurn({
+				sessionId: "s-1",
+				input: [{ type: "text", text: "hi" }],
+				timeoutMs: 2_000,
+			});
+			expect(out.turnId).toBe("tc-1");
+			expect(out.terminal).toBe("completed");
+		} finally {
+			await c.close();
+		}
+	});
+});

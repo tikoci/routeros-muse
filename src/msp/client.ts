@@ -455,11 +455,31 @@ export class MspClient {
 		input: TurnInput[];
 		timeoutMs?: number;
 	}): Promise<TurnOutcome> {
-		const { turnId } = await this.turnStart({
-			sessionId: opts.sessionId,
-			input: opts.input,
+		// Buffer notifications from BEFORE turn/start: its response and
+		// the turn's completion can arrive in one read, and a listener
+		// installed after the await would miss the completion.
+		const early: ViewEvent[] = [];
+		const offEarly = this.onNotification((ev) => {
+			early.push(ev);
 		});
-		return this.waitForTurn(opts.sessionId, turnId, opts.timeoutMs ?? 60_000);
+		let turnId: string;
+		try {
+			({ turnId } = await this.turnStart({
+				sessionId: opts.sessionId,
+				input: opts.input,
+			}));
+		} catch (err) {
+			offEarly();
+			throw err;
+		}
+		const done = this.waitForTurn(
+			opts.sessionId,
+			turnId,
+			opts.timeoutMs ?? 60_000,
+			early,
+		);
+		offEarly();
+		return done;
 	}
 
 	/** Wait for a turn's terminal event, gathering agentMessage texts. */
@@ -467,14 +487,17 @@ export class MspClient {
 		sessionId: string,
 		turnId: string,
 		timeoutMs = 60_000,
+		early: ViewEvent[] = [],
 	): Promise<TurnOutcome> {
 		return new Promise((resolve, reject) => {
 			const agentTexts: string[] = [];
+			let settled = false;
 			const timer = setTimeout(() => {
 				off();
 				reject(new Error(`turn ${turnId} timed out after ${timeoutMs}ms`));
 			}, timeoutMs);
-			const off = this.onNotification((ev) => {
+			const handle = (ev: ViewEvent): void => {
+				if (settled) return;
 				const sid = ev.params["sessionId"];
 				if (sid !== undefined && sid !== sessionId) return;
 				if (ev.method === "item/completed" || ev.method === "item/updated") {
@@ -491,6 +514,7 @@ export class MspClient {
 				if (ev.method === "turn/completed") {
 					const doneId = ev.params["turnId"];
 					if (doneId === turnId) {
+						settled = true;
 						clearTimeout(timer);
 						off();
 						const err = ev.params["error"] as
@@ -515,7 +539,11 @@ export class MspClient {
 						});
 					}
 				}
-			});
+			};
+			const off = this.onNotification(handle);
+			// Replay what arrived before turn/start answered, in order;
+			// live events queue behind this synchronous loop.
+			for (const ev of early) handle(ev);
 		});
 	}
 

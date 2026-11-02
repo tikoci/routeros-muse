@@ -943,7 +943,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	);
 	if (provider === "echo") {
 		metaAuth = "authed";
-	} else if (have("muse")) {
+	} else if (have("muse", tools)) {
 		void (async () => {
 			try {
 				const m = await probeMetaAuth(
@@ -1481,6 +1481,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						}
 					}
 					const preamble = targetPreambleLines(valid);
+					// muse clips user text near 64 KiB; an oversized
+					// block would arrive as broken JSON and break
+					// history, so refuse it outright.
+					if (preamble.join("\n").length > 8_192) {
+						return json(
+							{ ok: false, why: "target context exceeds 8192 characters" },
+							400,
+						);
+					}
 					// Forged context lines in the user text are
 					// escaped before the real block is prepended,
 					// so the agent can tell server context from
