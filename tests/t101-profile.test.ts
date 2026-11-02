@@ -362,8 +362,13 @@ describe("T101 Part B: server pre-seed wiring", () => {
 				});
 				try {
 					const status = await getJson(`${srv.url}api/status`);
-					expect(status["preallow"]).toBeNull();
-					// T55: the ui tool set seeds; the report stays null.
+					// T106: no-workspace mode reports the seeded ui
+					// tools (empty commands/hosts) instead of null.
+					const pre = status["preallow"] as Record<string, unknown>;
+					expect(pre["enabled"]).toBe(true);
+					expect(pre["tools"]).toEqual([...UI_TOOL_NAMES].map(mcpToolName));
+					expect(pre["commands"]).toEqual([]);
+					expect(pre["hosts"]).toEqual([]);
 					const rules = (
 						JSON.parse(nodeFs.readFileSync(policyFile(cfg), "utf8")) as {
 							rules: Record<string, unknown>[];
