@@ -26,12 +26,12 @@ import {
 	registryFile,
 } from "../lib/registry";
 import { have, run } from "../lib/run";
-import { listTemplates, type TemplateMeta } from "../lib/templates";
 import {
 	isDefaultAccess,
 	readDefaultAccess,
 	writeDefaultAccess,
 } from "../lib/settings";
+import { listTemplates, type TemplateMeta } from "../lib/templates";
 import {
 	toolBinDir as defaultToolBinDir,
 	detectInstalled,
@@ -579,7 +579,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		totalTokens = null;
 		lastModelId = null;
 		lastEffort = null;
-		lastAccess = null;
+		// T50: with no live session the truthful access is the mode
+		// the next session starts in (what /api/chat/stats reports
+		// pre-session) — never null, which the UI would read as the
+		// wrong fallback. ensureMain restores the live mode after.
+		lastAccess = defaultAccess();
 		sessionStartedAt = null;
 		if (prev) {
 			try {
@@ -1881,7 +1885,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						await client.userInputCancel({
 							sessionId: sid,
 							userInputId: body.userInputId,
-							...(typeof body.reason === "string" ? { reason: body.reason } : {}),
+							...(typeof body.reason === "string"
+								? { reason: body.reason }
+								: {}),
 						});
 						return json({ ok: true });
 					} catch (err) {
