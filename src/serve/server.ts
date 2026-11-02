@@ -634,7 +634,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		{
 			const spawned = (async () => {
 				await stopping;
-				if (!have("muse")) {
+				if (!have("muse", tools)) {
 					mspWhy = "muse not on PATH";
 					throw new Error(mspWhy);
 				}

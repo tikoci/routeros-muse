@@ -7,16 +7,15 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import { have } from "../src/lib/run";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
 import { pollT71Log } from "./t71-fake";
 
 afterAll(cleanupTmpdirs);
 
-const HAVE_MUSE = have("muse");
-// Shell shims (POSIX) + the server's ambient-muse spawn gate.
-const t50 = HAVE_MUSE && process.platform !== "win32" ? test : test.skip;
+// Shell shims (POSIX); the server resolves muse on the package/tool
+// PATH the harness supplies, so no ambient muse is needed.
+const t50 = process.platform !== "win32" ? test : test.skip;
 
 type Posted = { status: number; json: Record<string, unknown> };
 

@@ -132,3 +132,37 @@ describe("settings quoted-key dedup", () => {
 		expect(readDefaultAccess(dh)).toBe("allowAll");
 	});
 });
+
+describe("settings re-review edge cases", () => {
+	const tnotroot =
+		process.platform !== "win32" && process.getuid?.() !== 0 ? test : test.skip;
+	tnotroot("an unreadable settings file is never replaced", () => {
+		const dh = mktmp("t50c-unread-");
+		const file = seedFile(
+			dh,
+			'# keep me\n[agent]\ndefault_access = "promptUnmatched"\n[other]\nx = 1\n',
+		);
+		nodeFs.chmodSync(file, 0o000);
+		try {
+			expect(() => writeDefaultAccess(dh, "allowAll")).toThrow(/EACCES/);
+		} finally {
+			nodeFs.chmodSync(file, 0o600);
+		}
+		expect(nodeFs.readFileSync(file, "utf8")).toContain("# keep me");
+		expect(nodeFs.readFileSync(file, "utf8")).toContain("[other]");
+	});
+
+	for (const header of ['["agent"]', "['agent']", "[ agent ]"]) {
+		test(`quoted/spaced table ${header} is updated in place`, () => {
+			const dh = mktmp("t50c-qtable-");
+			const file = seedFile(
+				dh,
+				`${header}\ndefault_access = "promptUnmatched"\n`,
+			);
+			writeDefaultAccess(dh, "allowAll");
+			const text = nodeFs.readFileSync(file, "utf8");
+			expect(text.match(/^\s*\[/gm)?.length).toBe(1);
+			expect(readDefaultAccess(dh)).toBe("allowAll");
+		});
+	}
+});

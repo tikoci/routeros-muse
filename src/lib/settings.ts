@@ -82,7 +82,7 @@ export function readDefaultAccess(dataHome?: string): DefaultAccess | null {
 	return isDefaultAccess(v) ? v : null;
 }
 
-const SECTION_RE = /^\s*\[agent\]\s*(?:#.*)?$/;
+const SECTION_RE = /^\s*\[\s*(?:agent|"agent"|'agent')\s*\]\s*(?:#.*)?$/;
 const KEY_RE =
 	/^(\s*)(?:default_access|"default_access"|'default_access')(\s*)=.*$/;
 
@@ -170,7 +170,10 @@ export function writeDefaultAccess(
 	let text: string;
 	try {
 		text = nodeFs.readFileSync(file, "utf8");
-	} catch {
+	} catch (err) {
+		// Only a missing file starts empty; an unreadable one (EACCES,
+		// EISDIR, ...) must never be replaced wholesale.
+		if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 		text = "";
 	}
 	const hasTrailingNl = text.endsWith("\n");

@@ -32,6 +32,7 @@ type SmokeHook = {
 	renderPatch: (host: HTMLElement, doc: unknown) => void;
 	renderOutput: (host: HTMLElement, body: unknown) => void;
 	pushImage: (img: { base64Data: string; mediaType: string }) => void;
+	recoverPending: () => Promise<void>;
 };
 
 declare global {
@@ -2597,6 +2598,49 @@ try {
 			await pageF.screenshot({
 				path: path.join(OUT, "35-t50-firstconnect.png"),
 			});
+			// Recoveries never overlap (sol re-review: out-of-order
+			// snapshots settled live prompts). Three concurrent asks with
+			// a slow server: one request at a time, coalesced to two.
+			{
+				const isPending = (u: string) =>
+					new URL(u).pathname === "/api/chat/pending";
+				let inflight = 0;
+				let maxInflight = 0;
+				let requests = 0;
+				const onReq = (r: { url: () => string }) => {
+					if (!isPending(r.url())) return;
+					requests += 1;
+					inflight += 1;
+					maxInflight = Math.max(maxInflight, inflight);
+				};
+				const onDone = (r: { url: () => string }) => {
+					if (isPending(r.url())) inflight -= 1;
+				};
+				pageF.on("request", onReq);
+				pageF.on("requestfinished", onDone);
+				pageF.on("requestfailed", onDone);
+				await pageF.route("**/api/chat/pending", async (route) => {
+					await new Promise((r) => setTimeout(r, 300));
+					await route.continue();
+				});
+				await pageF.evaluate(() =>
+					Promise.all([1, 2, 3].map(() => window.__smoke?.recoverPending())),
+				);
+				await pageF.unroute("**/api/chat/pending");
+				pageF.off("request", onReq);
+				pageF.off("requestfinished", onDone);
+				pageF.off("requestfailed", onDone);
+				check(
+					"t50 recoveries never overlap",
+					maxInflight === 1,
+					`max in flight ${maxInflight}`,
+				);
+				check(
+					"t50 concurrent recoveries coalesce to one re-run",
+					requests === 2,
+					`requests ${requests}`,
+				);
+			}
 			// Converge F1's approval before R2: decide its card when one
 			// rendered, else Stop the still-held turn — either way t50-a1
 			// settles server-side and F idles, so R2 starts clean.

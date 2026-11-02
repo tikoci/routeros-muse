@@ -2441,9 +2441,30 @@
   // event since this recovery started — was settled elsewhere.
   // Concurrent recoveries apply in start order: a snapshot older
   // than the latest applied is ignored.
-  async function recoverPending() {
+  // Recoveries never overlap (sol re-review: two in flight could
+  // answer out of order and a stale empty snapshot settled live
+  // prompts). A request while one runs coalesces into one re-run.
+  let recoverRunning = null;
+  let recoverAgain = false;
+  function recoverPending() {
+    if (recoverRunning) { recoverAgain = true; return recoverRunning; }
+    recoverRunning = (async () => {
+      try {
+        do {
+          recoverAgain = false;
+          await recoverPendingOnce();
+        } while (recoverAgain);
+      } finally {
+        recoverRunning = null;
+      }
+    })();
+    return recoverRunning;
+  }
+  async function recoverPendingOnce() {
     const mySeq = ++recoverSeq;
-    const startedAt = Date.now();
+    // Monotonic clock: a wall-clock step backward must not make fresh
+    // SSE events look older than this recovery.
+    const startedAt = performance.now();
     let j;
     try {
       j = await getJSON("/api/chat/pending");
@@ -2453,8 +2474,14 @@
     recoverApplied = mySeq;
     const approvals = j.approvals || [];
     const inputs = j.userInputs || [];
-    for (const a of approvals) onApprovalRequested(a);
-    for (const q of inputs) onQuestionRequested(q);
+    for (const a of approvals) {
+      if (a && (lastEventAt.get("a:" + a.approvalId) || 0) >= startedAt) continue;
+      onApprovalRequested(a);
+    }
+    for (const q of inputs) {
+      if (q && (lastEventAt.get("q:" + q.userInputId) || 0) >= startedAt) continue;
+      onQuestionRequested(q);
+    }
     const liveA = new Set();
     for (const a of approvals) {
       if (a && typeof a.approvalId === "string") liveA.add(a.approvalId);
@@ -2478,9 +2505,9 @@
   function stampPromptEvent(m) {
     const p = (m && m.params) || {};
     if (m.method === "approval/requested" || m.method === "approval/updated" || m.method === "approval/resolved") {
-      if (typeof p.approvalId === "string") lastEventAt.set("a:" + p.approvalId, Date.now());
+      if (typeof p.approvalId === "string") lastEventAt.set("a:" + p.approvalId, performance.now());
     } else if (m.method === "userInput/requested" || m.method === "userInput/settled") {
-      if (typeof p.userInputId === "string") lastEventAt.set("q:" + p.userInputId, Date.now());
+      if (typeof p.userInputId === "string") lastEventAt.set("q:" + p.userInputId, performance.now());
     }
   }
 
@@ -3543,7 +3570,7 @@
   // checks. Local-only prototype surface, not a public API.
   // test-only: lets the smoke drive dispatch with an attached image
   // without driving the file picker (T69 double-send proof).
-  window.__smoke = { renderRow, renderPatch, renderOutput, pushImage: (img) => pendingImages.push(img) };
+  window.__smoke = { renderRow, renderPatch, renderOutput, pushImage: (img) => pendingImages.push(img), recoverPending };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the
   // post-save refresh across, same window-property idiom as __devices.
