@@ -306,7 +306,7 @@ describe("T49: target preamble shape", () => {
 	});
 
 	test("transcript rows strip user preambles; agent rows stay verbatim", () => {
-		const merged = `${TAG}${JSON.stringify({ id: "gw", name: "gw" })}\n\nwhy slow?`;
+		const merged = `${TAG}${JSON.stringify({ id: "gw", name: "gw", host: "192.168.88.1" })}\n\nwhy slow?`;
 		const rows = transcriptItems([
 			{
 				method: "item/completed",
@@ -322,8 +322,27 @@ describe("T49: target preamble shape", () => {
 			},
 		]);
 		expect(rows).toEqual([
-			{ kind: "userMessage", role: "user", text: "why slow?" },
+			{
+				kind: "userMessage",
+				role: "user",
+				text: "why slow?",
+				targets: [{ id: "gw", name: "gw", host: "192.168.88.1" }],
+			},
 			{ kind: "agentMessage", role: "agent", text: `echo: ${merged}` },
+		]);
+	});
+
+	test("transcript user rows without a preamble carry no targets key", () => {
+		const rows = transcriptItems([
+			{
+				method: "item/completed",
+				params: {
+					item: { kind: "userMessage", itemId: "u1", text: "plain question" },
+				},
+			},
+		]);
+		expect(rows).toEqual([
+			{ kind: "userMessage", role: "user", text: "plain question" },
 		]);
 	});
 });
