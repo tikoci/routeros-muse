@@ -85,6 +85,7 @@ describe("D39: the worker spawns trusted by default", () => {
 		await withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeT49Workspace(),
 				provider: "echo",
@@ -108,6 +109,7 @@ describe("D39: the worker spawns trusted by default", () => {
 		await withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeT49Workspace(),
 				provider: "echo",
@@ -132,6 +134,7 @@ describe("D39: the worker spawns trusted by default", () => {
 		await withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				noWorkspace: true,
 				provider: "echo",
@@ -191,6 +194,7 @@ describe("D39: /api/status reports the trust state", () => {
 	): Promise<Record<string, unknown>> {
 		const srv = await startServer({
 			dataHome: mktmp("t49-dh-"),
+			configHome: mktmp("t49-cfg-"),
 			allowOpenCdb: true,
 			...(noWs ? { noWorkspace: true } : { workspace: makeT49Workspace() }),
 			provider: "echo",
@@ -264,6 +268,7 @@ describe("D39: the trust flag rides every spawn", () => {
 		return withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeT49Workspace(),
 				provider: "meta",
@@ -373,6 +378,7 @@ describe("D39: the trust flag rides every spawn", () => {
 		return withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				workspace: workspaceWithCdb(),
 				provider: "echo",
 				museHome: mktmp("t49-home-"),
@@ -598,6 +604,7 @@ describe("T49: the send route validates targets against router.toml", () => {
 		return withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeT49Workspace(),
 				provider: "echo",
@@ -674,6 +681,7 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		return withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace,
 				provider: "echo",
@@ -760,6 +768,7 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		await withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: dir,
 				provider: "echo",
@@ -798,6 +807,7 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		await withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeT49Workspace(),
 				provider: "echo",
@@ -822,6 +832,7 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 		await withT50Env(t50.log, async () => {
 			const srv = await startServer({
 				dataHome: mktmp("t49-dh-"),
+				configHome: mktmp("t49-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeT49Workspace(),
 				provider: "echo",

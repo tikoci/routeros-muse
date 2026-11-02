@@ -89,6 +89,7 @@ describe("T84 toml editor fail-closed", () => {
 		const ws = makeWorkspace();
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t84-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",
@@ -138,6 +139,7 @@ describe("T84 toml editor fail-closed", () => {
 		expect(readDevices(ws).length).toBe(2);
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t84-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",
@@ -167,6 +169,7 @@ describe("T84 toml editor fail-closed", () => {
 		const ws = makeWorkspace();
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t84-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",
@@ -201,6 +204,7 @@ describe("T84 toml editor fail-closed", () => {
 		const ws = makeWorkspace();
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t84-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",
@@ -223,6 +227,7 @@ describe("T84 toml editor fail-closed", () => {
 		const ws = makeWorkspace();
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t84-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",
@@ -257,6 +262,7 @@ describe("T84 toml editor fail-closed", () => {
 		const ws = makeWorkspace();
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t84-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",

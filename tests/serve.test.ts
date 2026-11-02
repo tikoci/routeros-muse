@@ -182,6 +182,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -217,6 +218,7 @@ describe("serve", () => {
 			const ws = makeWorkspace();
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -248,6 +250,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -298,6 +301,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -332,6 +336,7 @@ describe("serve", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -375,6 +380,7 @@ describe("serve", () => {
 			expect(add.ok).toBe(true);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -403,6 +409,7 @@ describe("serve", () => {
 		);
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t31-serve-cfg-"),
 			allowOpenCdb: true,
 			workspace: ws,
 			provider: "echo",
@@ -426,6 +433,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				noWorkspace: true,
 				provider: "echo",
@@ -475,6 +483,7 @@ describe("serve", () => {
 			expect(init.exitCode).toBe(0);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				noWorkspace: true,
 				provider: "echo",
@@ -502,6 +511,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -568,6 +578,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -601,6 +612,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -626,6 +638,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -691,6 +704,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -735,6 +749,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -778,6 +793,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -804,6 +820,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -863,6 +880,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -892,6 +910,7 @@ describe("serve", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -972,6 +991,7 @@ describe("auth (T39)", () => {
 			nodeFs.copyFileSync(ENCRYPTED_FIXTURE, path.join(ws, "device.cdb"));
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				workspace: ws,
 				provider: "echo",
 				museHome: makeHome(),
@@ -1031,6 +1051,7 @@ describe("auth (T39)", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				workspace: makeOpenCdbWorkspace(),
 				provider: "echo",
 				museHome: makeHome(),
@@ -1061,6 +1082,7 @@ describe("auth (T39)", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeOpenCdbWorkspace(),
 				provider: "echo",
@@ -1153,6 +1175,7 @@ describe("package tool bundle (T51)", () => {
 	}> {
 		const srv = await startServer({
 			dataHome: makeDataHome(),
+			configHome: mktmp("t31-serve-cfg-"),
 			noWorkspace: true,
 			allowOpenCdb: true,
 			provider: "echo",
@@ -1388,6 +1411,7 @@ describe("unlock context (T64)", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				workspace: makeWorkspace(),
 				provider: "echo",
 				museHome: makeHome(),
@@ -1425,6 +1449,7 @@ describe("unlock context (T64)", () => {
 		async () => {
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: makeWorkspace(),
 				provider: "echo",
@@ -1458,6 +1483,7 @@ describe("unlock context (T64)", () => {
 			writeShim(bin, "rosetta", `echo "stub-rosetta 9.9.3-stub"`);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				noWorkspace: true,
 				allowOpenCdb: true,
 				provider: "echo",
@@ -1544,6 +1570,7 @@ describe("unlock context (T64)", () => {
 				const cdb = seedEncrypted();
 				const srv = await startServer({
 					dataHome: makeDataHome(),
+					configHome: mktmp("t31-serve-cfg-"),
 					noWorkspace: true,
 					provider: "echo",
 					museHome: makeHome(),
@@ -1635,6 +1662,7 @@ describe("unlock context (T64)", () => {
 			const cdb = seedEncrypted();
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				noWorkspace: true,
 				provider: "echo",
 				museHome: makeHome(),
@@ -1888,6 +1916,7 @@ describe("set credentials (T48)", () => {
 			]);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				noWorkspace: true,
 				allowOpenCdb: true,
 				provider: "echo",
@@ -1929,6 +1958,7 @@ describe("set credentials (T48)", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -1970,6 +2000,7 @@ describe("set credentials (T48)", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -2027,6 +2058,7 @@ describe("set credentials (T48)", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -2071,6 +2103,7 @@ describe("set credentials (T48)", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -2115,6 +2148,7 @@ describe("set credentials (T48)", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
 				workspace: ws,
 				provider: "echo",
@@ -2148,6 +2182,7 @@ describe("set credentials (T48)", () => {
 			);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
 				workspace: ws,
 				provider: "echo",
 				museHome: makeHome(),
