@@ -769,3 +769,55 @@ describe("T101b server wiring (D44)", () => {
 		},
 	);
 });
+
+describe("trilogy config reachable from agent tools (D44)", () => {
+	// muse's tool shells inherit XDG_CONFIG_HOME = the private home,
+	// and centrs reads centrs.env under it: the private home links
+	// the real tikoci dir through.
+	function homes(): { real: string; priv: string } {
+		const real = mktmp("t101b-realcfg-");
+		nodeFs.mkdirSync(path.join(real, "muse"));
+		nodeFs.writeFileSync(path.join(real, "muse", "auth.json"), "{}");
+		const priv = path.join(mktmp("t101b-privcfg-"), "muse-config");
+		return { real, priv };
+	}
+
+	t101b("links <real>/tikoci and re-ensures a wrong link", () => {
+		const { real, priv } = homes();
+		nodeFs.mkdirSync(path.join(real, "tikoci"));
+		nodeFs.writeFileSync(path.join(real, "tikoci", "centrs.env"), "X=1\n");
+		const res = ensurePrivateHome({ privateHome: priv, realConfigHome: real });
+		expect(res.warnings).toEqual([]);
+		const link = path.join(priv, "tikoci");
+		expect(nodeFs.readlinkSync(link)).toBe(path.join(real, "tikoci"));
+		expect(nodeFs.readFileSync(path.join(link, "centrs.env"), "utf8")).toBe(
+			"X=1\n",
+		);
+		nodeFs.unlinkSync(link);
+		nodeFs.symlinkSync("/nonexistent", link);
+		expect(
+			ensurePrivateHome({ privateHome: priv, realConfigHome: real }).changed,
+		).toBe(true);
+		expect(nodeFs.readlinkSync(link)).toBe(path.join(real, "tikoci"));
+		expect(
+			ensurePrivateHome({ privateHome: priv, realConfigHome: real }).changed,
+		).toBe(false);
+	});
+
+	t101b("no real tikoci dir: no link", () => {
+		const { real, priv } = homes();
+		ensurePrivateHome({ privateHome: priv, realConfigHome: real });
+		expect(nodeFs.existsSync(path.join(priv, "tikoci"))).toBe(false);
+	});
+
+	t101b("a real private tikoci dir is kept, with a warning", () => {
+		const { real, priv } = homes();
+		nodeFs.mkdirSync(path.join(real, "tikoci"));
+		nodeFs.mkdirSync(path.join(priv, "tikoci"), { recursive: true });
+		const res = ensurePrivateHome({ privateHome: priv, realConfigHome: real });
+		expect(res.warnings.join("\n")).toContain("not a link");
+		expect(nodeFs.lstatSync(path.join(priv, "tikoci")).isDirectory()).toBe(
+			true,
+		);
+	});
+});

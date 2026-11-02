@@ -464,11 +464,32 @@ centrs CDB resolution is `$HOME`-based (unaffected), quickchr state
 is `$HOME/.config/quickchr` (unaffected), rosetta reads no
 XDG_CONFIG_HOME (unaffected) — only centrs' user-global
 `centrs.env` settings (resolved under XDG_CONFIG_HOME) do not apply
-to agent-run centrs commands. Options, undecided: PATH-fronted
-env-restoring wrappers for the affected tools (the server already
-fronts PATH per D26); an enterprise managed profile (needs
-root-installed policy, not shippable as a default); an upstream
-per-session env surface; or documenting the gap.
+to agent-run centrs commands (on orca that file carries
+CENTRS_SSH_KEY, so SSH transport would lose its key).
+
+Resolution (orchestrator, 2026-11-02): the private home links the
+trilogy's config dir through — `<private>/tikoci -> <real config
+home>/tikoci`, re-ensured on every spawn like auth.json
+(`LINKED_TOOL_CONFIG_DIRS`), skipped when the real dir is absent,
+and a real directory already there is kept with a warning. Live
+(`~/t101b-live/cap/tikoci-link.jsonl`, real muse 1.4.14, meta,
+:unrestricted): the tool shell's XDG_CONFIG_HOME is the private
+home, and `centrs settings print` reports CENTRS_SSH_KEY from the
+real centrs.env; ~/.config/muse mtimes unchanged.
+
+Rejected, with evidence: BASH_ENV restore scripts. The `muse`
+launcher is a bash script and sources BASH_ENV itself before
+exec'ing the binary (probed: the hook ran with $0 = the launcher),
+so an unguarded restore hands muse the shared config home; and
+muse's tool shells never source BASH_ENV at all (traced: only the
+launcher's line was logged), so a guarded one does nothing.
+
+Known residual: other XDG-aware tools the agent runs (gh's
+`$XDG_CONFIG_HOME/gh`, git's XDG config, mise) see the private home;
+git still reads ~/.gitconfig. Not linked: GitHub stays the
+developer's call (D34), and each extra link widens what the private
+home exposes. An upstream per-session env surface in MSP would
+remove the need for links.
 
 ## Option C verdict: FEASIBLE
 

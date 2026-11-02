@@ -347,6 +347,12 @@ export type PrivateHomeResult = {
  *
  * Auth content is never read and never logged — link targets only.
  */
+/**
+ * Tool config dirs linked from the private home to the owner's real
+ * config home (D44): the trilogy's own (centrs.env lives here).
+ */
+export const LINKED_TOOL_CONFIG_DIRS = ["tikoci"] as const;
+
 export function ensurePrivateHome(args: PrivateHomeArgs): PrivateHomeResult {
 	return withSeedLock(() => {
 		const museDir = path.join(args.privateHome, "muse");
@@ -394,6 +400,38 @@ export function ensurePrivateHome(args: PrivateHomeArgs): PrivateHomeResult {
 				}
 				throw err;
 			}
+			changed = true;
+		}
+		// D44: muse's shell tools inherit XDG_CONFIG_HOME (muse 1.4.14
+		// has no per-session env surface, and its tool shells do not
+		// source BASH_ENV — both probed 2026-11-02). centrs resolves
+		// centrs.env (e.g. CENTRS_SSH_KEY) under it, so the trilogy's
+		// config dir is linked through, re-ensured like auth.json. A
+		// real directory already there is left alone with a warning.
+		for (const name of LINKED_TOOL_CONFIG_DIRS) {
+			const real = path.join(configHomeDir(args.realConfigHome), name);
+			const priv = path.join(args.privateHome, name);
+			if (path.resolve(real) === path.resolve(priv)) continue;
+			try {
+				if (!nodeFs.statSync(real).isDirectory()) continue;
+			} catch {
+				continue; // No real config for this tool: nothing to link.
+			}
+			let st: nodeFs.Stats | null = null;
+			try {
+				st = nodeFs.lstatSync(priv);
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+			}
+			if (st !== null && !st.isSymbolicLink()) {
+				warnings.push(
+					`${priv} is not a link to ${real}; agent-run tools will not see their own config there`,
+				);
+				continue;
+			}
+			if (st !== null && nodeFs.readlinkSync(priv) === real) continue;
+			if (st !== null) nodeFs.unlinkSync(priv);
+			nodeFs.symlinkSync(real, priv);
 			changed = true;
 		}
 		// auth.json: a symlink to the real one, re-ensured.
