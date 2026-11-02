@@ -2209,7 +2209,9 @@ try {
 			// the waiting strip counts it, Allow once resolves it.
 			await page.fill("#chatinput", "NEED-APPROVAL smoke ls");
 			await page.click("#sendbtn");
-			await page.waitForSelector(".appr-card.hold-pending", { timeout: 15_000 });
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
 			const apprBtns = await page
 				.locator(".appr-card.hold-pending .appr-btn")
 				.allTextContents();
@@ -2224,7 +2226,8 @@ try {
 				apprBtns.join(" | "),
 			);
 			const apprText =
-				(await page.locator(".appr-card.hold-pending").first().textContent()) ?? "";
+				(await page.locator(".appr-card.hold-pending").first().textContent()) ??
+				"";
 			check(
 				"t50 approval card shows the shell command",
 				apprText.includes("ls -1"),
@@ -2308,9 +2311,9 @@ try {
 			await page.locator(".q-card.hold-pending .q-decline").first().click();
 			await page.waitForFunction(
 				() =>
-					[...document.querySelectorAll(".q-card.hold-resolved .q-resolved")].some(
-						(el) => (el.textContent ?? "").includes("cancelled"),
-					),
+					[
+						...document.querySelectorAll(".q-card.hold-resolved .q-resolved"),
+					].some((el) => (el.textContent ?? "").includes("cancelled")),
 				undefined,
 				{ timeout: 15_000 },
 			);
@@ -2350,11 +2353,13 @@ try {
 			await page.waitForFunction(
 				() =>
 					[
-						...document.querySelectorAll(".appr-card.hold-resolved .appr-resolved"),
+						...document.querySelectorAll(
+							".appr-card.hold-resolved .appr-resolved",
+						),
 					].some((el) => /interrupt/i.test(el.textContent ?? "")) &&
-					[...document.querySelectorAll(".q-card.hold-resolved .q-resolved")].some(
-						(el) => /interrupt/i.test(el.textContent ?? ""),
-					),
+					[
+						...document.querySelectorAll(".q-card.hold-resolved .q-resolved"),
+					].some((el) => /interrupt/i.test(el.textContent ?? "")),
 				undefined,
 				{ timeout: 15_000 },
 			);
@@ -2401,7 +2406,9 @@ try {
 			// re-renders from /api/chat/pending (it was never decided).
 			await page.fill("#chatinput", "NEED-APPROVAL smoke late");
 			await page.click("#sendbtn");
-			await page.waitForSelector(".appr-card.hold-pending", { timeout: 15_000 });
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
 			const lateId =
 				(await page
 					.locator(".appr-card.hold-pending")
