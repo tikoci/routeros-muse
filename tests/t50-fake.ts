@@ -255,6 +255,7 @@ rl.on("line", (text) => {
 			.map((p) => p.text)
 			.join("\n");
 		logLine("RECV_TURN turnId=" + t);
+		logLine("TURN_TEXT " + JSON.stringify(textIn));
 		send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
 		notify("turn/started", { sessionId: SESSION, turnId: t });
 		let held = false;
@@ -497,10 +498,14 @@ export function stubT50Bin(): { bin: string; log: string } {
 	const bin = mktmp("t50-bin-");
 	const log = path.join(bin, "msp.log");
 	nodeFs.writeFileSync(path.join(bin, "fake-muse-t50.ts"), T50_FAKE_MUSE);
+	// T49: every spawn appends its argv ($*-joined) so tests can see
+	// the trust flag. One line per worker spawn.
+	const argvLog = path.join(bin, "argv.log");
 	writeShim(
 		bin,
 		"muse",
-		`exec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(bin, "fake-muse-t50.ts"))} "$@"`,
+		`printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}\n` +
+			`exec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(bin, "fake-muse-t50.ts"))} "$@"`,
 	);
 	// Trilogy shadows (same shape as tests/t71-fake.ts): the server
 	// detects the CDB mode through `centrs devices list` at boot, so

@@ -82,8 +82,12 @@ init-here / registered-workspace pick / browser picker; off a
 terminal the default (here) serves with no workspace attached, while
 a named directory that is not a workspace stops with the `init` line. `--yolo` starts the
 agent session at its most permissive approval mode (`Allow all`).
+The agent worker spawns trusted by default, so the workspace's
+AGENTS.md and `.agents/skills/` load (Settings shows the state).
 `--tui` aliases `code`. Developer flags: `--no-workspace`,
-`--provider NAME`, `--allow-open-cdb` (an open CDB implies no auth).
+`--provider NAME`, `--allow-open-cdb` (an open CDB implies no auth),
+`--no-trust-workspace` (spawn the agent untrusted: the workspace's
+AGENTS.md and skills don't load).
 
 `init`: scaffolds a workspace in the directory (default: here) from
 `minimal` (runnable minimum) or `network` (full starter), never

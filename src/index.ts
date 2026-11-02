@@ -86,6 +86,7 @@ async function main(): Promise<void> {
 		provider: s.provider,
 		allowOpenCdb: s.allowOpenCdb,
 		defaultApprovalMode: s.yolo ? "allowAll" : undefined,
+		trustWorkspace: s.noTrustWorkspace ? false : undefined,
 	});
 	const where = dir ?? "no workspace (centrs/quickchr only)";
 	if (isLoopbackHost(srv.hostname)) {

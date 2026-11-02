@@ -20,7 +20,7 @@ export function usage(): string[] {
 		"  init: --template minimal|network (default: minimal)",
 		"  code: --yes, --router H[:port], --print-only; the rest passes to muse (-- ends our flags)",
 		"",
-		"Developer flags (start): --no-workspace, --provider NAME, --allow-open-cdb",
+		"Developer flags (start): --no-workspace, --provider NAME, --allow-open-cdb, --no-trust-workspace",
 		"",
 		"  --help, -h     this help",
 		"  --version, -V  print version",
@@ -36,6 +36,8 @@ export type StartOpts = {
 	noWorkspace?: boolean;
 	provider?: string;
 	allowOpenCdb?: boolean;
+	/** D39: spawn the worker without --trust-workspace (skills stay unloaded). */
+	noTrustWorkspace?: boolean;
 };
 
 export type InitOpts = { dir?: string; template: string };
@@ -106,6 +108,8 @@ function parseStartArgs(argv: string[]): StartOpts {
 			opts.noWorkspace = true;
 		} else if (a === "--allow-open-cdb") {
 			opts.allowOpenCdb = true;
+		} else if (a === "--no-trust-workspace") {
+			opts.noTrustWorkspace = true;
 		} else if (a.startsWith("-")) {
 			throw new Stop([`Unknown start flag: ${a}`, ...usage()]);
 		} else {
