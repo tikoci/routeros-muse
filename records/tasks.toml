@@ -544,12 +544,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T55"
 title = "MSP-UI plumbing: skill loading plus agent-driven UI actions"
-status = "needed"
+status = "active"
 detail = "Two unexamined seams. (1) Skill/instruction loading into the MSP muse scheme: how workspace skills, template knowledge, and orientation prompts reach the agent, since the workspace stuff needs to land there. (2) UI tool calls: how the agent renders into tabs, selects a device, or shows/adds notifications and alerts. The UI concept shows all of these; the plumbing was never traced and may need new MSP surface, server relays, or both."
 evidence = "developer direction 2026-11-01; shares the live-meta repro need with T50 (wire shapes), distinct questions; live meta capture 2026-11-01 merged 97f6bd8: skills/AGENTS.md need --trust-workspace (D39) and .agents/skills/ (D40); no host tool registration, per-session MCP is the UI-action path (D41)"
 blocked_by = []
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 (orch claude-orch)"
+updated = "2026-11-02"
 
 [[task]]
 id = "T56"
