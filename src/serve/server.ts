@@ -812,9 +812,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	 * we refused) and the reason lands in homeError + warnings +
 	 * the boot log. Each workspace seeds only its own
 	 * router.toml hosts (D45, no union). No-workspace mode
-	 * seeds only the ui_* tool rules (same toggle) and reports
-	 * them: commands/hosts stay empty, so the toggle can be seen
-	 * and revoked there too (T106).
+	 * seeds the same resolved MCP tool rules (ui + trilogy, T105;
+	 * same toggle) and reports them: commands/hosts stay empty, so
+	 * the toggle can be seen and revoked there too (T106).
 	 */
 	function refreshPreallow(enabled: boolean): void {
 		const warnings: string[] = [...homeWarnings];

@@ -23,7 +23,11 @@
 // default. Thirteen of the fourteen routeros_* tools are local SQLite
 // doc reads and are seeded; routeros_current_versions is NOT — its
 // handler fetches MikroTik's upgrade server per call, so it stays
-// available but gated per-call. No device contact; the only local
+// available but gated per-call. The seed line is public-internet
+// vs CDB-allowlisted devices, not network-vs-local: the seeded
+// centrs tools do per-call I/O to registered devices
+// (openWorldHint), which the CDB allowlist + the device account
+// bound. No device contact from rosetta; the only local
 // mutation is the startup DB download/cache in ensureDbReady
 // (bookkeeping, stated not seeded). No env needed: the DB resolves
 // next to the entry.

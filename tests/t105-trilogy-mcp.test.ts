@@ -328,6 +328,49 @@ describe("trilogy preallow seed", () => {
 	});
 });
 
+describe("bundle drift guard", () => {
+	test("seed constants still match the installed bundle's tools", () => {
+		// Parse the INSTALLED bundle's registerTool calls: a renamed
+		// or re-annotated tool must fail here, not rot silently
+		// (spark critic P2). Registration names are the first string
+		// argument; centrs annotations live in the same call block.
+		const root = path.resolve(import.meta.dir, "..");
+		const centrsSrc = nodeFs.readFileSync(
+			path.join(root, "node_modules/@tikoci/centrs/src/mcp/server.ts"),
+			"utf8",
+		);
+		const blocks = centrsSrc.split("server.registerTool(").slice(1);
+		const centrsReg = new Map<string, string>();
+		for (const b of blocks) {
+			const m = /^\s*"([a-z_]+)"/.exec(b);
+			if (m) centrsReg.set(m[1] as string, b.slice(0, 900));
+		}
+		for (const t of CENTRS_READONLY_TOOLS) {
+			const block = centrsReg.get(t);
+			expect(block).toBeDefined();
+			expect(block).toContain("readOnlyHint: true");
+		}
+		for (const t of ["centrs_execute", "centrs_devices", "centrs_discover"]) {
+			expect(centrsReg.get(t)).toContain("destructiveHint: true");
+			expect(TRILOGY_SEED_TOOLS).not.toContain(`mcp__centrs__${t}`);
+		}
+		const rosettaSrc = nodeFs.readFileSync(
+			path.join(root, "node_modules/@tikoci/rosetta/src/mcp.ts"),
+			"utf8",
+		);
+		const rosettaReg = new Set(
+			[...rosettaSrc.matchAll(/server\.registerTool\(\s*"([a-z_]+)"/g)].map(
+				(m) => m[1] as string,
+			),
+		);
+		expect([...rosettaReg].sort()).toEqual([...ROSETTA_TOOL_NAMES].sort());
+		for (const t of ROSETTA_TOOL_NAMES) {
+			const seeded = TRILOGY_SEED_TOOLS.includes(`mcp__rosetta__${t}`);
+			expect(seeded).toBe(t !== "routeros_current_versions");
+		}
+	});
+});
+
 describe("worker spawn carries the trilogy", () => {
 	t105(
 		"MCPCFG log holds all three servers with absolute bundle paths",
