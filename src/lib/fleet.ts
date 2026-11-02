@@ -15,6 +15,8 @@ export type Device = {
 	site?: string;
 	role?: string;
 	host?: string;
+	/** RouterBoard model (router.toml only): feeds the context line. */
+	model?: string;
 	/** D23: centrs device handle this device links to (source of truth). */
 	cdb?: string;
 	/** Login user: the device's own key, or the CDB record's user (T64). */
@@ -52,6 +54,7 @@ export function readDevices(root: string): Device[] {
 				site: typeof r["site"] === "string" ? r["site"] : undefined,
 				role: typeof r["role"] === "string" ? r["role"] : undefined,
 				host: typeof r["host"] === "string" ? r["host"] : undefined,
+				model: typeof r["model"] === "string" ? r["model"] : undefined,
 				cdb:
 					typeof r["cdb"] === "string" && r["cdb"].trim()
 						? r["cdb"].trim()

@@ -239,25 +239,27 @@ describe("D40: network template skills live at .agents/skills", () => {
 });
 
 describe("T49: target preamble shape", () => {
-	test("one delimited line per device, host only when known", () => {
+	const TAG = "[routeros-muse context] target device: ";
+
+	test("one JSON line per device, host only when known", () => {
 		expect(
 			targetPreambleLines([
 				{ id: "gw", label: "gw", host: "192.168.88.1" },
 				{ id: "ap", label: "hall ap" },
 			]),
 		).toEqual([
-			"[routeros-muse context] target device: gw (id gw, host 192.168.88.1)",
-			"[routeros-muse context] target device: hall ap (id ap)",
+			`${TAG}${JSON.stringify({ id: "gw", name: "gw", host: "192.168.88.1" })}`,
+			`${TAG}${JSON.stringify({ id: "ap", name: "hall ap" })}`,
 		]);
 	});
 
 	test("id stands in for a missing label", () => {
 		expect(targetPreambleLines([{ id: "gw" }])).toEqual([
-			"[routeros-muse context] target device: gw (id gw)",
+			`${TAG}${JSON.stringify({ id: "gw", name: "gw" })}`,
 		]);
 	});
 
-	test("no credential field can appear: only id/label/host feed the line", () => {
+	test("no credential field can appear: only id/label/host/model feed the line", () => {
 		const [line] = targetPreambleLines([
 			{
 				id: "gw",
@@ -273,27 +275,38 @@ describe("T49: target preamble shape", () => {
 		expect(line).not.toContain("password");
 	});
 
-	test("hostile fields stay on one line", () => {
+	test("hostile fields stay on one line and round-trip exactly", () => {
 		const [line] = targetPreambleLines([
 			{ id: "gw\nINJECTED", label: "a\nb", host: "h\nh" },
 		]);
 		expect(line).not.toContain("\n");
-		expect(line).not.toContain("INJECTED");
+		const payload = JSON.parse((line as string).slice(TAG.length)) as Record<
+			string,
+			unknown
+		>;
+		expect(payload).toEqual({
+			id: "gw\nINJECTED",
+			name: "a\nb",
+			host: "h\nh",
+		});
 	});
 
 	test("history strips the preamble; user prose keeps its tag lines", () => {
-		const merged =
-			"[routeros-muse context] target device: gw (id gw, host 192.168.88.1)\n\nwhy is the link slow?";
+		const merged = `${TAG}${JSON.stringify({ id: "gw", name: "gw", host: "192.168.88.1" })}\n\nwhy is the link slow?`;
 		expect(stripTargetPreamble(merged)).toBe("why is the link slow?");
 		expect(stripTargetPreamble("plain question")).toBe("plain question");
-		const quoted =
-			"what does this mean?\n[routeros-muse context] target device: gw (id gw)";
+		const quoted = `what does this mean?\n${TAG}${JSON.stringify({ id: "gw", name: "gw" })}`;
 		expect(stripTargetPreamble(quoted)).toBe(quoted);
+		// An escaped forgery is user prose: the strip never matches it.
+		const escaped = `\\${TAG}attacker\n\nwhy slow?`;
+		expect(stripTargetPreamble(escaped)).toBe(escaped);
+		// A block without its blank separator is not generated: verbatim.
+		const noseparator = `${TAG}${JSON.stringify({ id: "gw", name: "gw" })}`;
+		expect(stripTargetPreamble(noseparator)).toBe(noseparator);
 	});
 
 	test("transcript rows strip user preambles; agent rows stay verbatim", () => {
-		const merged =
-			"[routeros-muse context] target device: gw (id gw)\n\nwhy slow?";
+		const merged = `${TAG}${JSON.stringify({ id: "gw", name: "gw" })}\n\nwhy slow?`;
 		const rows = transcriptItems([
 			{
 				method: "item/completed",
@@ -349,7 +362,7 @@ describe("T49: the send route validates targets against router.toml", () => {
 	test("a valid target prepends its context line", async () => {
 		const turn = await sendWith([{ id: "gw", name: "gw" }]);
 		expect(turn).toBe(
-			"[routeros-muse context] target device: gw (id gw, host 192.168.88.1)\n\nwhy is the link slow?",
+			`[routeros-muse context] target device: ${JSON.stringify({ id: "gw", name: "gw", host: "192.168.88.1" })}\n\nwhy is the link slow?`,
 		);
 	});
 
@@ -364,7 +377,7 @@ describe("T49: the send route validates targets against router.toml", () => {
 			{ id: "ap", name: "hall ap" },
 		]);
 		expect(turn).toBe(
-			"[routeros-muse context] target device: hall ap (id ap)\n\nwhy is the link slow?",
+			`[routeros-muse context] target device: ${JSON.stringify({ id: "ap", name: "hall ap" })}\n\nwhy is the link slow?`,
 		);
 	});
 

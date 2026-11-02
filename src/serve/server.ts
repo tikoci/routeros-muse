@@ -375,43 +375,98 @@ function json(data: unknown, status = 200): Response {
 	return Response.json(data, { status });
 }
 
-/** First line, trimmed, capped — hostile fields stay on their own line. */
-function oneLine(v: string | undefined): string {
-	if (typeof v !== "string") return "";
-	const clean = (v.split("\n")[0] ?? "").replace(/\r/g, "").trim();
-	return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
-}
-
 /**
- * T49 target preamble: one short delimited line per device, built
- * ONLY from id/label/host — never user, cdb, or anything
- * credential-shaped.
+ * T49 target preamble: exactly one line per device, data-quoted —
+ * the payload is JSON built ONLY from validated inventory fields
+ * (id/label/host/model), never user, cdb, or anything
+ * credential-shaped. JSON quoting neutralizes brackets, parens,
+ * quotes, and newlines, so hostile fields round-trip exactly.
  */
+const TARGET_CONTEXT_PREFIX = "[routeros-muse context] target device: ";
+
 export function targetPreambleLines(devices: Device[]): string[] {
 	return devices.map((d) => {
-		const id = oneLine(d.id);
-		const name = oneLine(d.label) || id;
-		const host = d.host !== undefined ? oneLine(d.host) : "";
-		const inner = host ? `id ${id}, host ${host}` : `id ${id}`;
-		return `[routeros-muse context] target device: ${name} (${inner})`;
+		const name = typeof d.label === "string" && d.label ? d.label : d.id;
+		const payload: Record<string, string> = { id: d.id, name };
+		if (typeof d.host === "string" && d.host) payload["host"] = d.host;
+		if (typeof d.model === "string" && d.model) payload["model"] = d.model;
+		return `${TARGET_CONTEXT_PREFIX}${JSON.stringify(payload)}`;
 	});
 }
 
-const TARGET_PREAMBLE_TAG = "[routeros-muse context] ";
+/**
+ * Send-time forgery neutralizer: any user line starting with the
+ * context tag (after optional whitespace) gets a backslash before
+ * the bracket, so the agent sees escaped user text — never server
+ * context. The display never un-escapes; the backslash stays visible.
+ */
+const FORGED_CONTEXT_LINE = /^(\s*)\[routeros-muse context\]/;
+
+export function escapeForgedContextLines(text: string): string {
+	return text
+		.split("\n")
+		.map((line) =>
+			FORGED_CONTEXT_LINE.test(line)
+				? line.replace(FORGED_CONTEXT_LINE, "$1\\[routeros-muse context]")
+				: line,
+		)
+		.join("\n");
+}
+
+export type TargetChip = { id: string; name: string; host?: string };
+
+function parseContextLine(line: string): TargetChip | null {
+	if (!line.startsWith(TARGET_CONTEXT_PREFIX)) return null;
+	let obj: unknown;
+	try {
+		obj = JSON.parse(line.slice(TARGET_CONTEXT_PREFIX.length));
+	} catch {
+		return null;
+	}
+	if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+	const rec = obj as Record<string, unknown>;
+	if (typeof rec["id"] !== "string") return null;
+	const chip: TargetChip = {
+		id: rec["id"],
+		name:
+			typeof rec["name"] === "string" && rec["name"] ? rec["name"] : rec["id"],
+	};
+	if (typeof rec["host"] === "string" && rec["host"]) chip.host = rec["host"];
+	return chip;
+}
 
 /**
- * Strip leading target-preamble lines (plus one blank separator) so
- * history never shows the raw context the send route prepended.
- * Only leading lines: a quoted tag mid-text is user prose and stays.
+ * Split a leading generated preamble block (grammar lines + one
+ * blank separator) from the user prose. Anything else — escaped
+ * forgeries, mid-text quotes, a block without its blank line —
+ * stays verbatim with zero targets.
+ */
+export function parseTargetPreamble(text: string): {
+	targets: TargetChip[];
+	text: string;
+} {
+	const lines = text.split("\n");
+	const targets: TargetChip[] = [];
+	let i = 0;
+	for (; i < lines.length; i++) {
+		const chip = parseContextLine(lines[i] ?? "");
+		if (!chip) break;
+		targets.push(chip);
+	}
+	if (targets.length === 0) return { targets, text };
+	if (i >= lines.length || lines[i] !== "") return { targets: [], text };
+	return { targets, text: lines.slice(i + 1).join("\n") };
+}
+
+/**
+ * Strip a leading generated preamble block (plus its blank
+ * separator) so history never shows the raw context the send route
+ * prepended. Grammar-exact: only tag + valid JSON object with a
+ * string id counts — ordinary prose starting with the tag was
+ * escaped at send and can no longer match.
  */
 export function stripTargetPreamble(text: string): string {
-	const lines = text.split("\n");
-	let i = 0;
-	while (i < lines.length && (lines[i] ?? "").startsWith(TARGET_PREAMBLE_TAG))
-		i++;
-	if (i === 0) return text;
-	if ((lines[i] ?? "") === "") i++;
-	return lines.slice(i).join("\n");
+	return parseTargetPreamble(text).text;
 }
 
 export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
@@ -1411,10 +1466,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						}
 					}
 					const preamble = targetPreambleLines(valid);
+					// Forged context lines in the user text are
+					// escaped before the real block is prepended,
+					// so the agent can tell server context from
+					// user prose that merely quotes the tag.
+					const safe = escapeForgedContextLines(body.text);
 					const text =
-						preamble.length > 0
-							? `${preamble.join("\n")}\n\n${body.text}`
-							: body.text;
+						preamble.length > 0 ? `${preamble.join("\n")}\n\n${safe}` : safe;
 					const input: TurnInput[] = [{ type: "text", text }];
 					for (const img of body.images ?? []) {
 						input.push({
