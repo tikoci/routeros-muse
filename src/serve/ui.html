@@ -2023,11 +2023,79 @@
     m.scrollTop = m.scrollHeight;
   }
 
-  function appendMsg(role, text, targets) {
+  function appendMsgEl(role, text, targets) {
     const wasBottom = atBottom(msgsEl());
-    msgsEl().appendChild(bubble(role, text, targets));
+    const el = bubble(role, text, targets);
+    msgsEl().appendChild(el);
     if (wasBottom || role === "user") tail();
     else markUnread(true);
+    return el;
+  }
+
+  function appendMsg(role, text, targets) {
+    appendMsgEl(role, text, targets);
+  }
+
+  // T56 failed-send restore (t3code GAP1 + T62 rules): the dispatch
+  // snapshot lets a failed send put the composer back the way it found
+  // it. Failure is a non-2xx, a network error, or an ok:false body.
+  // Merge rule (restore-if-empty): the failed text returns only into an
+  // empty composer — new typing since dispatch always wins, and the
+  // dropped prompt echoes (truncated) in the error toast so it never
+  // vanishes silently. Images re-stage ahead of anything attached since,
+  // deduped by content, so a retry can never send one twice (no separate
+  // upload endpoint exists — the payload rides the send body, so nothing
+  // can strand server-side). Pills re-add where missing (addTarget
+  // dedupes). Run state stays scoped to the failed send: idle returns
+  // only when this send owned it (idle-to-running, no turn claimed since,
+  // no foreign Stop pin); a mid-run failure leaves the live turn — and
+  // any Stopping ticker or Force offer — untouched. No "interrupted"
+  // toast, ever: the failure shows as one alert toast with the why.
+  function failSend(saved, optimistic, why, code) {
+    if (optimistic && optimistic.isConnected) optimistic.remove();
+    if (code === "auth/oauth-required") applyMeta("absent");
+    const input = $("chatinput");
+    let kept = false;
+    if (saved.text) {
+      if (input.value === "") {
+        input.value = saved.text;
+        fitInput();
+      } else {
+        kept = true;
+      }
+    }
+    // Dedupe across the whole merge (saved copies among themselves
+    // too): attaching one image twice must not restore two.
+    const staged = new Set(pendingImages.map((im) => im.mediaType + "\n" + im.base64Data));
+    const missing = [];
+    for (const im of saved.images) {
+      const key = im.mediaType + "\n" + im.base64Data;
+      if (!staged.has(key)) { staged.add(key); missing.push(im); }
+    }
+    if (missing.length > 0) pendingImages = missing.concat(pendingImages);
+    const have = new Set();
+    for (const p of document.querySelectorAll(".tpill")) have.add(p.dataset.dev);
+    for (let i = saved.targets.length - 1; i >= 0; i--) {
+      const id = saved.targets[i].id;
+      if (typeof id === "string" && id && !have.has(id)) { addTarget(id); have.add(id); }
+    }
+    if (input.value === "" && pendingImages.length > 0 && META_AUTH !== "absent") {
+      input.placeholder = pendingImages.length + " image" + (pendingImages.length === 1 ? "" : "s") + " attached — type to send with it…";
+    }
+    let msg = "Send failed: " + why;
+    if (kept) {
+      const clip = saved.text.length > 200 ? saved.text.slice(0, 200) + "…" : saved.text;
+      msg += " — kept your new text; unsent: \"" + clip + "\"";
+    }
+    showToast(msg, "alert");
+    // Idle only when this send owned the run: nothing was running
+    // when it dispatched, no turn went live since, and no newer send
+    // was dispatched (every send bumps STOP_EPOCH; Stop pins never
+    // do). A newer in-flight send owns the run state now.
+    if (!saved.wasRunning && LIVE_TURN === saved.liveBefore && STOP_EPOCH === saved.epoch) {
+      if (STOP_PIN !== null && STOP_PIN.epoch === saved.epoch) stopReset();
+      if (STOP_PIN === null) setRunning(false);
+    }
   }
 
   async function send(text) {
@@ -2044,9 +2112,11 @@
     // T49: capture the pill targets in the same atomic prefix as the
     // images (T69): they travel with this send, and only this send.
     const targets = pillTargets();
-    STOP_EPOCH++;
+    // T56: snapshot the dispatch for failSend (restore + run scoping).
+    const saved = { text, images, targets, wasRunning: AGENT_RUNNING, liveBefore: LIVE_TURN, epoch: STOP_EPOCH + 1 };
+    STOP_EPOCH = saved.epoch;
     stopNote(null);
-    appendMsg("user", text, targets);
+    const optimistic = appendMsgEl("user", text, targets);
     $("chatinput").value = "";
     fitInput();
     setRunning(true);
@@ -2056,17 +2126,17 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text, images, targets }),
       });
-      const j = await r.json();
-      if (!j.ok) {
-        if (j.code === "auth/oauth-required") applyMeta("absent");
-        appendMsg("agent", "send failed: " + j.why);
-        setRunning(false);
-      } else if (typeof j.turnId === "string") {
+      let j = null;
+      try { j = await r.json(); } catch { j = null; }
+      if (!r.ok || !j || j.ok !== true) {
+        failSend(saved, optimistic, (j && typeof j.why === "string" && j.why) || ("HTTP " + r.status), j && j.code);
+        return;
+      }
+      if (typeof j.turnId === "string") {
         LIVE_TURN = j.turnId;
       }
     } catch (e) {
-      appendMsg("agent", "send failed: " + e.message);
-      setRunning(false);
+      failSend(saved, optimistic, (e && e.message) || String(e), null);
     }
   }
 
@@ -3727,7 +3797,7 @@
   // checks. Local-only prototype surface, not a public API.
   // test-only: lets the smoke drive dispatch with an attached image
   // without driving the file picker (T69 double-send proof).
-  window.__smoke = { renderRow, renderPatch, renderOutput, pushImage: (img) => pendingImages.push(img), recoverPending };
+  window.__smoke = { renderRow, renderPatch, renderOutput, pushImage: (img) => pendingImages.push(img), stagedCount: () => pendingImages.length, recoverPending };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the
   // post-save refresh across, same window-property idiom as __devices.

@@ -15,7 +15,10 @@
 // and the T101 profile row (live :ask-me/:unrestricted on echo),
 // pre-seed list + toggle (file-backed), and access flips both ways,
 // and the T55 ui_* tools (fake-driven bridge calls: toast, opened
-// tab, selected chip, seeded tool rules).
+// tab, selected chip, seeded tool rules), and the T56 failed-send
+// restore (forced 500/abort/ok:false/oauth failures restore text,
+// images and pills with the why toasted; restore-if-empty; a failed
+// second send leaves the live turn alone).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -40,6 +43,7 @@ type SmokeHook = {
 	renderPatch: (host: HTMLElement, doc: unknown) => void;
 	renderOutput: (host: HTMLElement, body: unknown) => void;
 	pushImage: (img: { base64Data: string; mediaType: string }) => void;
+	stagedCount: () => number;
 	recoverPending: () => Promise<void>;
 };
 
@@ -147,6 +151,10 @@ const artifactBlockUrls: string[] = [];
 // refusal lands on the error page (chrome-error loc), not the
 // artifact URL, so it gets its own list, asserted by the navnow leg.
 const cspRefusals: string[] = [];
+// T56 L2 aborts the send POST at the route; Chromium logs the failed
+// request. Excused only for that exact shape (see the handler) and
+// asserted exactly below, so the excuse cannot hide a real error.
+const sendAbortNoise: string[] = [];
 function isKnownArtifactBlock(text: string): boolean {
 	return (
 		text.includes("because the document's frame is sandboxed") ||
@@ -156,6 +164,17 @@ function isKnownArtifactBlock(text: string): boolean {
 page.on("console", (msg) => {
 	if (msg.type() === "error") {
 		const text = msg.text().slice(0, 300);
+		// T56 L2 aborts the send POST at the route: Chromium logs the
+		// failed request. Excused only for that exact shape on the send
+		// endpoint (location-scoped, like the R2 SSE aborts) — any other
+		// console error still fails the gate.
+		if (
+			msg.location().url.includes("/api/chat/send") &&
+			text.includes("net::ERR_FAILED")
+		) {
+			sendAbortNoise.push(text);
+			return;
+		}
 		consoleErrors.push(text);
 		const url = msg.location().url;
 		if (url.includes("/api/artifact")) {
@@ -415,6 +434,487 @@ try {
 		);
 	} finally {
 		await page.unroute("**/api/chat/send");
+	}
+
+	// T56 failed-send restore: a failed send restores the prompt text,
+	// staged images and target pills into the composer (t3code GAP1 plus
+	// the T62 rules), shows the server's why as one alert toast (never
+	// agent voice, never an "interrupted" toast), drops the optimistic
+	// bubble, and idles only when the failed send owned the running
+	// state. Each failure leg ends with a successful retry so staged
+	// state never leaks into the next leg. Screenshots 46-49.
+	const stageOne = (): Promise<number> =>
+		page.evaluate(
+			() =>
+				window.__smoke?.pushImage({
+					base64Data: "iVBORw0KGgo=",
+					mediaType: "image/png",
+				}) ?? -1,
+		);
+	const stagedNow = (): Promise<number> =>
+		page.evaluate(() => window.__smoke?.stagedCount?.() ?? -1);
+	const t56Toast = (want: string): Promise<boolean> =>
+		page
+			.waitForFunction(
+				(w) =>
+					[...document.querySelectorAll("#toasts .toast .tbody")].some((el) =>
+						(el.textContent ?? "").includes(w),
+					),
+				want,
+				{ timeout: 10_000 },
+			)
+			.then(() => true)
+			.catch(() => false);
+	// Each leg starts with no toasts, so a toast match can only be
+	// this leg's (an 8 s toast from the previous leg otherwise races).
+	const t56ClearToasts = (): Promise<void> =>
+		page.evaluate(() => {
+			for (const t of document.querySelectorAll("#toasts .toast")) t.remove();
+		});
+	const t56Interrupted = (): Promise<boolean> =>
+		page.evaluate(() =>
+			[...document.querySelectorAll("#toasts .toast .tbody")].some((el) =>
+				/interrupted/i.test(el.textContent ?? ""),
+			),
+		);
+	// Echo text lands before turn/completed: every retry must also
+	// wait for idle, or the previous completion idles the NEXT leg's
+	// send mid-flight (its turnId still matches LIVE_TURN).
+	const t56Idle = (): Promise<void> => {
+		return page
+			.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+			.then(() => undefined);
+	};
+	// Soft (a timeout is a FAIL line, not a thrown abort) so one run
+	// shows every new leg red before the fix and green after.
+	const t56Echoed = (probe: string): Promise<boolean> =>
+		page
+			.waitForFunction(
+				(p) =>
+					[...document.querySelectorAll("#pane-chat .msg.agent .body p")].some(
+						(el) => (el.textContent ?? "").includes(p),
+					),
+				probe,
+				{ timeout: 30_000 },
+			)
+			.then(() => true)
+			.catch(() => false);
+	// Pill for the restore legs (the T49 flow: card → Add → pill).
+	await page.locator('.dev[data-key="dev-smoke-gw"]').click();
+	await page.waitForSelector("#pdev-add:visible", { timeout: 10_000 });
+	await page.click("#pdev-add");
+	await page.waitForSelector('.tpill[data-dev="smoke-gw"]', { timeout: 5_000 });
+
+	// L1: 500 with why. Both attempt bodies are captured to prove the
+	// retry carries exactly the restored payload (no double upload).
+	{
+		const bodies: { text?: string; images?: unknown[] }[] = [];
+		const usersBefore = await page.locator("#pane-chat .msg.user").count();
+		const staged = await stageOne();
+		check("t56 500 leg stages one image", staged === 1, `n=${staged}`);
+		await page.route("**/api/chat/send", async (route) => {
+			try {
+				bodies.push(route.request().postDataJSON() ?? {});
+			} catch {
+				bodies.push({});
+			}
+			await route.fulfill({
+				status: 500,
+				contentType: "application/json",
+				body: JSON.stringify({
+					ok: false,
+					why: "T56 simulated send failure (HTTP 500)",
+				}),
+			});
+		});
+		try {
+			await page.fill("#chatinput", "T56-FAIL-500");
+			await page.press("#chatinput", "Enter");
+			check(
+				"t56 500 shows the why toast",
+				await t56Toast("T56 simulated send failure"),
+			);
+			check(
+				"t56 failure toast is alert-level",
+				(await page
+					.locator('.toast[data-level="alert"]', {
+						hasText: "T56 simulated send failure",
+					})
+					.count()) >= 1,
+			);
+			check(
+				"t56 500 shows no interrupted toast",
+				(await t56Interrupted()) === false,
+			);
+			check(
+				"t56 500 restores the prompt text",
+				(await page.locator("#chatinput").inputValue()) === "T56-FAIL-500",
+			);
+			check("t56 500 restores the staged image", (await stagedNow()) === 1);
+			check(
+				"t56 500 keeps the target pill",
+				(await page.locator('.tpill[data-dev="smoke-gw"]').count()) === 1,
+			);
+			check(
+				"t56 500 drops the optimistic bubble",
+				(await page.locator("#pane-chat .msg.user").count()) === usersBefore,
+			);
+			check(
+				"t56 500 idles the composer",
+				(await page.locator("#sendbtn:visible").count()) === 1,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "46-t56-failed-restore.png"),
+			});
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		// Retry: the restored draft sends clean and echoes once.
+		await page.route("**/api/chat/send", async (route) => {
+			try {
+				bodies.push(route.request().postDataJSON() ?? {});
+			} catch {
+				bodies.push({});
+			}
+			await route.continue();
+		});
+		try {
+			await page.press("#chatinput", "Enter");
+			check("t56 retry after 500 echoes", await t56Echoed("T56-FAIL-500"));
+			await t56Idle();
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		const imgCounts = bodies.map((b) => (b.images ?? []).length);
+		check(
+			"t56 failed attempt carried one image",
+			bodies.length >= 1 && imgCounts[0] === 1,
+			JSON.stringify(imgCounts),
+		);
+		check(
+			"t56 retry uploads the image exactly once",
+			bodies.length === 2 && imgCounts[1] === 1,
+			JSON.stringify(imgCounts),
+		);
+	}
+
+	// L2: network error (the POST aborted at the route). Same restore
+	// shape as L1; the abort's console noise is excused narrowly above.
+	{
+		const usersBefore = await page.locator("#pane-chat .msg.user").count();
+		const staged = await stageOne();
+		check("t56 abort leg stages one image", staged === 1, `n=${staged}`);
+		await t56ClearToasts();
+		await page.route("**/api/chat/send", async (route) => {
+			await route.abort();
+		});
+		try {
+			await page.fill("#chatinput", "T56-FAIL-ABORT");
+			await page.press("#chatinput", "Enter");
+			check("t56 abort shows the failed toast", await t56Toast("Send failed"));
+			check(
+				"t56 abort shows no interrupted toast",
+				(await t56Interrupted()) === false,
+			);
+			check(
+				"t56 abort restores text, image and pill",
+				(await page.locator("#chatinput").inputValue()) === "T56-FAIL-ABORT" &&
+					(await stagedNow()) === 1 &&
+					(await page.locator('.tpill[data-dev="smoke-gw"]').count()) === 1,
+			);
+			check(
+				"t56 abort drops the optimistic bubble and idles",
+				(await page.locator("#pane-chat .msg.user").count()) === usersBefore &&
+					(await page.locator("#sendbtn:visible").count()) === 1,
+			);
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		await page.press("#chatinput", "Enter");
+		check("t56 retry after abort echoes", await t56Echoed("T56-FAIL-ABORT"));
+		await t56Idle();
+	}
+
+	// L3: 200 ok:false while the user keeps typing — the new text wins,
+	// the failed prompt echoes (truncated) in the error toast so it
+	// never vanishes silently, and images/pills still restore.
+	{
+		const usersBefore = await page.locator("#pane-chat .msg.user").count();
+		const staged = await stageOne();
+		check("t56 kept-typing leg stages one image", staged === 1, `n=${staged}`);
+		await t56ClearToasts();
+		// Explicit barrier, not a timer: the failure lands only after
+		// the new text is typed, however loaded the box is.
+		let releaseL3: () => void = () => {};
+		const gateL3 = new Promise<void>((r) => {
+			releaseL3 = r;
+		});
+		await page.route("**/api/chat/send", async (route) => {
+			await gateL3;
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ ok: false, why: "T56 simulated ok:false" }),
+			});
+		});
+		try {
+			await page.fill("#chatinput", "T56-FAILED-TEXT");
+			await page.press("#chatinput", "Enter");
+			await page.waitForFunction(
+				() =>
+					(document.getElementById("chatinput") as HTMLTextAreaElement | null)
+						?.value === "",
+				undefined,
+				{ timeout: 5_000 },
+			);
+			await page.fill("#chatinput", "T56-NEW-TYPING");
+			releaseL3();
+			check(
+				"t56 kept-typing shows the why toast",
+				await t56Toast("T56 simulated ok:false"),
+			);
+			check(
+				"t56 new typing is not clobbered",
+				(await page.locator("#chatinput").inputValue()) === "T56-NEW-TYPING",
+			);
+			check(
+				"t56 failed prompt echoes in the toast",
+				await t56Toast("T56-FAILED-TEXT"),
+			);
+			check(
+				"t56 image and pill still restore under new typing",
+				(await stagedNow()) === 1 &&
+					(await page.locator('.tpill[data-dev="smoke-gw"]').count()) === 1,
+			);
+			check(
+				"t56 kept-typing drops the optimistic bubble and idles",
+				(await page.locator("#pane-chat .msg.user").count()) === usersBefore &&
+					(await page.locator("#sendbtn:visible").count()) === 1,
+			);
+			await page.screenshot({ path: path.join(OUT, "47-t56-kept-typing.png") });
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		// The kept text sends (carrying the restored image) and echoes.
+		await page.press("#chatinput", "Enter");
+		check("t56 kept text sends and echoes", await t56Echoed("T56-NEW-TYPING"));
+		await t56Idle();
+	}
+
+	// L6 (review): overlapping sends from idle. A is dispatched, then B,
+	// before either acks; A fails while B is still in flight. B owns
+	// the run now, so Stop must stay up until B resolves.
+	{
+		await t56ClearToasts();
+		let releaseB: () => void = () => {};
+		const gateB = new Promise<void>((r) => {
+			releaseB = r;
+		});
+		let n = 0;
+		let releaseA: () => void = () => {};
+		const gateA = new Promise<void>((r) => {
+			releaseA = r;
+		});
+		await page.route("**/api/chat/send", async (route) => {
+			n += 1;
+			if (n === 1) {
+				await gateA;
+				await route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({ ok: false, why: "T56 overlap A failed" }),
+				});
+				return;
+			}
+			await gateB;
+			await route.continue();
+		});
+		try {
+			await page.fill("#chatinput", "T56-OVERLAP-A");
+			await page.press("#chatinput", "Enter");
+			await page.fill("#chatinput", "T56-OVERLAP-B");
+			await page.press("#chatinput", "Enter");
+			releaseA();
+			check(
+				"t56 overlap A's failure is toasted",
+				await t56Toast("T56 overlap A failed"),
+			);
+			check(
+				"t56 overlap keeps Stop while B is in flight",
+				(await page.locator("#sendbtn:visible").count()) === 0,
+			);
+		} finally {
+			releaseB();
+			await page.unroute("**/api/chat/send");
+		}
+		check("t56 overlap B still echoes", await t56Echoed("T56-OVERLAP-B"));
+		await t56Idle();
+		await page.fill("#chatinput", "");
+	}
+
+	// L7 (review): the same image attached twice restores once.
+	{
+		await t56ClearToasts();
+		await stageOne();
+		const twice = await stageOne();
+		check("t56 dup leg stages two copies", twice === 2, `n=${twice}`);
+		await page.route("**/api/chat/send", async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ ok: false, why: "T56 dup failed" }),
+			});
+		});
+		try {
+			await page.fill("#chatinput", "T56-DUP");
+			await page.press("#chatinput", "Enter");
+			check("t56 dup failure is toasted", await t56Toast("T56 dup failed"));
+			check(
+				"t56 duplicate image restores once",
+				(await stagedNow()) === 1,
+				`n=${await stagedNow()}`,
+			);
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		await page.press("#chatinput", "Enter");
+		check("t56 dup retry echoes", await t56Echoed("T56-DUP"));
+		await t56Idle();
+	}
+
+	// L4: a failed second send never disturbs the live turn. send1's ack
+	// is held so Stop lands with no server-side run yet (a deterministic
+	// Force offer); send2 then fails fast while stopping; the Stopping
+	// visuals, the running state and the live turn all survive, and the
+	// restored second send outlives the live completion.
+	{
+		let posts = 0;
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route("**/api/chat/send", async (route) => {
+			posts++;
+			if (posts === 1) {
+				await gate;
+				await route.continue();
+			} else {
+				await route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({
+						ok: false,
+						why: "T56 simulated mid-run failure",
+					}),
+				});
+			}
+		});
+		try {
+			await page.fill("#chatinput", "T56-LIVE-TURN");
+			await page.press("#chatinput", "Enter");
+			await page.waitForSelector("#stopbtn:visible", { timeout: 10_000 });
+			await page.click("#stopbtn");
+			await page.waitForSelector("#forcebtn:visible", { timeout: 10_000 });
+			await page.fill("#chatinput", "T56-SECOND-SEND");
+			await page.press("#chatinput", "Enter");
+			check(
+				"t56 mid-run failure shows the why toast",
+				await t56Toast("T56 simulated mid-run failure"),
+			);
+			check(
+				"t56 mid-run failure keeps the Force offer",
+				(await page.locator("#forcebtn:visible").count()) === 1,
+			);
+			const stopText = (await page.locator("#stopbtn").textContent()) ?? "";
+			check(
+				"t56 mid-run failure keeps Stopping visuals",
+				(await page.locator("#stopbtn").isDisabled()) &&
+					stopText.includes("Stopping"),
+				stopText,
+			);
+			check(
+				"t56 failed second send leaves the run live",
+				(await page.locator("#runstat:visible").count()) === 1 &&
+					(await page.locator("#sendbtn:visible").count()) === 0,
+			);
+			check(
+				"t56 failed second send restores its own text",
+				(await page.locator("#chatinput").inputValue()) === "T56-SECOND-SEND",
+			);
+			await page.screenshot({
+				path: path.join(OUT, "48-t56-midrun-failure.png"),
+			});
+			release();
+			check(
+				"t56 live turn completes after the failed second send",
+				await t56Echoed("T56-LIVE-TURN"),
+			);
+			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
+			check(
+				"t56 restored second send survives the live completion",
+				(await page.locator("#chatinput").inputValue()) === "T56-SECOND-SEND",
+			);
+		} finally {
+			release();
+			await page.unroute("**/api/chat/send");
+		}
+		// Retry the restored second send; it echoes on its own turn.
+		await page.press("#chatinput", "Enter");
+		check(
+			"t56 retry of the second send echoes",
+			await t56Echoed("T56-SECOND-SEND"),
+		);
+		await t56Idle();
+	}
+
+	// L5: the oauth-required 403 flips to the Meta banner AND restores
+	// the draft (into the now-disabled input) with the why visible.
+	{
+		await page.route("**/api/chat/send", async (route) => {
+			await route.fulfill({
+				status: 403,
+				contentType: "application/json",
+				body: JSON.stringify({
+					ok: false,
+					why: "meta login required (run `muse login` in your terminal)",
+					code: "auth/oauth-required",
+				}),
+			});
+		});
+		try {
+			await page.fill("#chatinput", "T56-OAUTH-PROBE");
+			await page.press("#chatinput", "Enter");
+			check(
+				"t56 oauth failure shows the why toast",
+				await t56Toast("meta login required"),
+			);
+			await page.waitForSelector("#oauthbanner.open", { timeout: 10_000 });
+			check("t56 oauth failure opens the Meta banner", true);
+			check(
+				"t56 oauth failure restores into the disabled composer",
+				(await page.locator("#chatinput").inputValue()) === "T56-OAUTH-PROBE" &&
+					(await page.locator("#chatinput").isDisabled()) &&
+					(await page.locator("#sendbtn:visible").count()) === 0,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "49-t56-oauth-failure.png"),
+			});
+		} finally {
+			await page.unroute("**/api/chat/send");
+		}
+		// Reload to leave the oauth-disabled state behind for later legs.
+		const t56Reload = watchAppBatch(page);
+		await page.reload({ waitUntil: "load" });
+		await t56Reload;
+		await page.waitForFunction(
+			() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+			undefined,
+			{ timeout: 15_000 },
+		);
+		check(
+			"t56 reload re-enables the composer",
+			(await page.locator("#chatinput").isDisabled()) === false,
+		);
 	}
 
 	// T37 cards: render one of each row shape into the live transcript.
@@ -3234,12 +3734,22 @@ try {
 		}
 	});
 
-	// T89: expected-error exceptions are route-specific. The four
+	// T56 L2: the aborted send really dropped its request (the excuse
+	// above stays honest by asserting the exact count).
+	check(
+		"t56 offline phase really dropped the send request",
+		sendAbortNoise.length === 1,
+		`aborts=${sendAbortNoise.length}`,
+	);
+
+	// T89: expected-error exceptions are route-specific. The six
 	// deliberate failures (each leg asserts its own honest UI above):
 	// - fake-ref open-in-tab: GET /api/chat/output -> 400 (MspError)
 	// - wrong-password unlock: POST /api/auth/unlock -> 401
 	// - bad scaffold name (T40 picker leg): POST /api/workspaces -> 400
 	// - raced credential save (T72 leg a): POST credentials -> 409
+	// - failed send (T56 L1): POST /api/chat/send -> 500 with why
+	// - oauth-required send (T56 L5): POST /api/chat/send -> 403
 	// Query strings are ignored in the path match (the fake ref carries
 	// query params); match on pathname only.
 	const EXPECTED_FAILED: FailedResponse[] = [
@@ -3251,6 +3761,8 @@ try {
 			method: "POST",
 			pathname: "/api/devices/smoke-gw/credentials",
 		},
+		{ status: 500, method: "POST", pathname: "/api/chat/send" },
+		{ status: 403, method: "POST", pathname: "/api/chat/send" },
 	];
 	const failedKey = (f: FailedResponse): string =>
 		`${f.status} ${f.method} ${f.pathname}`;
