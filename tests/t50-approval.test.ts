@@ -486,6 +486,39 @@ describe("approval/question surface (T50)", () => {
 	);
 
 	t50(
+		"settings write through a symlink is refused with why",
+		async () => {
+			const { bin, log } = stubT50Bin();
+			await withT50Env(log, async () => {
+				const srv = await startT50Srv(bin);
+				try {
+					const victim = path.join(srv.dataHome, "victim.txt");
+					nodeFs.writeFileSync(victim, "victim-bytes\n");
+					const file = path.join(
+						srv.dataHome,
+						"routeros-muse",
+						"settings.toml",
+					);
+					nodeFs.mkdirSync(path.join(srv.dataHome, "routeros-muse"), {
+						recursive: true,
+					});
+					nodeFs.symlinkSync(victim, file);
+					const refused = await postJson(`${srv.url}api/settings`, {
+						defaultAccess: "allowAll",
+					});
+					expect(refused.json["ok"]).toBe(false);
+					expect(String(refused.json["why"] ?? "")).toMatch(/symlink/i);
+					expect([409, 500]).toContain(refused.status);
+					expect(nodeFs.readFileSync(victim, "utf8")).toBe("victim-bytes\n");
+				} finally {
+					await srv.stop();
+				}
+			});
+		},
+		30_000,
+	);
+
+	t50(
 		"pending is empty without a session and spawns nothing",
 		async () => {
 			const { bin, log } = stubT50Bin();
