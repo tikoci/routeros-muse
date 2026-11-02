@@ -508,7 +508,7 @@ describe("approval/question surface (T50)", () => {
 					});
 					expect(refused.json["ok"]).toBe(false);
 					expect(String(refused.json["why"] ?? "")).toMatch(/symlink/i);
-					expect([409, 500]).toContain(refused.status);
+					expect(refused.status).toBe(409);
 					expect(nodeFs.readFileSync(victim, "utf8")).toBe("victim-bytes\n");
 				} finally {
 					await srv.stop();
