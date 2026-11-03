@@ -4740,10 +4740,11 @@ try {
 		const pageB = await browser.newPage({
 			viewport: { width: 1600, height: 900 },
 		});
-		// The second tab reports into the same gate collectors.
+		// The second tab reports into the same gate collectors (raw text:
+		// the T89 reconciliation prefix-matches resource loads).
 		pageB.on("console", (msg) => {
 			if (msg.type() === "error") {
-				consoleErrors.push(`B: ${msg.text().slice(0, 300)}`);
+				consoleErrors.push(msg.text().slice(0, 300));
 			}
 		});
 		pageB.on("response", (res) => {
@@ -4757,7 +4758,7 @@ try {
 			}
 		});
 		pageB.on("pageerror", (err) =>
-			pageErrors.push(`B pageerror: ${String(err).slice(0, 300)}`),
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
 		);
 		try {
 			await page.goto(srvS.url, { waitUntil: "load" });
