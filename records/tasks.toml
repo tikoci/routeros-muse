@@ -855,11 +855,11 @@ updated = "2026-11-01"
 id = "T86"
 title = "Prove the full Mode B workflow with a real agent and a twin"
 status = "needed"
-detail = "Run the D16 milestone end to end: shared handoff visible -> real Meta session loads intended skills/context -> selected device reaches agent -> approval/question round trip -> read/proposed change on a disposable twin with readback -> rendered evidence in the app -> stop/lock lifecycle. Include T64 exact acceptance: no ambient CDB password, unlock encrypted fixture, UI read and an actual agent-shell centrs command using the package build and bound CDB. Existing T64 worker shim only records env; it never executes centrs. Wire shapes come from live captures. No bigdude writes."
+detail = "Run the D16 milestone end to end: shared handoff visible -> real Meta session loads intended skills/context -> selected device reaches agent -> approval/question round trip -> read/proposed change on a disposable twin with readback -> rendered evidence in the app -> stop/lock lifecycle. Include T64 exact acceptance: no ambient CDB password, unlock encrypted fixture, UI read and an actual agent-shell centrs command using the package build and bound CDB. Existing T64 worker shim only records env; it never executes centrs. Wire shapes come from live captures. No bigdude writes. T112 2026-11-02: also prove live that an agent shell in an unlocked encrypted-CDB workspace runs centrs CLI reads (CENTRS_CDB_PASSWORD inherited), the one hop T112 inferred."
 evidence = "T80 audit of tests/serve.test.ts stubMuseBin + unlock-propagation test: real centrs for UI, shell stub for MSP env; no real Meta tool invocation or twin demo established by 164/56 gate. This is a milestone acceptance task, not a demand to redo every unit test. T84 added as dep: the demo must not corrupt router.toml."
 blocked_by = ["T50", "T55", "T49", "T83", "T71", "T56", "T84"]
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[task]]
 id = "T87"
@@ -1115,9 +1115,9 @@ updated = "2026-11-02"
 [[task]]
 id = "T112"
 title = "centrs via CLI: drop centrs MCP from the session config, steer skills to the CLI"
-status = "active"
+status = "done"
 detail = "Per D46: remove the centrs server from session mcpServers and stop seeding centrs_* tool rules (rosetta unchanged, still seeded); steer template skills and orientation text to help-verified centrs CLI forms; leave MCP-subject skills alone; report stale-rule handling and whether the agent shell gets CENTRS_CDB_PASSWORD for an encrypted CDB after unlock (finding only, follow-up task if not)."
-evidence = "brief 2026-11-02; fail-first tests in t105/t55 suites; make gate required"
+evidence = "merged 0b18f60 (branch t112-drop-centrs-mcp 5043ddb + orchestrator fix 7d37754: add-device skill no longer claims devices list is seeded). Fail-first: 10 failures then 53 pass across t105/t55 suites; make gate exit 0 (SMOKE GREEN); check-skills 56 valid. Stale tagged centrs_* rules prune on reseed (pinned by test). Encrypted-CDB shell path: package-fronted centrs devices list --json against tests/fixtures/cdb-encrypted-empty.cdb fails cdb/password-required without and succeeds with workerEnv(...) from src/serve/auth.ts; the live hop (real agent shell inheriting CENTRS_CDB_PASSWORD) is inferred from D44, proven in T86. centrs validate does not exist in 0.1.9-next.24: skills use explain --json."
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude)"
 updated = "2026-11-02"
