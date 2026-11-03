@@ -407,3 +407,14 @@ evidence = "https://github.com/tikoci/centrs/issues/606 (centrs agent 2026-11-02
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
+
+[[need]]
+id = "C24"
+repo = "centrs"
+title = "Single quickchr target for interactive terminal"
+status = "needed"
+detail = "Optional T95 centrs-provider CHR support needs terminal --quickchr <name> --via ssh for exactly one machine, consuming the existing public quickchr provider for service-specific endpoint/key/trust; reject multiple names and mixed target sources, never start stopped machines. Terminal currently rejects all selection flags including --quickchr as fan-out. Reuse upstream resolver contracts rather than extracting credentials or ports in Muse. Verify SSH inherited-stdio terminal still honors provider auth/trust and reports stopped/missing/unavailable SSH honestly; interactive auth requirements may differ from the current batch-capable provider check. Report filed; no implementation now. Consume a future @next publish if this adapter is selected. T116: developer permits real-router-first scope, so this need no longer blocks T95 as a whole; quickchr-owned serial console is a separate optional path under investigation."
+evidence = "https://github.com/tikoci/centrs/issues/610 (T116, developer-authorized bug filing; fetched open). All-state GitHub searches plus closed #134/comments found no dedicated duplicate; #134 originally scoped retrieve/execute/api/transfer. T114/T116 offline: node_modules/.bin/centrs terminal --quickchr t95-scope-not-a-vm --json -> exit 1 usage/fanout-not-supported, context.flag=--quickchr (bundled 0.1.9-next.24); bun ../centrs/src/cli.ts with same args -> identical rejection on 5112ed6. src/cli/terminal.ts selectionFlagTokens gate and TerminalRequest have no quickchr branch; src/resolver/quickchr-provider.ts quickchrConnection already handles SSH for other surfaces. No VM started, no device contacted."
+blocked_by = ["T86"]
+agent = ""
+updated = "2026-11-02"

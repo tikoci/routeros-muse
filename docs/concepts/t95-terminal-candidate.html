@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>T95 terminal candidate</title>
+<style>
+:root { color-scheme: light dark; --font-sans: system-ui, sans-serif; --font-mono: ui-monospace, monospace; --radius: 10px; }
+* { box-sizing: border-box; } body { margin: 0; color: var(--foreground, CanvasText); font-family: var(--font-sans); font-size: 13px; }
+p { margin: 0; } button { font: inherit; cursor: pointer; color: inherit; }
+.note { color: var(--muted-foreground, GrayText); margin-bottom: 12px; line-height: 1.5; }
+.workspace { display: grid; grid-template-columns: 155px minmax(0,1fr); border: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); border-radius: var(--radius); overflow: hidden; background: var(--card, Canvas); }
+aside { padding: 16px 10px; border-right: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); background: var(--secondary, color-mix(in srgb, Canvas 95%, CanvasText)); }
+.label { color: var(--muted-foreground, GrayText); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; margin: 0 0 10px; }
+.device { padding: 10px 7px; border-radius: 6px; margin-bottom: 16px; background: var(--card, Canvas); }
+.device strong, .device small { display: block; margin-bottom: 6px; }
+small { color: var(--muted-foreground, GrayText); font-size: 11px; }
+.device button { background: var(--secondary, color-mix(in srgb, Canvas 95%, CanvasText)); border: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); border-radius: 5px; padding: 5px 7px; font-size: 11px; }
+.device button:disabled { cursor: default; opacity: .5; }
+main { min-width: 0; }
+.tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); background: var(--secondary, color-mix(in srgb, Canvas 95%, CanvasText)); padding: 6px 5px 0; min-height: 39px; }
+.tab { white-space: nowrap; border: 1px solid transparent; border-bottom: 0; background: transparent; padding: 7px 8px; font-size: 11px; border-radius: 6px 6px 0 0; color: var(--muted-foreground, GrayText); }
+.tab[aria-selected="true"] { color: var(--foreground, CanvasText); background: var(--card, Canvas); border-color: var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); }
+.pin { color: var(--primary, LinkText); }
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); }
+.toolbar strong { font-size: 14px; } .state { color: var(--success, LinkText); font-size: 11px; } .state.off { color: var(--muted-foreground, GrayText); }
+.toolbar button { margin-left: auto; border: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); background: var(--secondary, color-mix(in srgb, Canvas 95%, CanvasText)); border-radius: 5px; padding: 5px 9px; font-size: 11px; }
+.screen { padding: 20px 16px; min-height: 214px; background: var(--code-background, Canvas); font: 12px/1.85 var(--font-mono); overflow: auto; white-space: pre; }
+.prompt { color: var(--primary, LinkText); } .cursor { display: inline-block; width: 7px; height: 13px; vertical-align: -2px; background: var(--foreground, CanvasText); }
+.status { color: var(--muted-foreground, GrayText); font-size: 11px; padding: 10px 16px; border-top: 1px solid var(--border, color-mix(in srgb, Canvas 80%, CanvasText)); }
+.flow { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+.flow div { background: var(--secondary, color-mix(in srgb, Canvas 95%, CanvasText)); border-radius: var(--radius); padding: 12px; line-height: 1.5; }
+.flow strong { display: block; margin-bottom: 4px; }
+.caption { color: var(--muted-foreground, GrayText); font-size: 11px; margin-top: 12px; line-height: 1.6; }
+@media(max-width:520px) { .workspace { grid-template-columns: 115px minmax(0,1fr); } aside { padding: 12px 5px; } .tab { padding: 7px 5px; } .screen { font-size: 10px; padding: 12px 9px; } .toolbar { padding: 12px 9px; gap: 6px; } .flow { grid-template-columns: 1fr; } }
+</style></head>
+<body>
+<p class="note">T95 candidate · illustrative data · click either Open terminal to switch targets. Each terminal opens pinned.</p>
+<div class="workspace">
+<aside>
+<p class="label">Devices</p>
+<div class="device"><strong>edge-1</strong><small>Real router</small><button type="button" data-open="edge-1">Open terminal</button></div>
+<p class="label">QuickCHR</p>
+<div class="device"><strong>lab-a</strong><small>● Running</small><button type="button" data-open="lab-a">Open terminal</button></div>
+<div class="device"><strong>lab-b</strong><small>Stopped</small><button type="button" disabled>Open terminal</button></div>
+</aside>
+<main>
+<div class="tabs" role="tablist" aria-label="Center tabs"><button class="tab" role="tab" aria-selected="false" id="chat">Chat</button><button class="tab" role="tab" aria-selected="true" data-target="lab-a"><span class="pin">⚑</span> lab-a · Terminal</button></div>
+<div class="toolbar"><strong id="target">lab-a</strong><span class="state" id="state">● Connected · SSH</span><button type="button" id="disconnect">Disconnect</button></div>
+<div class="screen" id="screen" role="tabpanel" aria-label="Illustrative terminal"></div>
+<div class="status" id="status">QuickCHR · pinned · session stays connected when switching tabs</div>
+</main></div>
+<div class="flow">
+<div><strong>1 · Browser terminal</strong><small>Keyboard, output, selection and resize in its own center pane.</small></div>
+<div><strong>2 · Muse session bridge</strong><small>Authenticated WebSocket ↔ local PTY. Lock or close tears down the child.</small></div>
+<div><strong>3 · centrs terminal</strong><small>CDB device → SSH / MAC-Telnet.<br>QuickCHR name → SSH, after upstream support.</small></div>
+</div>
+<p class="caption">Proposal: repeat Open focuses the existing tab; hidden tabs keep their terminal state. Disconnect leaves a read-only buffer and a Reconnect action. Closing the tab ends the connection. Terminal content stays out of agent chat. No router or shell is connected in this sketch.</p>
+<script>
+const opened = new Set(["lab-a"]);
+const connected = new Set(["lab-a"]);
+let current = "lab-a";
+const screen = document.getElementById("screen");
+function paint() {
+  document.querySelectorAll("[data-target]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.target === current)));
+  document.getElementById("chat").setAttribute("aria-selected", String(current === "chat"));
+  const chat = current === "chat";
+  const live = connected.has(current);
+  document.getElementById("target").textContent = chat ? "Chat" : current;
+  const state = document.getElementById("state");
+  state.textContent = chat ? "" : live ? "● Connected · SSH" : "○ Disconnected";
+  state.classList.toggle("off", !live);
+  const action = document.getElementById("disconnect");
+  action.hidden = chat;
+  action.textContent = live ? "Disconnect" : "Reconnect";
+  screen.replaceChildren();
+  if (chat) {
+    screen.textContent = "Chat remains available here.\nOpen terminal tabs keep their connections.";
+    document.getElementById("status").textContent = "Terminal sessions are independent of the agent conversation";
+    return;
+  }
+  const p = document.createElement("span");
+  p.className = "prompt";
+  p.textContent = "[operator@" + current + "] > ";
+  screen.append(p, document.createTextNode("/system resource print\n"));
+  screen.append(document.createTextNode("             uptime: 12m34s\n            version: 7.x (illustrative)\n     free-memory: 196.0MiB\n\n"));
+  const next = document.createElement("span");
+  next.className = "prompt"; next.textContent = "[operator@" + current + "] > "; screen.append(next);
+  if (live) { const c = document.createElement("span"); c.className = "cursor"; screen.append(c); }
+  document.getElementById("status").textContent = (current === "lab-a" ? "QuickCHR" : "Real router") + " · pinned · " + (live ? "session stays connected when switching tabs" : "buffer retained; reconnect is explicit");
+}
+document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => {
+  const name = b.dataset.open;
+  if (!opened.has(name)) {
+    opened.add(name); connected.add(name);
+    const tab = document.createElement("button"); tab.className = "tab"; tab.type = "button"; tab.setAttribute("role","tab"); tab.dataset.target = name;
+    tab.textContent = "⚑ " + name + " · Terminal";
+    tab.onclick = () => { current = name; paint(); };
+    document.querySelector(".tabs").append(tab);
+  }
+  current = name; paint();
+});
+document.querySelector('[data-target="lab-a"]').onclick = () => { current = "lab-a"; paint(); };
+document.getElementById("chat").onclick = () => { current = "chat"; paint(); };
+document.getElementById("disconnect").onclick = () => { if (connected.has(current)) connected.delete(current); else connected.add(current); paint(); };
+paint();
+</script></body></html>

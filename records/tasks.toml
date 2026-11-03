@@ -943,13 +943,19 @@ updated = "2026-11-01"
 
 [[task]]
 id = "T95"
-title = "Candidate: owner-opened terminal into a device (real router or CHR) via centrs"
+title = "Near-term candidate: owner-opened terminal into a device (real router or CHR) via centrs"
 status = "needed"
-detail = "Per D36, corrected by the developer 2026-11-02: open the terminal through centrs (its terminal surface over ssh/mac-telnet), so the same path works for a real router or a quickchr CHR; centrs is believed to support this already (verify the exact command when scoped). Note only, no work now. Candidate, off the demo critical path; scope after T86."
-evidence = "developer 2026-11-01; correction 2026-11-02 (via centrs, not quickchr-specific)"
-blocked_by = ["T86"]
+detail = "Near-term candidate per developer 2026-11-03; implementation remains after T86 (D36). Developer 2026-11-02: owner-opened terminal for both real devices and quickchr CHRs, rendered as a center tab pinned by default. T114 scope investigation found centrs SSH/MAC-Telnet terminal plumbing exists, but terminal rejects --quickchr even for one machine (C24). Ship no Muse-side endpoint-resolution workaround. T116 follow-up permits a real-router-first slice: authenticated browser-to-local-PTY bridge running package-fronted centrs terminal, per-target panes and lifecycle coverage. Optional CHR support can later use a published centrs single-CHR selector fix (C24) or a separately evaluated quickchr-owned serial adapter. No terminal implementation or CHR start authorized by this scope pass."
+scope_ui = "Open terminal on device cards/details and running CHR rows, including no-workspace mode. New terminal tab is pinned by default; repeat Open focuses the existing target session. Each terminal owns its emulator, connection and buffer (current openSlot reuses one unpinned preview and shared panes, so it cannot simply host live terminals). Switching tabs preserves the connection and resizes on reveal. Show real-router versus CHR provenance, transport, connecting/authenticating/connected/disconnected/error states. Stopped CHR gives an explanation, never starts automatically. Disconnect preserves the in-memory buffer; reconnect is explicit. Pin is persistence in the current UI, not session restoration after reload."
+scope_bridge = "Proposed browser emulator (e.g. xterm.js plus fit addon, bundled locally) <-> authenticated same-origin WebSocket <-> Bun local PTY <-> centrs terminal <-> SSH or MAC-Telnet. Run argv directly, never a shell; accept inventory device IDs or validated CHR names, never browser-supplied argv/credentials/host overrides. Resolve CDB and unlock env on the server through existing workerEnv; keep secrets off URLs, logs, chat and persistent buffers. Authenticate upgrade, check Origin, bind session ownership, bound input/output queues and terminal dimensions, handle backpressure and slow clients. Local PTY supports centrs/OpenSSH prompts; it does not imply requesting a remote RouterOS PTY. Close/lock/logout/session-expiry/server-stop must terminate centrs and its SSH descendants and release handles; socket loss ends the session, with explicit reconnect after reload. No automatic recording or agent terminal tool."
+acceptance = "Real-router-first slice after T86/D49 uses the real-device, authentication, lifecycle, confinement and mode checks below without waiting on C24. If optional centrs-CHR support is selected, require C24 and a disposable-CHR SSH round trip with real keystrokes, Tab/help, Ctrl-C, password/key prompts, initial size and resize/reveal, disconnect/reconnect, multiple independent target panes, repeat-open deduplication and bounded output. Encrypted-CDB real-device selector path with fixture plus owner-approved/read-only real-router terminal check; trusted-L2 MAC-Telnet proof if included in first release. Unauthenticated/cross-origin/foreign-session sockets and unknown targets refused before spawn; lock, expiry, socket loss, tab close, unpinned replacement and server shutdown leave no centrs/ssh descendants. Sweep all capability/no-workspace modes and clean console; make gate and records check. Mac-first platform evidence required, Windows separate. Wire contracts require captures when implemented."
+scope_options = "T116 developer follow-up: CHR support may be omitted from the first T95 slice. Real-device-first terminal through centrs can proceed after T86/D49 without C24; C24 gates only optional centrs-provider CHR support. Alternate optional CHR adapter: quickchr console <name> or the public QuickCHR.get(name).serial() streams, with the same pinned tab UX and no automatic start. This is an explicit quickchr-owned serial transport option to investigate, not a Muse-side workaround for centrs endpoint resolution. No adapter selected or implemented."
+console_homework = "Installed quickchr 0.5.4 and sibling 6465b5f expose console CLI and ChrInstance.serial() readable/writable streams. CLI attach requires an interactive TTY, attaches to an already-running background machine, nudges with CR and Ctrl-A X detaches. CLI Ctrl-A C also exposes QEMU monitor (quit can stop the VM), so a RouterOS-only tab should prefer evaluating the public serial stream API rather than exposing the entire CLI mux. This could avoid a local PTY for the CHR adapter only. Source notes guest serial login can survive host disconnect: teardown is not logout or credential revocation. Before selecting it, prove fresh/already-authenticated login behavior, stream cancellation/socket cleanup, competing attachments/agent serial access, VM-stop/restart, resize behavior and supported platforms on a disposable CHR. None was live-probed in T116. Do not use start --fg as attach: lifecycle paths can launch/relaunch the VM."
+pending = "D49 records proposed unpin/replacement and direct-console access policy for developer review. Actual browser/PTY/centrs interoperability, SSH resize/line editing, platform behavior, real-router auth and CHR provider/serial behavior remain unproven in Muse; upstream existing CHR-passed matrix is source evidence only. SSH terminal does not automatically use a CDB record password; owner prompts or SSH agent/key must work. Do not advertise centrs execute validation/confirmation as guarding raw terminal input. C24 bug filed as https://github.com/tikoci/centrs/issues/610; CHR support is optional, not a blocker for the first real-router slice."
+evidence = "T114 2026-11-02: bundled centrs 0.1.9-next.24 terminal --help reports SSH and MAC-Telnet; offline terminal --quickchr t95-scope-not-a-vm --json exits 1 with usage/fanout-not-supported (context.flag=--quickchr), same on sibling centrs 5112ed6. Source: centrs src/terminal.ts runTerminal uses injectable TerminalIo for MAC-Telnet but SSH inherits stdio; buildSshTerminalArgv omits BatchMode and never passes resolved password. docs/MATRIX.md marks both terminal transports CHR-passed (not re-run). quickchr docs/centrs-interface.md and centrs resolver/quickchr-provider.ts already define service-specific SSH endpoint/key/trust resolution for other commands. Bun 1.4.4 installed; bun-types exposes Terminal write/resize/close (not runtime-probed). UI src/serve/ui.html openSlot/wireWorkingTab/loadDevices/loadTwins inspected. Interactive illustrative sketch docs/concepts/t95-terminal-candidate.html; no device contacted or VM started."
+blocked_by = ["T86", "D49"]
 agent = ""
-updated = "2026-11-02"
+updated = "2026-11-03"
 
 [[task]]
 id = "T96"
@@ -1143,6 +1149,16 @@ agent = ""
 updated = "2026-11-02"
 
 [[task]]
+id = "T114"
+title = "Scope T95 device terminal candidate without implementation"
+status = "done"
+detail = "Developer-requested investigation only: inspect centrs terminal plumbing for quickchr CHRs and real devices, sketch an owner-opened center tab pinned by default, and record the proposed integration, gaps, and later acceptance work. Do not start a CHR or implement terminal support. T95 implementation remains a candidate after T86."
+evidence = "T95 now carries UI/bridge/acceptance scope, C24 records the verified upstream single-CHR selector gap, and D49 keeps proposed access/unpin behavior open. No src/tests/package changes, VM starts or device contact. Source/offline CLI evidence is in T95/C24; illustrative sketch docs/concepts/t95-terminal-candidate.html passed Playwright clicks for independent target tabs, deduplication, disconnect/reconnect, chat switch and stopped-CHR disable (page errors 0). html_preview desktop dark/light and 390px checked visually; consoleMessages empty. make gate > /tmp/routeros-muse-t114-gate.log 2>&1 -> exit 0, Biome/tsc clean, skills 56/56, 620 pass/0 fail, SMOKE GREEN, zero browser pageerrors and tmpdir clean. Async smoke harness Route is already handled message filed as T115 despite green exit. make -C records check -> ok (38 needs, 115 tasks, 49 decisions, 31 concepts). T95 stays needed/candidate, after T86; only this investigation is done."
+blocked_by = []
+agent = "codex"
+updated = "2026-11-02"
+
+[[task]]
 id = "T115"
 title = "Smoke overlap route handler logs Route is already handled"
 status = "needed"
@@ -1150,6 +1166,16 @@ detail = "During the T114 records/concept-only gate, tools/ui-smoke.ts T56 overl
 evidence = "make gate > /tmp/routeros-muse-t114-gate.log 2>&1 (local) -> exit 0 / SMOKE GREEN: lines 995-1005 show tools/ui-smoke.ts:759 continue: Route is already handled!, followed by PASS t56 overlap B still echoes. Final browser pageerrors 0; the error is in the host route handler. Source/behavior otherwise unchanged by T114. Reproduced during the T118 records/research-only gate: out/skills-delivery-probe/gate.log logs the same host route.continue error in the T56 overlap leg; tracked here, no product change."
 blocked_by = []
 agent = ""
+updated = "2026-11-02"
+
+[[task]]
+id = "T116"
+title = "Investigate quickchr serial console alternative and report centrs terminal selector bug"
+status = "done"
+detail = "Developer follow-up to T114: research quickchr console mode as an optional CHR terminal path, allow a real-device-first T95 scope if simpler, and deduplicate/file the reproduced centrs terminal --quickchr single-target rejection upstream. Investigation and issue filing only; no terminal implementation or VM starts."
+evidence = "Filed and fetched open https://github.com/tikoci/centrs/issues/610 after all-state searches terminal quickchr, terminal in:title, --quickchr single, and fanout-not-supported terminal; read #134 and its comments (closed, originally retrieve/execute/api/transfer scope, no terminal follow-up found). Repeated bundled centrs terminal --quickchr t116-not-a-vm --json -> usage/fanout-not-supported before provider/device lookup; sibling remains 5112ed6. Bundled quickchr console with no name -> Usage: quickchr console <name>, attach to running machine; bundled quickchr 0.5.4 and sibling 6465b5f source exposes CLI mux and public serial streams. T95 records source findings, optional real-device-first scope, and unproven serial acceptance; C24 linked to issue, D49 records the serial-login teardown distinction. No implementation, CHR starts or device contact. make -C records check and git diff --check -> exit 0. Runtime source/dependencies unchanged; prior T114 make gate remains the product verification (620 pass, SMOKE GREEN, T115 harness finding already tracked)."
+blocked_by = []
+agent = "codex"
 updated = "2026-11-02"
 
 [[task]]

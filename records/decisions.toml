@@ -386,6 +386,15 @@ decided = ""
 outcome = ""
 
 [[decision]]
+id = "D49"
+title = "T95 candidate: direct terminal permissions and unpin lifecycle"
+status = "open"
+serial_addendum = "T116 homework: optional CHR serial adapter exposes the guest's existing console, which can already be logged in; closing its host stream does not establish guest logout. Choose attach-existing-session versus explicit login/logout expectations before shipping it. Public serial streams avoid the quickchr CLI's Ctrl-A C QEMU-monitor mux, but teardown, concurrency and resize still need real grounding. CHR support can wait; this does not block investigating a real-router-first T95 slice."
+detail = "Developer requested a center tab pinned by default; that is the input, not an open question. Proposed remaining contract: a terminal is an owner-operated raw console using the router account permissions, independent of agent approval modes (centrs terminal bypasses execute validation and per-command --yes). Label it Direct console; no agent opening/typing or transcript capture. Switching tabs keeps it alive; Disconnect leaves an in-memory buffer; tab close, app lock, logout/expiry, page reload/socket loss and server stop disconnect. Proposed unpin: normal preview replacement counts as close and tears down the connection, never orphans it; no warning for ordinary switching. Alternative: connected terminal tabs cannot be unpinned. Resolve the access-mode presentation and unpin choice when T95 is considered after T86; no implementation in T114."
+decided = ""
+outcome = ""
+
+[[decision]]
 id = "D50"
 title = "Cross-tab main-session sync: detect and offer Load current, never auto-adopt"
 status = "decided"
