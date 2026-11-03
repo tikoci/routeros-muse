@@ -317,6 +317,36 @@ try {
 		"t100 automatic skills default on in GUI",
 		await page.locator("#routeros-skills-toggle").isChecked(),
 	);
+	// T128: a partly delivered bundle must keep the full expected count.
+	// A missing/locally edited copy cannot turn an 18/19 state into 18/18.
+	const partialSkillsRoute = async (route: import("playwright").Route) => {
+		const response = await route.fetch();
+		const result = await response.json();
+		result.routerosSkills.staged = result.routerosSkills.staged.slice(1);
+		result.routerosSkills.verification.loaded =
+			result.routerosSkills.verification.loaded.slice(1);
+		result.routerosSkills.warnings = [
+			"routeros-app-yaml: local edits preserved; package update skipped",
+		];
+		await route.fulfill({ response, json: result });
+	};
+	await page.route("**/api/status", partialSkillsRoute);
+	await page.evaluate(() => window.__smoke?.loadStatus());
+	check(
+		"t128 partial delivery shows 18/19, not a smaller total",
+		(
+			(await page.locator("#routeros-skills-status").textContent()) ?? ""
+		).includes("18/19"),
+	);
+	check(
+		"t128 partial delivery warning remains visible",
+		(
+			(await page.locator("#routeros-skills-warn").textContent()) ?? ""
+		).includes("local edits"),
+	);
+	await page.screenshot({ path: path.join(OUT, "t128-skills-partial.png") });
+	await page.unroute("**/api/status", partialSkillsRoute);
+	await page.evaluate(() => window.__smoke?.loadStatus());
 	const skillsFile = path.join(
 		SMOKE_CONFIG_HOME,
 		"muse/skills/routeros-fundamentals/SKILL.md",

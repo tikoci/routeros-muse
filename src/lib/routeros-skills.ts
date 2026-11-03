@@ -13,9 +13,19 @@ const NAME = /^routeros-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
 const MAX_FILE = 8 * 1024 * 1024;
 
-type Files = Record<string, string>;
+/** Narrow seam for injecting filesystem failures without changing permissions. */
+export type SkillsIo = {
+	renameSync?: (from: string, to: string) => void;
+	linkSync?: (from: string, to: string) => void;
+};
+
+// A pending replacement accepts both the recorded bytes and the bytes we
+// are about to install. This intent is persisted before touching an owned
+// file, so retry and opt-out remain safe if the following write fails.
+type OwnedHash = string | string[];
+type Files = Record<string, OwnedHash>;
 type Manifest = {
-	version: 1;
+	version: 1 | 2;
 	source: string;
 	revision: string;
 	skills: Record<string, Files>;
@@ -28,6 +38,7 @@ export type SkillsBundle = {
 export type RouterosSkillsReport = {
 	enabled: boolean;
 	revision: string | null;
+	bundledCount: number;
 	/** Successfully managed skills, not a claim about a model's catalog. */
 	staged: string[];
 	warnings: string[];
@@ -150,6 +161,12 @@ function read(file: string): Buffer {
 function hash(bytes: Buffer): string {
 	return createHash("sha256").update(bytes).digest("hex");
 }
+function hashes(value: OwnedHash): string[] {
+	return typeof value === "string" ? [value] : value;
+}
+function owns(bytes: Buffer, value: OwnedHash): boolean {
+	return hashes(value).includes(hash(bytes));
+}
 function relativeFile(file: string): boolean {
 	return (
 		file.length > 0 &&
@@ -233,7 +250,7 @@ function readManifest(file: string): Manifest | null {
 	if (!stat(file)) return null;
 	const doc = JSON.parse(read(file).toString()) as Manifest;
 	if (
-		doc.version !== 1 ||
+		(doc.version !== 1 && doc.version !== 2) ||
 		typeof doc.source !== "string" ||
 		typeof doc.revision !== "string" ||
 		!doc.skills ||
@@ -249,27 +266,49 @@ function readManifest(file: string): Manifest | null {
 			Array.isArray(files)
 		)
 			throw new Error("RouterOS skills: invalid manifest skill");
-		for (const [rel, sha] of Object.entries(files))
-			if (!relativeFile(rel) || typeof sha !== "string" || !HASH.test(sha))
+		for (const [rel, sha] of Object.entries(files)) {
+			const validHash =
+				typeof sha === "string"
+					? HASH.test(sha)
+					: doc.version === 2 &&
+						Array.isArray(sha) &&
+						sha.length > 0 &&
+						sha.every((h) => typeof h === "string" && HASH.test(h));
+			if (!relativeFile(rel) || !validHash)
 				throw new Error("RouterOS skills: invalid manifest file or hash");
+		}
 	}
 	return doc;
 }
 
 /** Fully write a sibling, then atomically replace owned files or create exclusively. */
-function write(file: string, bytes: Buffer, replace: boolean): void {
+function write(
+	file: string,
+	bytes: Buffer,
+	replace: boolean,
+	io?: SkillsIo,
+): fs.Stats {
 	const tmp = `${file}.${randomUUID()}.tmp`;
 	const fd = fs.openSync(tmp, "wx", 0o600);
+	let identity: fs.Stats | null = null;
+	let created = false;
 	try {
 		try {
 			fs.writeFileSync(fd, bytes);
 			fs.fsyncSync(fd);
+			identity = fs.fstatSync(fd);
 		} finally {
 			fs.closeSync(fd);
 		}
-		if (replace) fs.renameSync(tmp, file);
-		else fs.linkSync(tmp, file); // EEXIST never overwrites somebody else's create.
+		if (replace) (io?.renameSync ?? fs.renameSync)(tmp, file);
+		else {
+			(io?.linkSync ?? fs.linkSync)(tmp, file); // EEXIST never overwrites somebody else's create.
+			created = true;
+			fs.unlinkSync(tmp);
+		}
+		return identity;
 	} catch (err) {
+		if (created && identity) removeCreated(file, identity, bytes);
 		try {
 			fs.unlinkSync(tmp);
 		} catch {
@@ -277,7 +316,23 @@ function write(file: string, bytes: Buffer, replace: boolean): void {
 		}
 		throw err;
 	}
-	if (!replace) fs.unlinkSync(tmp);
+}
+
+/** Best-effort rollback of an exclusive create whose ownership was not saved. */
+function removeCreated(file: string, identity: fs.Stats, bytes: Buffer): void {
+	try {
+		const current = stat(file);
+		if (
+			identity.ino !== 0 &&
+			current?.isFile() &&
+			current.ino === identity.ino &&
+			current.dev === identity.dev &&
+			read(file).equals(bytes)
+		)
+			fs.unlinkSync(file);
+	} catch {
+		/* keep the original I/O error; never remove an unverified replacement */
+	}
 }
 
 /** A second server cannot interleave a reconciliation. No waiting or live-owner theft. */
@@ -344,6 +399,7 @@ export function stageRouterosSkills(args: {
 	privateHome: string;
 	enabled: boolean;
 	bundle?: SkillsBundle;
+	io?: SkillsIo;
 }): RouterosSkillsReport {
 	const { privateHome, enabled } = args;
 	const muse = path.join(privateHome, "muse");
@@ -362,11 +418,32 @@ export function stageRouterosSkills(args: {
 	try {
 		const old = readManifest(manifestFile);
 		const next: Manifest = {
-			version: 1,
+			version: 2,
 			source: bundle?.source ?? old?.source ?? "",
 			revision: bundle?.revision ?? old?.revision ?? "",
 			skills: {},
 		};
+		const recovery: Manifest = {
+			...next,
+			skills: structuredClone(old?.skills ?? {}),
+		};
+		let manifestExists = old !== null;
+		function persist(doc: Manifest): void {
+			const bytes = Buffer.from(`${JSON.stringify(doc, null, 2)}\n`);
+			if (!manifestExists || !read(manifestFile).equals(bytes)) {
+				write(manifestFile, bytes, manifestExists, args.io);
+				manifestExists = true;
+			}
+		}
+		function remember(name: string, rel: string, value: OwnedHash): void {
+			const files: Files = Object.assign(
+				Object.create(null),
+				recovery.skills[name],
+			);
+			files[rel] = value;
+			recovery.skills[name] = files;
+			persist(recovery);
+		}
 		const warnings: string[] = [];
 		const staged: string[] = [];
 		const names = new Set([
@@ -396,7 +473,7 @@ export function stageRouterosSkills(args: {
 			}
 			const changed = Object.entries(prior ?? {}).filter(([rel, sha]) => {
 				const bytes = actual?.get(rel);
-				return bytes !== undefined && hash(bytes) !== sha;
+				return bytes !== undefined && !owns(bytes, sha);
 			});
 			const collisions = [...(wanted?.keys() ?? [])].filter(
 				(rel) => actual?.has(rel) && !Object.hasOwn(prior ?? {}, rel),
@@ -413,7 +490,7 @@ export function stageRouterosSkills(args: {
 				if (wanted?.has(rel)) continue;
 				const bytes = actual?.get(rel);
 				if (!bytes) continue;
-				if (hash(bytes) === sha) fs.unlinkSync(path.join(dir, rel));
+				if (owns(bytes, sha)) fs.unlinkSync(path.join(dir, rel));
 				else {
 					owned[rel] = sha;
 					warnings.push(
@@ -426,8 +503,21 @@ export function stageRouterosSkills(args: {
 					const file = path.join(dir, rel);
 					fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 					const sha = hash(bytes);
-					if (!actual?.has(rel) || hash(actual.get(rel) as Buffer) !== sha)
-						write(file, bytes, actual?.has(rel) ?? false);
+					if (!actual?.has(rel) || hash(actual.get(rel) as Buffer) !== sha) {
+						const baseline = prior?.[rel];
+						if (baseline !== undefined) {
+							const accepted = [...new Set([...hashes(baseline), sha])];
+							remember(name, rel, accepted.length === 1 ? sha : accepted);
+						}
+						const replace = actual?.has(rel) ?? false;
+						const identity = write(file, bytes, replace, args.io);
+						try {
+							remember(name, rel, sha);
+						} catch (err) {
+							if (!replace) removeCreated(file, identity, bytes);
+							throw err;
+						}
+					}
 					owned[rel] = sha;
 				}
 				staged.push(name);
@@ -454,12 +544,11 @@ export function stageRouterosSkills(args: {
 				}
 			}
 		}
-		const bytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`);
-		if (!old || !read(manifestFile).equals(bytes))
-			write(manifestFile, bytes, old !== null);
+		persist(next);
 		return {
 			enabled,
 			revision: bundle?.revision ?? old?.revision ?? null,
+			bundledCount: bundle?.skills.size ?? 0,
 			staged: staged.sort(),
 			warnings,
 			error: null,

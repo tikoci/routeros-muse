@@ -3923,11 +3923,11 @@
     tog.disabled = savingRouterosSkills;
     if (!savingRouterosSkills) tog.checked = report.enabled === true;
     const verification = report.verification;
-    const count = (report.staged || []).length;
+    const count = report.bundledCount == null ? (report.staged || []).length : report.bundledCount;
     let text = report.error ? "Bundled skills need attention."
       : report.appliedEnabled === false ? "Automatic loading is off."
       : verification ? (verification.loaded || []).length + "/" + count + " bundled skills available to this chat."
-      : count + " bundled skills prepared; checked when a chat starts.";
+      : (report.staged || []).length + " bundled skills prepared; checked when a chat starts.";
     if (verification && verification.personalCopiesShadowed)
       text += " Bundled versions take priority over " + verification.personalCopiesShadowed + " personal copies.";
     if (report.pending) text += " Saved change applies to the next new or resumed chat.";

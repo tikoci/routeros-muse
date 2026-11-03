@@ -160,15 +160,23 @@ preference, the applied value, pending changes, and delivery or catalog
 warnings. A response sequence prevents delayed status reads from
 overwriting a newer preference/catalog result in the browser.
 
-`muse/routeros-muse-skills.json` records source/revision and per-file
-SHA-256 ownership. Reconciliation updates/removes unchanged owned
+`muse/routeros-muse-skills.json` records the configured source/revision
+pin and per-file SHA-256 ownership. Reconciliation updates/removes unchanged owned
 files only, preserves local edits and unrelated files, and refuses
 symlink/special-file chains. An exclusive PID lock prevents concurrent
 delivery into one private home; dead owners can be recovered. New
 files are created exclusively, replacements and the manifest use
-fully written sibling files. Like init, this assumes no adversarial
-parent-directory swaps. An interrupted delivery can leave unrecorded
-files; those are treated as unowned and reported instead of adopted.
+fully written sibling files. Manifest v2 records both old and intended
+hashes before replacing an owned file, then collapses to the installed
+hash after success. Retries and the off switch recognize both versions
+after an I/O failure, without treating a matching unowned file as ours.
+New exclusive creates are recorded immediately; a recording failure
+attempts to remove only the created inode with the expected bytes.
+Legacy v1 manifests migrate on reconciliation. Like init, this assumes
+no adversarial parent-directory swaps. A crash between a new exclusive
+create and recording its ownership can still leave an unrecorded file;
+it remains unowned and warns rather than being adopted. Retained pin
+metadata after opt-out is provenance, not evidence that skills load.
 
 After session start/resume, MSP `skill/list` and `muse skills list
 --json` under the same private config/data homes verify the invocable

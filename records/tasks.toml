@@ -1267,3 +1267,63 @@ evidence = "out/ui-smoke/t100-skills-no-workspace-off.png (local) after successf
 blocked_by = []
 agent = ""
 updated = "2026-11-03"
+
+[[task]]
+id = "T127"
+title = "Claude Opus review of T100 GUI skill delivery"
+status = "done"
+detail = "Developer-requested independent code review via T3 Code using Claude Opus. Review implementation 5877d6c plus scope decision 820d6c5 against baseline fadce3c. Focus correctness, filesystem ownership/symlink/concurrency safety, next-new/resumed-chat semantics, real Muse catalog verification, settings/UI behavior and test gaps. GUI only; code/TUI deferred by D51. Review only, no fixes or device contact by reviewer."
+evidence = "Claude Opus 5.5 via T3 Code reviewed fadce3c..820d6c5 and returned request changes: one confirmed P2 interrupted-upgrade ownership/retry/off bug (out/t127-review/probe-wedge.ts), no P1; P3 findings on refused session attempts, stale delivery locks and pinned-versus-installed revision, plus metadata parsing/diagnostic notes. Reviewer focused tests 22 pass/0 fail, no tracked edits or device contact. Blocking fix is T128; remaining findings are T129-T132. Original review thread is linked in T3 Code; parent read the full completed result on 2026-11-03."
+blocked_by = ["T100"]
+agent = "codex"
+updated = "2026-11-03"
+
+[[task]]
+id = "T128"
+title = "Recover owned skill upgrades after partial I/O failures"
+status = "done"
+detail = "Fix Opus T127 P2 without adopting unowned files: preserve recovery ownership across replacements, retry interrupted updates, allow the opt-out to remove unchanged owned bytes even before a successful retry, and report the full expected bundle count. Keep genuine local edits and independent files. Add fail-first I/O-injection tests; run gate and records check."
+evidence = "Confirmed Opus P2 with bun out/t127-review/probe-wedge.ts: interrupted upgrade freezes routeros-a and OFF leaves its new bytes. Added an I/O seam plus fail-first tests: bun test tests/t128-skills-recovery.test.ts -> 2 pass/6 fail before fix (out/t127-review/recovery-before.log). Manifest v2 now durably records old/intended hashes before owned replacements and records exclusive creates immediately; retries/off accept only recorded bytes, and failed create-recording attempts remove only the verified created inode. Legacy v1 manifests migrate; genuine edits and byte-identical unowned/competing files remain protected. The adapted real EACCES probe (out/t127-review/probe-fixed.ts) now retries both skills with no warnings and OFF removes routeros-a; temp home cleaned. bundledCount keeps partial UI totals at 18/19; browser fixture and screenshot out/ui-smoke/t128-skills-partial.png cover it. make gate > out/t128-gate.log 2>&1 -> exit 0, Biome/tsc clean, 681 pass/0 fail including 12 recovery tests, 56 template skills valid, SMOKE GREEN, zero pageerrors, only expected browser resource loads, TMPDIR clean. Eyeballed partial/dark/light/trust shots; full smoke sweeps auth, workspace/no-workspace, access, swaps and cross-tab modes. Existing host route warning remains T115 and lazy connection row T126. make -C records check and git diff --check pass. P3/minor follow-ups T129-T132 remain; no new independent Opus re-review was requested."
+blocked_by = ["T100", "T127"]
+agent = "codex"
+updated = "2026-11-03"
+
+[[task]]
+id = "T129"
+title = "Saved skill preference on failed new/resume attempts"
+status = "needed"
+detail = "T127 P3: prepareSkills runs before session/start or session/resume is accepted. A refusal/abnormal-end leaves main unchanged but can change its private skill files to the saved preference. Ground real Muse cache behavior and restore the prior applied set on refusal to honor the existing next-new/resumed-chat choice. Never interrupt a live turn. Any proposal to change that contract to attempt-time application requires a developer decision."
+evidence = "Opus source finding at server.ts startMainSession and resume path; read_skill impact inferred, not live-probed by reviewer."
+blocked_by = ["T100"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T130"
+title = "Recover or diagnose incomplete and PID-reused skill locks"
+status = "needed"
+detail = "T127 P3: a crashed delivery can leave an empty PID lock, or its PID can be reused by an unrelated live process. Existing conservative refusal prevents stealing a live lock but retry may never help. Improve identity/recovery or actionable diagnostics naming the lock path; do not use age alone to steal a genuinely live owner."
+evidence = "Opus read-only review of routeros-skills.ts lock(); rare crash windows not reproduced."
+blocked_by = ["T100"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T131"
+title = "Distinguish pinned from installed RouterOS skill revision"
+status = "needed"
+detail = "T127 P3: loadRouterosSkills reports the package.json pin, while a checkout whose pin changed without bun install can still contain old dependency bytes. Make provenance/report naming honest (pinned revision versus installed content hashes), or detect that mismatch from reliable install metadata. Avoid claiming a SHA was verified from a lint-only package version 0.0.0."
+evidence = "Opus source review; normal locked installs match, checkout pin bump before install is the unverified mismatch path."
+blocked_by = ["T100"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T132"
+title = "T100 metadata parsing and diagnostic attribution follow-ups"
+status = "needed"
+detail = "T127 minor notes: restrict name and user-invocable parsing to SKILL.md frontmatter rather than matching body examples; distinguish a broken workspace-owned routeros-* skill from a bundled skill diagnostic; clarify that revision retained after opt-out is provenance rather than evidence of loading. Also attribute personal shadow notices to the actual winning copy (an edited private copy is not a bundled version). No changes to workspace configuration resolution."
+evidence = "Opus review notes; frontmatter/body matching and path-only diagnostic filtering are code findings, not model-turn probes."
+blocked_by = ["T100"]
+agent = ""
+updated = "2026-11-03"

@@ -1147,6 +1147,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	let skillsReport: RouterosSkillsReport = {
 		enabled: readAutoRouterosSkills(opts.dataHome),
 		revision: null,
+		bundledCount: 0,
 		staged: [],
 		warnings: [],
 		error: null,
