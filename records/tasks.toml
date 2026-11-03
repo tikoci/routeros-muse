@@ -1121,3 +1121,13 @@ evidence = "merged 0b18f60 (branch t112-drop-centrs-mcp 5043ddb + orchestrator f
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude)"
 updated = "2026-11-02"
+
+[[task]]
+id = "T113"
+title = "Tool cards show call arguments (generic args line, per-tool centrs renderer)"
+status = "needed"
+detail = "Developer 2026-11-02 testing centrs MCP: tool cards showed only the tool name. The wire carries the arguments (toolCall item args = verbatim JSON, plus visibleOutput; approval/request rawArgs), but toolHint (src/serve/server.ts HINT_KEYS command/cmd/path/file_path/filePath/query/url) matches none of centrs's target/group/rosPath/op, so the card falls back to the bare name. Slice 1: when no hint key matches, render a compact key=value line with the full args expandable; redact secret-looking keys (password, secret, token, key) in display and logs. Slice 2 (design later): per-tool renderers keyed on tool name, with the same card for centrs MCP calls and for shell centrs ... --json argv (device chip linked to its card, path, result table), so the UX survives the D46 CLI/MCP switch. Smoke-gated."
+evidence = "out/wire-capture/20261101T210403Z/17-b2-mcp-roundtrip.jsonl (muse 1.4.14: item/started+completed toolCall args, approval/request rawArgs); src/serve/server.ts:284 HINT_KEYS; src/serve/ui.html:2562 approval card prints raw args; centrs MCP input shapes in node_modules/@tikoci/centrs/src/mcp/tools.ts"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
