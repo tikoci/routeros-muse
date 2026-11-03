@@ -336,7 +336,8 @@ export function checkSameOrigin(
 	const requireJson = opts.requireJson !== false;
 	if (requireJson) {
 		const ct = req.headers.get("content-type") ?? "";
-		if (!ct.toLowerCase().includes("application/json"))
+		const mediaType = ct.split(";", 1)[0]?.trim().toLowerCase();
+		if (mediaType !== "application/json")
 			return "refusing: Content-Type must be application/json";
 	}
 	const origin = req.headers.get("origin");
@@ -2955,12 +2956,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// open-CDB or missing-CDB workspace still hands
 					// off to its overlay. Create keeps requiring
 					// locked: a fresh workspace must be encrypted.
-					const OPEN_READY_STATES = new Set([
-						"locked",
-						"open-needs-encryption",
-						"missing",
-						"bypassed",
-					]);
 					const launchAndTrack = async (
 						dir: string,
 						expectLocked = true,
@@ -3016,10 +3011,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									why: `${ready.why}${logs ? `: ${logs.slice(0, 500)}` : ""}`,
 								};
 							}
-							if (
-								ready.state !== "locked" &&
-								(expectLocked || !OPEN_READY_STATES.has(ready.state))
-							) {
+							if (expectLocked && ready.state !== "locked") {
 								children.delete(child);
 								await child.stop().catch(() => {});
 								return {
@@ -5155,43 +5147,49 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	}
 	const displayHost =
 		host === "0.0.0.0" || host === "::" ? "127.0.0.1" : boundHost;
+	// Signals can overlap: every caller must await the same child drain
+	// before the CLI exits, including a second SIGINT during shutdown.
+	let stopPromise: Promise<void> | undefined;
 	return {
 		url: `http://${displayHost}:${boundPort}/`,
 		urls: isLoopbackHost(host) ? [] : lanUrls(boundPort),
 		port: boundPort,
 		hostname: boundHost,
 		relayUrl: `http://127.0.0.1:${relay.port}/`,
-		stop: async () => {
-			// Finding D: the flag goes first, so launches that start
-			// after it are refused and in-flight ones kill the child
-			// they produced instead of tracking it as live.
-			pickerStopping = true;
-			clearInterval(hb);
-			relay.stop();
-			server.stop();
-			// In-flight launches are awaited (bounded): only once
-			// they settle is the child set complete — stop() then
-			// kills the full set, so a create completing during
-			// shutdown leaks nothing.
-			if (inFlightLaunches.size > 0) {
-				await Promise.race([
-					Promise.allSettled([...inFlightLaunches]),
-					new Promise((r) => setTimeout(r, STOP_LAUNCH_WAIT_MS)),
-				]);
-			}
-			// T133 review P2: spawned workspace children die with the
-			// picker — one Ctrl-C ends the session. SIGTERM first,
-			// then SIGKILL after the launcher's own grace.
-			const kids = [...children];
-			children.clear();
-			for (const kid of kids) {
-				try {
-					await kid.stop();
-				} catch {
-					// Best-effort: the child is already gone.
+		stop: () => {
+			stopPromise ??= (async () => {
+				// Finding D: the flag goes first, so launches that start
+				// after it are refused and in-flight ones kill the child
+				// they produced instead of tracking it as live.
+				pickerStopping = true;
+				clearInterval(hb);
+				relay.stop();
+				server.stop();
+				// In-flight launches are awaited (bounded): only once
+				// they settle is the child set complete — stop() then
+				// kills the full set, so a create completing during
+				// shutdown leaks nothing.
+				if (inFlightLaunches.size > 0) {
+					await Promise.race([
+						Promise.allSettled([...inFlightLaunches]),
+						new Promise((r) => setTimeout(r, STOP_LAUNCH_WAIT_MS)),
+					]);
 				}
-			}
-			await stopWorker("shutdown", false);
+				// T133 review P2: spawned workspace children die with the
+				// picker — one Ctrl-C ends the session. SIGTERM first,
+				// then SIGKILL after the launcher's own grace.
+				const kids = [...children];
+				children.clear();
+				for (const kid of kids) {
+					try {
+						await kid.stop();
+					} catch {
+						// Best-effort: the child is already gone.
+					}
+				}
+				await stopWorker("shutdown", false);
+			})();
+			return stopPromise;
 		},
 	};
 }
