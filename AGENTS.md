@@ -9,6 +9,7 @@ Local git repo for the RouterOS network workspace + web UI.
 2. `records/` — the tracker. `make plan` (ordered work), `make check`
    (validate before claiming an update). needs/tasks/decisions/concepts TOML.
 3. `docs/internals.md` — how the pieces fit; `docs/design/` — design notes.
+4. `SECURITY.md` — security facts and known gaps (grows as we learn).
 
 ## Conventions (binding)
 
