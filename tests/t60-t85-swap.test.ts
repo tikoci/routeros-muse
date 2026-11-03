@@ -43,6 +43,7 @@ async function postJson(
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
+			origin: new URL(url).origin,
 			...(cookie ? { cookie } : {}),
 		},
 		body: JSON.stringify(body),
@@ -152,7 +153,10 @@ function cookieFrom(res: Response): string | null {
 async function unlock(srvUrl: string): Promise<string> {
 	const res = await fetch(`${srvUrl}api/auth/unlock`, {
 		method: "POST",
-		headers: { "content-type": "application/json" },
+		headers: {
+			"content-type": "application/json",
+			origin: new URL(srvUrl).origin,
+		},
 		body: JSON.stringify({ password: SWAP_PASSWORD }),
 	});
 	const json = (await res.json()) as Record<string, unknown>;

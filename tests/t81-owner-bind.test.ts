@@ -244,6 +244,7 @@ async function postJson(
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
+			origin: new URL(url).origin,
 			...(cookie ? { cookie } : {}),
 		},
 		body: JSON.stringify(body),

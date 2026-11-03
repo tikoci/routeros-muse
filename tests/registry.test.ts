@@ -250,7 +250,10 @@ describe("workspaces routes", () => {
 	): Promise<{ status: number; json: Record<string, unknown> }> {
 		const res = await fetch(url, {
 			method: "POST",
-			headers: { "content-type": "application/json" },
+			headers: {
+				"content-type": "application/json",
+				origin: new URL(url).origin,
+			},
 			body: JSON.stringify(body),
 		});
 		return {
@@ -287,11 +290,17 @@ describe("workspaces routes", () => {
 		}
 	}, 30_000);
 
-	test("prune + open: honest outcomes, open touches + prints restart", async () => {
+	test("prune + open: honest outcomes, open touches + spawns a URL", async () => {
 		const dh = tempDataHome();
 		const live = makeWsDir();
 		registerWorkspace(registryFile(dh), "live", live, "2020-01-01T00:00:00Z");
 		registerWorkspace(registryFile(dh), "dead", path.join(dh, "gone"));
+		// The ready poll needs a locked state; the stub serves it.
+		const stub = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch: () => Response.json({ state: "locked" }),
+		});
 		const srv = await startServer({
 			allowOpenCdb: true,
 			noWorkspace: true,
@@ -300,6 +309,10 @@ describe("workspaces routes", () => {
 			dataHome: dh,
 			configHome: mktmp("t40-reg-cfg-"),
 			defaultWorkspaceDir: path.join(dh, "nets"),
+			launchWorkspaceServer: async () => ({
+				url: `http://127.0.0.1:${stub.port}`,
+				stop: async () => {},
+			}),
 		});
 		try {
 			const pruned = await postJson(`${srv.url}api/workspaces`, {
@@ -312,8 +325,7 @@ describe("workspaces routes", () => {
 			});
 			expect(opened.status).toBe(200);
 			expect(opened.json["ok"]).toBe(true);
-			expect(opened.json["command"] as string).toContain("serve");
-			expect(opened.json["command"] as string).toContain(live);
+			expect(opened.json["url"]).toBe(`http://127.0.0.1:${stub.port}`);
 			const touched = readRegistry(registryFile(dh)).entries.find(
 				(e) => e.name === "live",
 			);
@@ -330,6 +342,7 @@ describe("workspaces routes", () => {
 			expect(junk.status).toBe(400);
 		} finally {
 			await srv.stop();
+			stub.stop();
 		}
 	}, 30_000);
 

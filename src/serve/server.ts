@@ -118,6 +118,7 @@ import {
 import { runRenderJob } from "../render/jobs";
 import {
 	type AuthCdb,
+	backupScanDir,
 	type CdbMode,
 	clearCookieHeader,
 	cookieToken,
@@ -128,6 +129,7 @@ import {
 	listCdbBackups,
 	type MetaAuth,
 	probeMetaAuth,
+	retainedBackupsWarning,
 	sessionCookieHeader,
 	verifyCdbPassword,
 	workerEnv,
@@ -249,9 +251,135 @@ export function pickFreePort(): Promise<number> {
 }
 
 /**
+ * Same-origin guard for state-changing pre-auth routes (T133
+ * review P1): every guarded POST must carry
+ * `Content-Type: application/json`, an Origin that is this
+ * server's own origin (scheme+host+port as served), and a Host
+ * that is the bound host or a loopback name (DNS-rebinding).
+ * Browsers always send Origin on these fetches; a missing or
+ * foreign one is a cross-site request and is refused. Returns
+ * the refusal why, or null when the request passes.
+ */
+export type SameOriginCtx = {
+	host: string;
+	port: number;
+	displayHost: string;
+};
+
+function allowedHosts(ctx: SameOriginCtx): Set<string> {
+	const out = new Set<string>();
+	out.add(ctx.displayHost.toLowerCase());
+	out.add(ctx.host.toLowerCase());
+	for (const name of ["127.0.0.1", "localhost", "::1"]) out.add(name);
+	if (!isLoopbackHost(ctx.host)) {
+		// LAN bind: the server answers on its interface addresses too.
+		for (const addrs of Object.values(os.networkInterfaces())) {
+			for (const a of addrs ?? []) {
+				if (a.family === "IPv4" && !a.internal) out.add(a.address);
+				if (a.family === "IPv6" && !a.internal) out.add(`[${a.address}]`);
+			}
+		}
+	}
+	return out;
+}
+
+export function checkSameOrigin(
+	req: Request,
+	ctx: SameOriginCtx,
+	opts: { requireJson?: boolean } = {},
+): string | null {
+	const requireJson = opts.requireJson !== false;
+	if (requireJson) {
+		const ct = req.headers.get("content-type") ?? "";
+		if (!ct.toLowerCase().includes("application/json"))
+			return "refusing: Content-Type must be application/json";
+	}
+	const origin = req.headers.get("origin");
+	if (!origin) return "refusing: missing Origin";
+	let parsed: URL;
+	try {
+		parsed = new URL(origin);
+	} catch {
+		return "refusing: malformed Origin";
+	}
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+		return "refusing: foreign Origin";
+	const port = parsed.port
+		? Number(parsed.port)
+		: parsed.protocol === "https:"
+			? 443
+			: 80;
+	const hostOk =
+		parsed.hostname.toLowerCase() === ctx.displayHost.toLowerCase() ||
+		(isLoopbackHost(parsed.hostname) && isLoopbackHost(ctx.displayHost));
+	if (!hostOk || port !== ctx.port) return "refusing: foreign Origin";
+	const hostHeader = (req.headers.get("host") ?? "").toLowerCase();
+	const bare = hostHeader.includes("]")
+		? hostHeader.slice(0, hostHeader.indexOf("]") + 1) || hostHeader
+		: (hostHeader.split(":")[0] ?? "");
+	if (!allowedHosts(ctx).has(bare)) return "refusing: foreign Host";
+	return null;
+}
+
+/**
+ * Per-path promise-chain mutex (T133 review P1): serializes
+ * detect+mutate on one absolute CDB path so two concurrent
+ * encrypt-now calls cannot both succeed with different
+ * passwords. The loser re-detects inside the lock and gets a
+ * 409 without ever running centrs. External writers (a second
+ * process) are NOT covered — atomicity there is upstream
+ * (tikoci/centrs#581, need C15).
+ */
+export function createCdbMutex(): <T>(
+	key: string,
+	fn: () => Promise<T>,
+) => Promise<T> {
+	const tails = new Map<string, Promise<void>>();
+	return async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+		const prev = tails.get(key) ?? Promise.resolve();
+		let release!: () => void;
+		const tail = new Promise<void>((r) => {
+			release = r;
+		});
+		tails.set(
+			key,
+			prev.then(() => tail),
+		);
+		await prev;
+		try {
+			return await fn();
+		} finally {
+			release();
+			if (tails.get(key) === tail) tails.delete(key);
+		}
+	};
+}
+
+/**
+ * Child env for a picker-spawned workspace server (T133 review
+ * P1): the package-fronted tools minus any inherited
+ * CENTRS_CDB_PASSWORD — the password never crosses to the
+ * child in any form — plus the picker's effective data home.
+ */
+export function pickerChildEnv(
+	tools: Record<string, string>,
+	dataHome?: string,
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(tools)) {
+		if (k !== "CENTRS_CDB_PASSWORD") env[k] = v;
+	}
+	if (dataHome) env["XDG_DATA_HOME"] = dataHome;
+	return env;
+}
+
+/**
  * Wait for a spawned child to answer its public auth state (T133):
  * any parseable `{state}` proves it is up; the caller checks the
- * state is the expected `locked`. Bounded — never waits forever.
+ * state is the expected `locked`. Bounded — never waits forever:
+ * the readiness fetch and the body parse share one AbortSignal
+ * under the remaining overall budget, so even a listener that
+ * accepts and never responds returns in time.
  */
 export async function waitForChildReady(
 	url: string,
@@ -260,22 +388,49 @@ export async function waitForChildReady(
 	const deadline = Date.now() + timeoutMs;
 	let last = "no answer";
 	for (;;) {
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) {
+			return { ok: false, why: `child did not answer: ${last.slice(0, 160)}` };
+		}
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), remaining);
 		try {
-			const r = await fetch(`${url}/api/auth/state`);
-			const j = (await r.json()) as { state?: unknown };
+			const r = await fetch(`${url}/api/auth/state`, {
+				signal: ctrl.signal,
+			});
+			const aborted = new Promise<never>((_, reject) => {
+				if (ctrl.signal.aborted) reject(new Error("aborted"));
+				else
+					ctrl.signal.addEventListener("abort", () =>
+						reject(new Error("aborted")),
+					);
+			});
+			const j = (await Promise.race([r.json(), aborted])) as {
+				state?: unknown;
+			};
 			if (typeof j.state === "string") return { ok: true, state: j.state };
 			last = `unexpected auth state (HTTP ${r.status})`;
 		} catch (err) {
-			last = err instanceof Error ? err.message : String(err);
+			last =
+				err instanceof Error && err.name === "AbortError"
+					? "readiness timed out"
+					: err instanceof Error
+						? err.message
+						: String(err);
+		} finally {
+			clearTimeout(timer);
 		}
 		if (Date.now() >= deadline) {
 			return { ok: false, why: `child did not answer: ${last.slice(0, 160)}` };
 		}
-		await new Promise((r) => setTimeout(r, 250));
+		await new Promise((r) => setTimeout(r, Math.min(250, remaining)));
 	}
 }
 
 const CHILD_LOG_CAP = 32 * 1024;
+
+/** SIGTERM-to-SIGKILL grace for picker-spawned children (T133 review). */
+export const CHILD_STOP_GRACE_MS = 3000;
 
 /** Bounded capture of a spawned child's output (T133): kept bytes
  * plus a truncation mark; the drain never blocks the child. */
@@ -341,10 +496,7 @@ export async function defaultLaunchWorkspaceServer(
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: "ignore",
-		env: {
-			...tools,
-			...(inherit?.dataHome ? { XDG_DATA_HOME: inherit.dataHome } : {}),
-		},
+		env: pickerChildEnv(tools, inherit?.dataHome),
 	});
 	const out = drainToCap(proc.stdout);
 	const err = drainToCap(proc.stderr);
@@ -353,10 +505,20 @@ export async function defaultLaunchWorkspaceServer(
 		url,
 		logs: () => `${out.text()}\n${err.text()}`.trim().slice(-2000),
 		stop: async () => {
+			// Two-phase: SIGTERM, then SIGKILL after a short grace.
 			try {
 				proc.kill();
 			} catch {
 				// Already gone; the stop is best-effort.
+				return;
+			}
+			if (proc.exitCode !== null) return;
+			await new Promise((r) => setTimeout(r, CHILD_STOP_GRACE_MS));
+			if (proc.exitCode !== null) return;
+			try {
+				proc.kill("SIGKILL");
+			} catch {
+				// Gone during the grace window.
 			}
 		},
 	};
@@ -942,8 +1104,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// runs under this package-fronted env, so all sides resolve the
 	// identical package.json-pinned builds. toolBinDir is null when the
 	// bundle is not installed: ambient PATH, honestly labeled.
+	// T133 review P1: an inherited CENTRS_CDB_PASSWORD never rides
+	// this base env — only an explicitly unlocked session password is
+	// ever added (workerEnv), and spawned children never get one.
 	const binDir = opts.toolBinDir ?? defaultToolBinDir();
 	const tools = toolEnv(binDir);
+	delete tools["CENTRS_CDB_PASSWORD"];
 	const source: ToolSource = toolSource(binDir);
 	// Lazy + cached: version detection spawns the trilogy (quickchr
 	// version phones home), so only the first /api/status call pays it.
@@ -967,6 +1133,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		return toolInfoCache;
 	}
 	const sessions = createSessionStore();
+	// T133 review: per-path CDB mutation mutex (encrypt race) plus
+	// every workspace child this picker spawned (orphan cleanup).
+	const cdbMutex = createCdbMutex();
+	const children = new Set<LaunchedWorkspace>();
 	let metaAuth: MetaAuth = "unknown";
 	const uiHtml = await Bun.file(UI_PATH).text();
 	const provider =
@@ -2297,6 +2467,20 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		async fetch(req) {
 			const url = new URL(req.url);
 			const p = url.pathname;
+			// T133 review P1: the same-origin guard for every
+			// state-changing route under /api/auth/* plus the new
+			// CDB routes and /api/workspaces POST. Cross-site simple
+			// POSTs never reach a mutation.
+			const guardFail = (requireJson = true): Response | null => {
+				if (boundPort === undefined)
+					return json({ ok: false, why: "server not bound" }, 500);
+				const why = checkSameOrigin(
+					req,
+					{ host, port: boundPort, displayHost },
+					{ requireJson },
+				);
+				return why ? json({ ok: false, why }, 403) : null;
+			};
 			try {
 				// T106: the relay route does not exist on this listener
 				// at all (own 127.0.0.1 listener) — 404 before the auth
@@ -2387,6 +2571,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/auth/unlock" && req.method === "POST") {
+					const g = guardFail();
+					if (g) return g;
 					const body = (await req.json()) as { password?: unknown };
 					if (typeof body.password !== "string" || body.password === "") {
 						return json({ ok: false, why: "need {password}" }, 400);
@@ -2444,6 +2630,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					(p === "/api/auth/encrypt" || p === "/api/auth/create-cdb") &&
 					req.method === "POST"
 				) {
+					const g0 = guardFail();
+					if (g0) return g0;
 					if (!isLoopbackHost(host)) {
 						return json(
 							{
@@ -2457,61 +2645,93 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					if (typeof body.password !== "string" || body.password === "") {
 						return json({ ok: false, why: "need {password}" }, 400);
 					}
-					const live = await detectCdbMode(authCdb.file, envFor(req));
-					cdbModeState = live;
-					if (p === "/api/auth/encrypt") {
-						if (live.mode !== "open") {
+					const password = body.password;
+					const alreadyEncrypted = (where: string) =>
+						json(
+							{
+								ok: false,
+								why: `refusing: the CDB is already encrypted (${where})`,
+							},
+							409,
+						);
+					// After a successful conversion the cached mode
+					// flips to the re-detected encrypted state and the
+					// bypass worker (if any) is stopped: anonymous
+					// routes re-gate as locked from this response on.
+					const afterMutation = async (reported: string | null) => {
+						const live = await detectCdbMode(authCdb.file, envFor(req));
+						cdbModeState = live;
+						if (mspOwner === "bypass") await stopWorker("cdb-encrypted");
+						const scan = backupScanDir(authCdb.file, envFor(req), reported);
+						if (!scan)
+							return json({
+								ok: true,
+								retainedBackups: retainedBackupsWarning(),
+							});
+						return json({ ok: true, backups: listCdbBackups(scan) });
+					};
+					// Serialized per absolute CDB path: two concurrent
+					// encrypt-now calls cannot both succeed with
+					// different passwords. The loser re-detects inside
+					// the lock and gets a 409 without running centrs.
+					const key = authCdb.file
+						? path.resolve(authCdb.file)
+						: "operator-default";
+					return await cdbMutex(key, async () => {
+						const live = await detectCdbMode(authCdb.file, envFor(req));
+						cdbModeState = live;
+						if (p === "/api/auth/encrypt") {
+							if (live.mode === "encrypted") return alreadyEncrypted("encrypt");
+							if (live.mode !== "open") {
+								return json(
+									{
+										ok: false,
+										why: `refusing: no open CDB to encrypt (mode: ${live.mode})`,
+									},
+									400,
+								);
+							}
+							const done = await encryptOpenCdb(
+								authCdb.file,
+								password,
+								envFor(req),
+							);
+							if (!done.ok) return json({ ok: false, why: done.why }, 500);
+							return await afterMutation(done.cdbFile ?? null);
+						}
+						// create-cdb: the bound workspace path only (D32).
+						if (authCdb.scope !== "workspace" || !authCdb.file) {
 							return json(
 								{
 									ok: false,
-									why:
-										live.mode === "encrypted"
-											? "refusing: the CDB is already encrypted"
-											: `refusing: no open CDB to encrypt (mode: ${live.mode})`,
+									why: "refusing: create-cdb needs a bound workspace registry",
 								},
 								400,
 							);
 						}
-						const done = await encryptOpenCdb(
+						if (live.mode === "encrypted")
+							return alreadyEncrypted("create-cdb");
+						if (live.mode !== "missing") {
+							return json(
+								{
+									ok: false,
+									why: `refusing: a CDB already exists (mode: ${live.mode})`,
+								},
+								400,
+							);
+						}
+						const done = await initEncryptedCdb(
 							authCdb.file,
-							body.password,
+							password,
 							envFor(req),
 						);
 						if (!done.ok) return json({ ok: false, why: done.why }, 500);
-						const backups = authCdb.file ? listCdbBackups(authCdb.file) : [];
-						return json({ ok: true, backups });
-					}
-					// create-cdb: the bound workspace path only (D32).
-					if (authCdb.scope !== "workspace" || !authCdb.file) {
-						return json(
-							{
-								ok: false,
-								why: "refusing: create-cdb needs a bound workspace registry",
-							},
-							400,
-						);
-					}
-					if (live.mode !== "missing") {
-						return json(
-							{
-								ok: false,
-								why:
-									live.mode === "encrypted"
-										? "refusing: the CDB is already encrypted"
-										: `refusing: a CDB already exists (mode: ${live.mode})`,
-							},
-							400,
-						);
-					}
-					const done = await initEncryptedCdb(
-						authCdb.file,
-						body.password,
-						envFor(req),
-					);
-					if (!done.ok) return json({ ok: false, why: done.why }, 500);
-					return json({ ok: true, backups: listCdbBackups(authCdb.file) });
+						return await afterMutation(done.cdbFile ?? null);
+					});
 				}
 				if (p === "/api/auth/lock" && req.method === "POST") {
+					const gLock = guardFail();
+					if (gLock) return gLock;
 					// Worker-stop semantics (T64): revoke the token (which
 					// drops its unlock context) and stop the MSP worker
 					// bound to it. Chats resume via past sessions (T60
@@ -2533,6 +2753,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/auth/oauth-recheck" && req.method === "POST") {
+					const gOAuth = guardFail(false);
+					if (gOAuth) return gOAuth;
 					if (provider === "echo") {
 						setMeta("authed");
 						return json({ ok: true, meta: metaAuth });
@@ -2594,6 +2816,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/workspaces" && req.method === "POST") {
+					const gWs = guardFail();
+					if (gWs) return gWs;
 					const body = (await req.json()) as {
 						action?: unknown;
 						name?: unknown;
@@ -2609,6 +2833,64 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// server is gone with it.)
 						return json({ ok: true, removed });
 					}
+					// D52 handoff, shared by create and open: serve the
+					// workspace in a detached child on a free loopback
+					// port, wait for it, and hand the browser its URL.
+					// This picker stays up and tracks the child so its
+					// own stop() takes the child down with it. No
+					// auto-login token — the browser lands on the
+					// child's lock screen.
+					const launch =
+						opts.launchWorkspaceServer ??
+						((d, p) =>
+							defaultLaunchWorkspaceServer(d, p, tools, {
+								provider,
+								dataHome: dataHomeDir(opts.dataHome),
+							}));
+					const launchAndTrack = async (
+						dir: string,
+					): Promise<
+						{ ok: true; child: LaunchedWorkspace } | { ok: false; why: string }
+					> => {
+						let port: number;
+						try {
+							port = await pickFreePort();
+						} catch (err) {
+							return {
+								ok: false,
+								why: `no free port: ${err instanceof Error ? err.message : String(err)}`,
+							};
+						}
+						let child: LaunchedWorkspace;
+						try {
+							child = await launch(dir, port);
+						} catch (err) {
+							return {
+								ok: false,
+								why: `workspace server did not start: ${err instanceof Error ? err.message : String(err)}`,
+							};
+						}
+						children.add(child);
+						const ready = await waitForChildReady(child.url);
+						if (!ready.ok) {
+							children.delete(child);
+							await child.stop().catch(() => {});
+							const logs = child.logs?.();
+							return {
+								ok: false,
+								why: `${ready.why}${logs ? `: ${logs.slice(0, 500)}` : ""}`,
+							};
+						}
+						if (ready.state !== "locked") {
+							children.delete(child);
+							await child.stop().catch(() => {});
+							return {
+								ok: false,
+								why: `new workspace is not locked (state: ${ready.state})`,
+							};
+						}
+						return { ok: true, child };
+					};
 					if (body.action === "create") {
 						if (typeof body.name !== "string" || !body.name) {
 							return json(
@@ -2658,65 +2940,27 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// D45: no re-seed — the new workspace gets
 						// its own home (and its own seed) when it
 						// is served; ours is unchanged.
-						// D52 handoff: serve the new workspace in a
-						// detached child on a free loopback port, wait
-						// for it, and hand the browser its URL. This
-						// picker stays up. No auto-login token — the
-						// browser lands on the child's lock screen.
-						let port: number;
-						try {
-							port = await pickFreePort();
-						} catch (err) {
-							return json(
-								{
-									ok: false,
-									why: `no free port: ${err instanceof Error ? err.message : String(err)}`,
-								},
-								500,
-							);
+						const started = await launchAndTrack(made.dir);
+						if (!started.ok) {
+							// Partial success: the workspace exists and
+							// is registered, only the launch failed.
+							// The UI shows it as created-with-failed-
+							// launch and offers Retry (the open action
+							// below runs this same spawn+redirect).
+							return json({
+								ok: false,
+								created: true,
+								workspace,
+								command: serveCommand(made.dir),
+								why: started.why,
+							});
 						}
-						const launch =
-							opts.launchWorkspaceServer ??
-							((d, p) =>
-								defaultLaunchWorkspaceServer(d, p, tools, {
-									provider,
-									dataHome: dataHomeDir(opts.dataHome),
-								}));
-						let child: LaunchedWorkspace;
-						try {
-							child = await launch(made.dir, port);
-						} catch (err) {
-							return json(
-								{
-									ok: false,
-									why: `workspace server did not start: ${err instanceof Error ? err.message : String(err)}`,
-								},
-								500,
-							);
-						}
-						const ready = await waitForChildReady(child.url);
-						if (!ready.ok) {
-							await child.stop().catch(() => {});
-							const logs = child.logs?.();
-							return json(
-								{
-									ok: false,
-									why: `${ready.why}${logs ? `: ${logs.slice(0, 500)}` : ""}`,
-								},
-								500,
-							);
-						}
-						if (ready.state !== "locked") {
-							await child.stop().catch(() => {});
-							return json(
-								{
-									ok: false,
-									why: `new workspace is not locked (state: ${ready.state})`,
-								},
-								500,
-							);
-						}
-						return json({ ok: true, workspace, template, url: child.url });
+						return json({
+							ok: true,
+							workspace,
+							template,
+							url: started.child.url,
+						});
 					}
 					if (body.action === "open") {
 						if (typeof body.name !== "string" || !body.name) {
@@ -2745,11 +2989,22 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							found.name,
 							found.path,
 						);
-						return json({
-							ok: true,
-							workspace,
-							command: serveCommand(found.path),
-						});
+						// Retry = open: the same spawn+redirect launch
+						// as create. The restart command stays as the
+						// fallback text when the launch itself fails.
+						const started = await launchAndTrack(found.path);
+						if (!started.ok) {
+							return json(
+								{
+									ok: false,
+									workspace,
+									command: serveCommand(found.path),
+									why: started.why,
+								},
+								500,
+							);
+						}
+						return json({ ok: true, workspace, url: started.child.url });
 					}
 					return json(
 						{ ok: false, why: "need {action: prune|create|open}" },
@@ -4766,6 +5021,18 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			clearInterval(hb);
 			relay.stop();
 			server.stop();
+			// T133 review P2: spawned workspace children die with the
+			// picker — one Ctrl-C ends the session. SIGTERM first,
+			// then SIGKILL after the launcher's own grace.
+			const kids = [...children];
+			children.clear();
+			for (const kid of kids) {
+				try {
+					await kid.stop();
+				} catch {
+					// Best-effort: the child is already gone.
+				}
+			}
 			await stopWorker("shutdown", false);
 		},
 	};

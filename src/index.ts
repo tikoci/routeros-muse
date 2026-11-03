@@ -132,9 +132,13 @@ async function main(): Promise<void> {
 		}
 		console.log("Ctrl-C stops the server.");
 	}
-	process.on("SIGINT", () => {
+	// T133 review P2: both signals end the session — stop() takes
+	// spawned workspace children down with the picker.
+	const shutdown = () => {
 		void srv.stop().then(() => process.exit(0));
-	});
+	};
+	process.on("SIGINT", shutdown);
+	process.on("SIGTERM", shutdown);
 	await new Promise(() => {});
 }
 

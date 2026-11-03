@@ -645,6 +645,7 @@
           <div class="setrow"><input id="pkpass" type="password" placeholder="CDB password" aria-label="CDB password" autocomplete="new-password"></div>
           <div class="setrow"><input id="pkpass2" type="password" placeholder="Repeat CDB password" aria-label="Repeat CDB password" autocomplete="new-password"></div>
           <button class="btn rbtn" id="pkcreate">Create</button>
+          <button class="btn rbtn" id="pkretry" style="display:none">Retry launch</button>
           <div class="setnote" id="pkcreatenote">minimal scaffold · device.cdb is created encrypted</div>
           <div class="throttle" id="pkerr" style="display:none"></div>
         </div>
@@ -3853,6 +3854,10 @@
     }
   }
 
+  // The last created-but-not-launched workspace (T133 review:
+  // create can strand a registered workspace when the launch
+  // fails; Retry runs the open action, which is the same launch).
+  let pkRetryName = "";
   async function openWorkspace(name) {
     const err = $("pkerr");
     err.style.display = "none";
@@ -3863,8 +3868,12 @@
         body: JSON.stringify({ action: "open", name }),
       });
       const j = await r.json();
-      if (!j.ok) { err.textContent = "not opened: " + j.why; err.style.display = ""; return; }
-      showRestart(j.command);
+      // Retry = open: a launched workspace navigates to its lock
+      // screen. The restart command stays as fallback text when
+      // the launch itself fails.
+      if (j.ok && j.url) { location.href = j.url; return; }
+      if (j.command) showRestart(j.command);
+      if (!j.ok) { err.textContent = "not opened: " + (j.why || "launch failed"); err.style.display = ""; return; }
       loadWorkspaces();
     } catch (e) { err.textContent = "not opened: " + e.message; err.style.display = ""; }
   }
@@ -4004,6 +4013,7 @@
       if (!pw) { err.textContent = "not created: need a CDB password"; err.style.display = ""; return; }
       if (pw !== pw2) { err.textContent = "not created: passwords do not match"; err.style.display = ""; return; }
       $("pkcreate").disabled = true;
+      $("pkretry").style.display = "none";
       try {
         const r = await fetch("/api/workspaces", {
           method: "POST",
@@ -4011,14 +4021,32 @@
           body: JSON.stringify({ action: "create", name, template, password: pw }),
         });
         const j = await r.json();
+        // Partial success: the workspace exists and is registered,
+        // only the launch failed. Retry runs the open action,
+        // which is the same spawn+redirect launch.
+        if (!j.ok && j.created) {
+          pkRetryName = name;
+          err.textContent = "workspace created, launch failed: " + (j.why || "unknown") + " — Retry, or serve by hand:";
+          err.style.display = "";
+          if (j.command) showRestart(j.command);
+          $("pkretry").style.display = "";
+          loadWorkspaces();
+          return;
+        }
         if (!j.ok) { err.textContent = "not created: " + j.why; err.style.display = ""; return; }
         $("pkname").value = "";
+        pkRetryName = "";
         err.textContent = "starting — opening the new workspace…";
         err.style.display = "";
         loadWorkspaces();
         location.href = j.url;
       } catch (e) { err.textContent = "not created: " + e.message; err.style.display = ""; }
       finally { $("pkcreate").disabled = false; }
+    });
+    $("pkretry").addEventListener("click", async () => {
+      if (!pkRetryName) return;
+      $("pkretry").style.display = "none";
+      await openWorkspace(pkRetryName);
     });
     $("pkprune").addEventListener("click", async () => {
       try {

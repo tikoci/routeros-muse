@@ -2451,19 +2451,64 @@ try {
 			{ timeout: 10_000 },
 		);
 		check("prune drops the dead entry", true);
+		// T133 review: open is the same spawn+redirect launch as
+		// create (Retry = open). The live workspace needs an
+		// encrypted CDB so the child lands locked.
+		const openInit = childProcess.spawnSync(
+			"centrs",
+			["devices", "init", "--encrypt", "--format", "json"],
+			{
+				env: {
+					...process.env,
+					CENTRS_CDB_FILE: path.join(pickLive, "device.cdb"),
+					CENTRS_CDB_PASSWORD: "smoke-open-pw",
+				},
+				encoding: "utf8",
+			},
+		);
+		if (openInit.error || openInit.status !== 0)
+			throw new Error("open smoke needs working centrs devices init");
+		const openPickPort = new URL(page.url()).port;
 		await page.click("#pklist button.minibtn");
 		await page.waitForFunction(
-			() =>
-				(document.getElementById("pkcmd")?.textContent ?? "").includes("serve"),
-			undefined,
-			{ timeout: 10_000 },
+			(port) => new URL(location.href).port !== port,
+			openPickPort,
+			{ timeout: 60_000 },
 		);
-		const openCmd = (await page.locator("#pkcmd").textContent()) ?? "";
+		const openChildUrl = page.url();
+		const openChildPort = Number(new URL(openChildUrl).port);
 		check(
-			"open prints the restart command",
-			openCmd.includes("serve") && openCmd.includes(pickLive),
-			openCmd,
+			"open spawns and navigates to the child",
+			openChildPort !== Number(openPickPort),
+			openChildUrl,
 		);
+		await page.waitForSelector("#lockscreen.open", { timeout: 15_000 });
+		check("open lands on the child lock screen", true);
+		const openBatch = watchAppBatch(page);
+		await page.fill("#lockpw", "smoke-open-pw");
+		await page.click("#lockgo");
+		await page.waitForFunction(
+			() =>
+				!document.getElementById("lockscreen")?.classList.contains("open") &&
+				(document.getElementById("set-auth")?.textContent ?? "").startsWith(
+					"unlocked",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		await openBatch;
+		check("open child unlocks with the registry password", true);
+		await page.screenshot({ path: path.join(OUT, "12a-open-child.png") });
+		// Back on the picker before killing the child.
+		await page.goto(pickSrv.url, { waitUntil: "load" });
+		check(
+			"open child cleaned up after the handoff",
+			await killPort(openChildPort),
+		);
+		// Fresh load lands off the workspace view: re-open it.
+		await page.waitForSelector("#crviewbtn-ws:visible", { timeout: 15_000 });
+		await page.click("#crviewbtn-ws");
+		await page.waitForSelector("#rview-ws.active", { timeout: 10_000 });
 		// T133: the create form is password-gated client-side too.
 		await page.fill("#pkpass", "smoke-pw");
 		await page.fill("#pkpass2", "smoke-pw");

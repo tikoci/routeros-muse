@@ -974,6 +974,7 @@ describe("auth (T39)", () => {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
+				origin: new URL(url).origin,
 				...(cookie ? { cookie } : {}),
 			},
 			body: JSON.stringify(body),
@@ -1283,6 +1284,7 @@ describe("unlock context (T64)", () => {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
+				origin: new URL(url).origin,
 				...(cookie ? { cookie } : {}),
 			},
 			body: JSON.stringify(body),
@@ -1857,6 +1859,7 @@ describe("set credentials (T48)", () => {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
+				origin: new URL(url).origin,
 				...(cookie ? { cookie } : {}),
 			},
 			body: JSON.stringify(body),
@@ -2207,7 +2210,10 @@ describe("set credentials (T48)", () => {
 				).toBe(401);
 				const unlock = await fetch(`${srv.url}api/auth/unlock`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ password: T48_FIXTURE_PASSWORD }),
 				});
 				expect(unlock.status).toBe(200);

@@ -354,7 +354,10 @@ describe("picker template routes", () => {
 				// review of T93: it fell back to null = "Ask first").
 				const sent = await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text: "t93-yolo" }),
 				});
 				expect(sent.status).toBe(200);
@@ -409,14 +412,20 @@ describe("picker template routes", () => {
 			// Default create is minimal (and password-gated).
 			const nopw = await fetch(`${srv.url}api/workspaces`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({ action: "create", name: "a-one" }),
 			});
 			expect(nopw.status).toBe(400);
 			const dflt = (await (
 				await fetch(`${srv.url}api/workspaces`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({
 						action: "create",
 						name: "a-one",
@@ -437,7 +446,10 @@ describe("picker template routes", () => {
 			// Explicit network.
 			const net = await fetch(`${srv.url}api/workspaces`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({
 					action: "create",
 					name: "b-two",
@@ -455,7 +467,10 @@ describe("picker template routes", () => {
 			// Unknown template fails honestly.
 			const bad = await fetch(`${srv.url}api/workspaces`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({
 					action: "create",
 					name: "c-three",

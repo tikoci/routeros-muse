@@ -282,6 +282,7 @@ describe("D39: the trust flag rides every spawn", () => {
 			try {
 				const r = await fetch(`${srv.url}api/auth/oauth-recheck`, {
 					method: "POST",
+					headers: { origin: new URL(srv.url).origin },
 				});
 				expect(r.status).toBe(200);
 				const j = (await r.json()) as Record<string, unknown>;
@@ -354,6 +355,7 @@ describe("D39: the trust flag rides every spawn", () => {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
+				origin: new URL(url).origin,
 				...(cookie ? { cookie } : {}),
 			},
 			body: JSON.stringify(body),

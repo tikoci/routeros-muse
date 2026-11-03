@@ -130,7 +130,7 @@ export async function verifyCdbPassword(
 }
 
 export type CdbMutationResult =
-	| { ok: true }
+	| { ok: true; cdbFile?: string | null }
 	| { ok: false; code: string; why: string };
 
 /**
@@ -177,6 +177,15 @@ function mutationFailure(
  * anything but an open registry, and failure whys redact the
  * password.
  */
+function reportedCdbFile(env: CentrsEnvelope | null): string | null {
+	const data = env?.data;
+	if (data && typeof data === "object") {
+		const f = (data as Record<string, unknown>)["cdbFile"];
+		if (typeof f === "string" && f) return f;
+	}
+	return null;
+}
+
 export async function encryptOpenCdb(
 	file: string | null,
 	password: string,
@@ -191,7 +200,7 @@ export async function encryptOpenCdb(
 		env: mutationEnv(password, spawnEnv),
 	});
 	const env = parseEnvelope(centrsText(r));
-	if (env?.ok === true) return { ok: true };
+	if (env?.ok === true) return { ok: true, cdbFile: reportedCdbFile(env) };
 	return mutationFailure("encrypt", r, password);
 }
 
@@ -222,7 +231,7 @@ export async function initEncryptedCdb(
 		{ timeoutMs: 30_000, env: mutationEnv(password, spawnEnv) },
 	);
 	const env = parseEnvelope(centrsText(r));
-	if (env?.ok === true) return { ok: true };
+	if (env?.ok === true) return { ok: true, cdbFile: reportedCdbFile(env) };
 	return mutationFailure("init --encrypt", r, password);
 }
 
@@ -241,6 +250,45 @@ export function listCdbBackups(file: string): string[] {
 		return [];
 	}
 	return names.filter((n) => n.startsWith(prefix)).sort();
+}
+
+/**
+ * Where to scan for plaintext pre-conversion backups (T133 review):
+ * the bound path wins; in operator scope (file null) the spawn
+ * env's CENTRS_CDB_FILE binding resolves it, else the mutation
+ * envelope's reported path (centrs data.cdbFile). Null means
+ * enumeration is impossible — return the retained-backups
+ * warning instead of an empty list.
+ */
+export function backupScanDir(
+	file: string | null,
+	spawnEnv: Record<string, string>,
+	reportedFile: string | null,
+): string | null {
+	for (const candidate of [
+		file,
+		spawnEnv["CENTRS_CDB_FILE"] ?? null,
+		reportedFile,
+	]) {
+		if (typeof candidate === "string" && candidate) {
+			try {
+				if (nodeFs.statSync(path.dirname(candidate)).isDirectory())
+					return candidate;
+			} catch {
+				// Unreadable: try the next candidate.
+			}
+		}
+	}
+	return null;
+}
+
+export function retainedBackupsWarning(): string {
+	return (
+		"could not resolve the operator CDB path, so pre-existing " +
+		"plaintext backups were not enumerated: any device.cdb.bak.* " +
+		"beside the operator store is NOT protected by this encryption — " +
+		"find and delete them once the password is safe"
+	);
 }
 
 /**
@@ -267,7 +315,12 @@ export function workerEnv(
 	cdbFile: string | null,
 	password: string | null,
 ): Record<string, string> {
-	const env: Record<string, string> = { ...base };
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(base)) {
+		// An inherited CENTRS_CDB_PASSWORD never leaks into a worker:
+		// only the explicitly passed unlock password rides.
+		if (k !== "CENTRS_CDB_PASSWORD") env[k] = v;
+	}
 	if (cdbFile) env["CENTRS_CDB_FILE"] = cdbFile;
 	if (password) env["CENTRS_CDB_PASSWORD"] = password;
 	return env;

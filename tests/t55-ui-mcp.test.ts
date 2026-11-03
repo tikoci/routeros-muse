@@ -589,6 +589,7 @@ describe("probe sessions carry no ui tools", () => {
 					try {
 						const recheck = await fetch(`${srv.url}api/auth/oauth-recheck`, {
 							method: "POST",
+							headers: { origin: new URL(srv.url).origin },
 						});
 						expect(recheck.status).toBe(200);
 						const sent = await postJson(`${srv.url}api/chat/send`, {
