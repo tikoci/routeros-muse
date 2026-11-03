@@ -485,6 +485,12 @@
         <button class="minibtn" data-rgoto="rview-alerts">Open alerts</button>
         <button class="alink" id="alertdismiss" title="Dismiss until the next agent alert">Dismiss</button>
       </div>
+      <div class="alert warn" id="stalemain" style="display:none">
+        <span class="adot">!</span>
+        <span id="stalemain-text">The main chat changed (in another tab or after a restart).</span>
+        <span class="sp"></span>
+        <button class="minibtn" id="stalemain-load">Load current</button>
+      </div>
       <div class="msgs" id="chatmsgs">
       </div>
       <div class="tailbar" id="tailbar" title="Back to the latest — resume following the agent"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Jump to latest — agent still running</div>
@@ -808,12 +814,22 @@
     // P2-5: adopting borrows the running visual (Send hidden, Stop
     // shown). With no live turn Stop is inert — its handler already
     // ignores disabled clicks — and the ticker's own disabled state
-    // (STOP_PIN set) is never touched here.
-    const showSend = !AGENT_RUNNING && ADOPTING === 0 && PENDING_MAIN === null && META_AUTH !== "absent";
-    document.getElementById("sendbtn").style.display = showSend ? "" : "none";
+    // (STOP_PIN set) is never touched here. A stale main instead keeps
+    // Send visible but disabled with a tooltip (the banner explains).
+    const send = document.getElementById("sendbtn");
+    if (MAIN_STALE !== null && !AGENT_RUNNING && ADOPTING === 0 && META_AUTH !== "absent") {
+      send.style.display = "";
+      send.disabled = true;
+      send.title = "The main chat changed — Load current first";
+    } else {
+      send.disabled = false;
+      send.title = "";
+      const showSend = !AGENT_RUNNING && ADOPTING === 0 && META_AUTH !== "absent";
+      send.style.display = showSend ? "" : "none";
+    }
     const stop = document.getElementById("stopbtn");
-    stop.style.display = (AGENT_RUNNING || ADOPTING > 0 || PENDING_MAIN !== null) ? "" : "none";
-    if ((ADOPTING > 0 || PENDING_MAIN !== null) && !AGENT_RUNNING) stop.disabled = true;
+    stop.style.display = (AGENT_RUNNING || ADOPTING > 0) ? "" : "none";
+    if (ADOPTING > 0 && !AGENT_RUNNING) stop.disabled = true;
     else if (STOP_PIN === null) stop.disabled = false;
     refreshSwapButtons();
   }
@@ -857,37 +873,46 @@
   // each other's visual). While nonzero Send is disabled with the
   // running visual and send() refuses to dispatch.
   let ADOPTING = 0;
-  // A newer main that arrived while the server reports a turn running.
-  // The pair waits here (transcript untouched) until a re-reconcile
-  // finds the server idle; Send refuses meanwhile with the adopting
-  // visual. Liveness comes from the server's history running flag,
-  // never from local stream continuity (removed: STREAM_GEN/TURN_GEN
-  // stranded Send when a completion was missed in a deaf gap).
-  let PENDING_MAIN = null;
-  // PENDING_MAIN invariant: it is set only while the server reports a
-  // turn running, and every setter pairs with a clearer — a later
-  // adoption at or above its generation, a lock/unlock, or a
-  // re-reconcile on the turn's completion event or the next SSE open,
-  // whichever comes first. No path sets it without one of those.
+  // Detect, don't adopt: the only cross-tab state left. Set when this
+  // tab learns its main is stale (SSE main/changed for another id, a
+  // 409 main-changed, or a reconnect history with another id). The
+  // banner shows until Load current adopts; the heard generation keeps
+  // a mid-flight Load current from clearing over a newer publish.
+  let MAIN_STALE = null;
+  function setStaleMain(sid, gen) {
+    if (typeof sid !== "string" || !sid) return;
+    const heard = typeof gen === "number" ? gen : window.__mainGen;
+    if (MAIN_STALE === null || heard > MAIN_STALE.gen) {
+      MAIN_STALE = { sid, gen: heard };
+    }
+    document.getElementById("stalemain").style.display = "";
+    refreshSendVisibility();
+  }
+  function clearStaleMain() {
+    if (MAIN_STALE === null) return;
+    MAIN_STALE = null;
+    document.getElementById("stalemain").style.display = "none";
+    refreshSendVisibility();
+  }
+  // S1: liveness clock, bumped on every send dispatch and every
+  // liveness-bearing stream event. History liveness applies only when it
+  // hasn't moved since that request started. Item/approval traffic doesn't
+  // bump it, or every Load current during streaming output would discard.
+  let UI_LIVE_SEQ = 0;
+  function noteLiveEvent() { UI_LIVE_SEQ += 1; }
   // P2-6: the main this tab believes in, learned from loadHistory and
-  // main/changed (window-scoped like __pasts, so scripted checks can
-  // gate on it). Sends pin it; a 409 adopts the server's newer pair.
+  // its own swaps (window-scoped like __pasts, so scripted checks can
+  // gate on it). Sends pin it; a 409 marks it stale.
   window.__mainSession = null;
   window.__mainGen = -1;
   // Round 3: the one adoption — session id and generation advance
-  // together, atomically. Any successful adoption at or above the
-  // pending generation clears the pending Send lock (a newer main
-  // supersedes an older wait). Stale pairs (below the adopted
-  // generation) lose without touching anything.
+  // together, atomically. Stale pairs (below the adopted generation)
+  // lose without touching anything.
   function adoptMain(sid, gen) {
     if (typeof sid !== "string" || !sid || typeof gen !== "number") return false;
     if (gen < window.__mainGen) return false;
     window.__mainSession = sid;
     window.__mainGen = Math.max(window.__mainGen, gen);
-    if (PENDING_MAIN !== null && gen >= PENDING_MAIN.gen) {
-      PENDING_MAIN = null;
-      refreshSendVisibility();
-    }
     return true;
   }
   const STOP_HTML = '<span class="sq"></span>Stop';
@@ -2531,9 +2556,9 @@
     text = (text || "").trim();
     if (!text && pendingImages.length === 0) return;
     // P2-5: the adopting swap owns the composer — refuse before the
-    // snapshot so the draft stays exactly as typed. A deferred
-    // adoption (pending refresh) refuses the same way.
-    if (ADOPTING > 0 || PENDING_MAIN !== null) return;
+    // snapshot so the draft stays exactly as typed. A stale main
+    // refuses the same way (Load current first).
+    if (ADOPTING > 0 || MAIN_STALE !== null) return;
     // T69: capture + clear the payload atomically (no await above this
     // line): text-only double-sends were already safe via the input
     // clear, but images cleared only after ack, so a second dispatch
@@ -2548,6 +2573,7 @@
     // T56: snapshot the dispatch for failSend (restore + run scoping).
     const saved = { text, images, targets, wasRunning: AGENT_RUNNING, liveBefore: LIVE_TURN, epoch: STOP_EPOCH + 1 };
     STOP_EPOCH = saved.epoch;
+    noteLiveEvent();
     stopNote(null);
     const optimistic = appendMsgEl("user", text, targets);
     $("chatinput").value = "";
@@ -2563,11 +2589,10 @@
       try { j = await r.json(); } catch { j = null; }
       if (!r.ok || !j || j.ok !== true) {
         failSend(saved, optimistic, (j && typeof j.why === "string" && j.why) || ("HTTP " + r.status), j && j.code);
-        // P2-6: our main id went stale mid-flight — follow the 409's
-        // own server running state (idle adopts now, running defers to
-        // a pending refresh re-reconciled on completion or SSE open).
+        // P2-6: our main id went stale mid-flight — the draft is already
+        // restored above; mark stale and let Load current adopt.
         if (r.status === 409 && j && j.error === "main-changed") {
-          await applyStaleMain(j.sessionId, j.generation, j.running);
+          setStaleMain(j.sessionId, j.generation);
         }
         return;
       }
@@ -2590,16 +2615,6 @@
     document.getElementById("newsession-btn").style.display = "none";
     document.getElementById("newsession-confirm").style.display = "";
   }
-  // Round 3: hold a newer main for a pending refresh (the transcript
-  // stays untouched; past list and meter catch up now). A newer wait
-  // supersedes an older one, never the reverse.
-  async function deferMain(sid, gen) {
-    if (PENDING_MAIN === null || gen >= PENDING_MAIN.gen) {
-      PENDING_MAIN = { sid, gen };
-      refreshSendVisibility();
-    }
-    await Promise.all([loadPast(), refreshStatpop()]);
-  }
   // P2-6: the swapping tab adopts off its own POST response — immediate
   // (it just published this main; a turn that went live since streams
   // onto the fresh transcript). Stale answers lose via adoptMain.
@@ -2609,37 +2624,35 @@
       await afterSwap(stamp);
       return;
     }
-    if (sid === window.__mainSession && gen === window.__mainGen) return;
+    if (sid === window.__mainSession && gen === window.__mainGen) {
+      clearStaleMain();
+      return;
+    }
     if (!adoptMain(sid, gen)) return;
+    clearStaleMain();
     await afterSwap(stamp);
   }
-  // Round 3: the stale-send 409 path follows the 409's own server running
-  // state — idle adopts now, running defers to a pending refresh (no
-  // extra fetch; the refusal already round-tripped the server).
-  async function applyStaleMain(sid, gen, running) {
-    if (typeof sid !== "string" || !sid || typeof gen !== "number") {
-      await afterSwap();
-      return;
+  // Load current (the stale banner's button): the one adoption routine —
+  // transcript, id, past list and meter from /api/chat/history, then the
+  // banner clears. A live turn on the current main loads the same way and
+  // shows Stop (no waiting state). A newer publish mid-flight keeps the
+  // banner for another click instead of clearing over it.
+  let LOADING_CURRENT = false;
+  async function loadCurrentMain() {
+    if (LOADING_CURRENT || MAIN_STALE === null) return;
+    LOADING_CURRENT = true;
+    try {
+      const heardGen = MAIN_STALE.gen;
+      const j = await afterSwap(undefined, true);
+      if (j && typeof j.generation === "number" && j.generation >= heardGen) {
+        clearStaleMain();
+      }
+      if (!j) showToast("Could not load the current chat — retry.", "alert");
+    } finally {
+      LOADING_CURRENT = false;
     }
-    if (sid === window.__mainSession && gen === window.__mainGen) return;
-    if (gen < window.__mainGen) return;
-    if (running === true) {
-      await deferMain(sid, gen);
-      return;
-    }
-    if (!adoptMain(sid, gen)) return;
-    await afterSwap();
   }
-  // A deferred adoption waits out its turn here; idling (turn/completed
-  // settle, force-stop ok) re-reconciles against the server — whichever
-  // of the completion or the next SSE open arrives first clears the
-  // wait. The pending pair itself is never adopted blind: the server may
-  // have published a newer main since it was held.
-  function consumePendingMain() {
-    if (PENDING_MAIN === null) return;
-    reconcileMain();
-  }
-  async function afterSwap(stamp) {
+  async function afterSwap(stamp, applyLiveness) {
     // P2-5: only pre-swap run state clears — a newer turn that went
     // live mid-swap (another tab's send, seen on SSE) keeps its Stop.
     if (!stamp || (STOP_EPOCH === stamp.epoch && LIVE_TURN === stamp.live)) {
@@ -2664,9 +2677,10 @@
     liveCards.clear();
     msgsEl().innerHTML = "";
     markUnread(false);
-    await loadHistory();
+    const hist = await loadHistory(applyLiveness === true);
     tail();
     await Promise.all([loadPast(), refreshStatpop(), recoverPending()]);
+    return hist;
   }
   async function doNewSession() {
     const go = document.getElementById("newsession-go");
@@ -2739,6 +2753,7 @@
       if (!sid) { showToast("Open a past chat first.", "warn"); return; }
       doMakeCurrent(sid);
     });
+    document.getElementById("stalemain-load").addEventListener("click", loadCurrentMain);
   }
 
   // T50 approval/question surface. Cards render from the
@@ -3290,12 +3305,36 @@
       // back to plain running (the pin's completion can no longer idle us).
       // The event carries the live turnId (echo verified) — track it so a
       // turn started elsewhere (another tab) still settles us on completion.
+      noteLiveEvent();
       stopReset();
       if (m.params && typeof m.params.turnId === "string") LIVE_TURN = m.params.turnId;
       setRunning(true);
       return;
     }
-    if (m.method === "main/changed") { reconcileMain(); return; }
+    if (m.method === "run/state" && m.params && m.params.running === false) {
+      // The worker is gone (crash, kill, force-stop teardown, lock): clear
+      // the running UI everywhere. The dead prompts settle via recovery.
+      noteLiveEvent();
+      LIVE_TURN = null;
+      streamItem = null;
+      setRunning(false);
+      clearChips();
+      refreshStatpop();
+      recoverPending();
+      return;
+    }
+    if (m.method === "main/changed") {
+      noteLiveEvent();
+      // Boot owns the first paint: the tab shows nothing yet, so its
+      // own publish arriving before the boot history lands is not
+      // staleness (the boot history adopts it directly).
+      if (window.__mainSession === null) return;
+      const p = m.params || {};
+      if (typeof p.sessionId === "string" && p.sessionId !== window.__mainSession) {
+        setStaleMain(p.sessionId, p.generation);
+      }
+      return;
+    }
     if (m.method === "meta/authChanged") { applyMeta(m.params && m.params.meta); return; }
     if (m.method === "ui/notify") { const p = m.params || {}; if (typeof p.text === "string" && p.text) showToast(p.text, p.level); return; }
     if (m.method === "ui/open") { onUiOpen(m.params || {}); return; }
@@ -3306,13 +3345,13 @@
       // the stopped turn after a newer send only clears Stopping (back
       // to running); anything older is ignored. turnId correlation when
       // the wire carries it (echo does), stopEpoch fallback otherwise.
+      noteLiveEvent();
       const doneId = m.params && m.params.turnId;
       const settle = () => {
         setRunning(false);
         streamItem = null;
         clearChips();
         refreshStatpop();
-        consumePendingMain();
       };
       if (typeof doneId === "string") {
         if (doneId === LIVE_TURN) { settle(); return; }
@@ -3400,14 +3439,18 @@
     }
   }
 
-  async function loadHistory() {
+  // applyLiveness is true only at boot and in Load current; every other
+  // history render leaves run state to the stream. S1: even then, liveness
+  // applies only when the clock hasn't moved since this request started.
+  async function loadHistory(applyLiveness) {
+    const seen = UI_LIVE_SEQ;
     try {
       const j = await getJSON("/api/chat/history");
-      if (!j.ok) return;
+      if (!j.ok) return null;
       // Same generation gate as adoption: a history response older
       // than the adopted main is a stale snapshot — applying it would
       // regress the id and append the wrong transcript.
-      if (typeof j.generation === "number" && j.generation < window.__mainGen) return;
+      if (typeof j.generation === "number" && j.generation < window.__mainGen) return null;
       // Round 3 (P1-B): an accepted history advances the id and the
       // generation together, atomically, through the one adopt
       // function — a rendering snapshot must also move the gate its
@@ -3429,7 +3472,18 @@
         if (el) msgsEl().appendChild(el);
       }
       tail();
+      if (applyLiveness === true && seen === UI_LIVE_SEQ) {
+        if (j.running === true) {
+          if (typeof j.turnId === "string") LIVE_TURN = j.turnId;
+          setRunning(true);
+        } else {
+          LIVE_TURN = null;
+          setRunning(false);
+        }
+      }
+      return j;
     } catch { /* chat starts empty when MSP is unreachable */ }
+    return null;
   }
 
   async function loadDevices() {
@@ -4175,7 +4229,6 @@
       streamItem = null;
       clearChips();
       refreshStatpop();
-      consumePendingMain();
       stopNote("Stopped via " + stepName + ".", false);
     });
     $("adddevice").addEventListener("click", () => {
@@ -4260,14 +4313,13 @@
   });
 
   function showLock(st) {
-    // Round 3: a lock drops every pending adoption — the worker is gone
-    // and unlock reloads onto the current main, so a stuck Send lock
-    // must not survive behind the overlay. (ADOPTING is a try/finally
-    // counter, not a flag: in-flight swaps settle it themselves, and
-    // resetting it here would drive it negative when their finally
-    // runs. Unlock clears by reloading.)
-    PENDING_MAIN = null;
-    refreshSendVisibility();
+    // A lock drops the stale banner — the worker is gone and unlock
+    // reloads onto the current main, so a stuck Send lock must not
+    // survive behind the overlay. (ADOPTING is a try/finally counter,
+    // not a flag: in-flight swaps settle it themselves, and resetting
+    // it here would drive it negative when their finally runs. Unlock
+    // clears by reloading.)
+    clearStaleMain();
     $("locksub").textContent = "CDB password for " + (st.cdbFile || "the device registry");
     $("lockerr").textContent = "";
     $("lockpw").value = "";
@@ -4407,49 +4459,26 @@
     es.onerror = () => { $("ssestate").style.display = ""; };
     es.onopen = () => {
       $("ssestate").style.display = "none";
-      reconcileMain();
+      checkMainStale();
       recoverPending();
     };
   }
-  // Round 3: every reconcile (SSE open, main/changed, pending re-check)
-  // follows the server. A tab that missed main/changed while deaf adopts
-  // the current main here; a tab that missed the completion idles here.
-  // Session identity decides the swap — the generation advances on every
-  // turn, so comparing it would spuriously re-adopt on every reconnect —
-  // while the server's running flag decides defer-vs-adopt. The
-  // transcript payload is discarded; the adoption refetches when it
-  // actually swaps.
-  async function reconcileMain() {
+  // Every SSE (re)open checks for a missed main/changed: a different
+  // session id marks this tab stale (banner + Load current). Nothing
+  // else — no adoption, no transcript touch, no liveness change.
+  async function checkMainStale() {
+    // Boot owns the first paint: no main adopted yet, nothing to stale.
+    if (window.__mainSession === null) return;
     let j = null;
     try { j = await getJSON("/api/chat/history"); } catch { return; }
     if (!j || j.ok !== true) return;
     if (typeof j.sessionId !== "string" || typeof j.generation !== "number") return;
-    // Stale snapshots lose, like every other adoption input.
+    // A held older snapshot must not mark us stale for a main we
+    // already moved past.
     if (j.generation < window.__mainGen) return;
-    if (j.sessionId === window.__mainSession) {
-      // Same main: advance the generation (a resume-back carries a
-      // newer one) without touching the transcript; a pending wait at
-      // or below it clears. Idle here also settles a run whose
-      // completion we missed in a deaf gap.
-      adoptMain(j.sessionId, j.generation);
-      if (j.running !== true && AGENT_RUNNING) {
-        setRunning(false);
-        streamItem = null;
-        clearChips();
-        refreshStatpop();
-      }
-      return;
+    if (j.sessionId !== window.__mainSession) {
+      setStaleMain(j.sessionId, j.generation);
     }
-    if (j.running === true) {
-      // The server has a live turn: hold the pair for a pending
-      // refresh, re-reconciled on the turn's completion event or the
-      // next SSE open, whichever comes first.
-      await deferMain(j.sessionId, j.generation);
-      return;
-    }
-    // Idle: adopt now, clearing any pending wait at or below this pair.
-    if (!adoptMain(j.sessionId, j.generation)) return;
-    await afterSwap();
   }
   function enterApp(st) {
     hideOverlays();
@@ -4465,7 +4494,7 @@
     loadAlerts();
     // No loadTwins(): the Twins tab fetches on first show (T38 on-demand).
     loadPast();
-    loadHistory().then(() => { refreshStatpop(); recoverPending(); });
+    loadHistory(true).then(() => { refreshStatpop(); recoverPending(); });
     connectStream();
   }
 
@@ -4505,8 +4534,8 @@
     // (a closed EventSource never reconnects on its own). Smoke-only.
     reconnectStream: () => { connectStream(); },
     // Round-3 P1-B repro: load the current main's history on demand
-    // (no adopt, no reload) so a held stale history can land after it.
-    // Smoke-only.
+    // (render-only: no liveness, no swap reload) so a held stale
+    // history can land after it. Smoke-only.
     loadHistory: () => loadHistory() };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the

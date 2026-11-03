@@ -314,6 +314,11 @@ export class MspClient {
 		};
 	}
 
+	/** Call cb once when the worker process exits (any cause). */
+	onExit(cb: () => void): void {
+		this.proc.exited.then(cb, cb);
+	}
+
 	async sessionStart(opts: {
 		workspaceRoot: string;
 		workspaceRoots?: string[];
@@ -759,6 +764,10 @@ export class MspClient {
 		params: unknown,
 		timeoutMs = 30_000,
 	): Promise<unknown> {
+		// Fail fast on a dead worker: without this a call issued
+		// after the exit — but before the server's exit watcher runs
+		// — would hang until its own timeout.
+		if (this.proc.exitCode !== null) throw new Error("muse host exited");
 		const id = this.nextId++;
 		const line = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
 		return new Promise((resolve, reject) => {

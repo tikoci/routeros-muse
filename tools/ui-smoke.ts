@@ -24,12 +24,14 @@
 // restore (forced 500/abort/ok:false/oauth failures restore text,
 // images and pills with the why toasted; restore-if-empty; a failed
 // second send leaves the live turn alone), and the swap-review two-tab
-// legs (adopting Send lock, main/changed follow, stale-send 409
-// restore, past-load race, no-demo-data markup), and the SSE-reconnect
-// legs (a tab that missed main/changed while deaf adopts on reopen; a
-// turn live at reopen defers the transcript swap until it completes,
-// refusing Send meanwhile; late history and stale reconciles lose
-// to the adopted generation).
+// legs (adopting Send lock, stale-main banner + Load current, stale-send
+// 409 restore, past-load race, no-demo-data markup), and the
+// SSE-reconnect legs (a tab that missed main/changed while deaf banners
+// on reopen; Load current onto a live turn shows Stop; late histories
+// lose to the adopted generation), and the S1 boot-liveness leg (a held
+// idle history released after a send never hides Stop), and the
+// worker-kill leg (run/state clears Stop on every tab; the next send
+// 409s onto the banner and Load current + send recover).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -4727,11 +4729,12 @@ try {
 
 	// Swap-review two-tab legs on the scriptable fake. Page B shows S1
 	// while page A swaps: adopting hides Send with Stop's visual (P2-5),
-	// B follows via main/changed with no reload (P2-6), a newer live
-	// turn keeps its Stop across afterSwap (P2-5), a deaf B's stale send
-	// 409s with its draft restored (P2-6), and reordered past loads never
-	// split the shown transcript from the Make-current target (P2-7) —
-	// plus the T52 never-demo-data markup assertion. Screenshots 51-55.
+	// B banners on main/changed and Loads current explicitly (P2-6), a
+	// newer live turn keeps its Stop across afterSwap (P2-5), a deaf B's
+	// stale send 409s with its draft restored (P2-6), and reordered past
+	// loads never split the shown transcript from the Make-current
+	// target (P2-7) — plus the T52 never-demo-data markup assertion.
+	// Screenshots 51-55.
 	const sr = stubT50Bin();
 	await withT50Env(sr.log, async () => {
 		const srvS = await startServer({
@@ -4890,16 +4893,79 @@ try {
 					),
 			);
 			await page.fill("#chatinput", "");
-			// P2-6(1): B follows the swap without a manual reload.
+			// P2-6(1): B banners on the swap (no auto-adopt) with Send
+			// disabled; Load current shows the new main and re-enables.
 			check(
-				"p26 B follows the swap without a reload",
+				"p26 B shows the stale banner without a reload",
+				await srOk(
+					pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"p26 B keeps the old transcript behind the banner",
+				((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
+					"P61-FIRST",
+				),
+			);
+			check(
+				"p26 B Send disabled with a tooltip while stale",
+				(await pageB.locator("#sendbtn:visible").count()) === 1 &&
+					(await pageB.locator("#sendbtn").isDisabled()) &&
+					(
+						(await pageB.locator("#sendbtn").getAttribute("title")) ?? ""
+					).includes("Load current"),
+			);
+			// Refusal dispatches nothing: the spy (not the draft) proves it.
+			let p26sends = 0;
+			await pageB.route("**/api/chat/send", async (route) => {
+				p26sends += 1;
+				const res = await route.fetch();
+				await route.fulfill({ response: res });
+			});
+			await pageB.fill("#chatinput", "STALE-DRAFT");
+			await pageB.press("#chatinput", "Enter");
+			await new Promise((r) => setTimeout(r, 500));
+			check(
+				"p26 stale Enter sends nothing and keeps the draft",
+				p26sends === 0 &&
+					(await pageB.locator("#chatinput").inputValue()) === "STALE-DRAFT" &&
+					!((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
+						"STALE-DRAFT",
+					),
+				`sends=${p26sends}`,
+			);
+			await pageB.unroute("**/api/chat/send");
+			await pageB.fill("#chatinput", "");
+			await pageB.screenshot({ path: path.join(OUT, "52-p26-stale.png") });
+			await pageB.click("#stalemain-load");
+			// The banner clears only after the whole load settles
+			// (transcript + past list + meter), so its absence — not the
+			// synchronous message clear — gates the asserts below.
+			check(
+				"p26 Load current clears the banner and enables Send",
 				await srOk(
 					pageB.waitForFunction(
-						() => document.querySelectorAll("#pane-chat .msg").length === 0,
+						() => {
+							const b = document.getElementById("stalemain");
+							const s = document.getElementById(
+								"sendbtn",
+							) as HTMLButtonElement | null;
+							return (
+								b !== null &&
+								b.style.display === "none" &&
+								s !== null &&
+								s.style.display !== "none" &&
+								!s.disabled
+							);
+						},
 						undefined,
 						{ timeout: 15_000 },
 					),
 				),
+			);
+			check(
+				"p26 Load current shows the new main",
+				(await pageB.locator("#pane-chat .msg").count()) === 0,
 			);
 			check(
 				"p26 B past list gains the old main",
@@ -4907,7 +4973,6 @@ try {
 					"untitled session",
 				),
 			);
-			await pageB.screenshot({ path: path.join(OUT, "52-p26-followed.png") });
 			holdGate.release();
 			disarmHold();
 			await srIdle(page);
@@ -4917,8 +4982,8 @@ try {
 			);
 
 			// P2-5(2): a newer live turn keeps its Stop across afterSwap. A
-			// swaps S2->S3 with the answer held; B's held turn goes live on
-			// S3 meanwhile (B gates on the new main id first).
+			// swaps S2->S3 with the answer held; B Loads current, then its
+			// held turn goes live on S3 meanwhile.
 			armHold();
 			await page.click("#newsession-btn");
 			await page.waitForSelector("#newsession-confirm:visible", {
@@ -4927,15 +4992,19 @@ try {
 			await page.click("#newsession-go");
 			await pollT71Log(sr.log, /START session=t50-s3 /, 15_000);
 			await srOk(
+				pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+			);
+			await pageB.click("#stalemain-load");
+			await srOk(
 				pageB.waitForFunction(
 					() =>
 						(window as unknown as Record<string, unknown>)["__mainSession"] ===
-						"t50-s3",
+							"t50-s3" &&
+						document.getElementById("stalemain")?.style.display === "none",
 					undefined,
 					{ timeout: 15_000 },
 				),
 			);
-			await new Promise((r) => setTimeout(r, 250));
 			await pageB.fill("#chatinput", "NEED-APPROVAL p25 live");
 			await pageB.click("#sendbtn");
 			await pageB.waitForSelector(".appr-card.hold-pending", {
@@ -5002,7 +5071,7 @@ try {
 				),
 			);
 			check(
-				"p26 stale send toasts the reload",
+				"p26 stale send toasts the refusal",
 				await srOk(
 					pageB.waitForFunction(
 						() =>
@@ -5015,10 +5084,45 @@ try {
 				),
 			);
 			check(
-				"p26 stale tab reloads to the current main",
-				await srAgent(pageB, "S4-MARKER", 10_000),
+				"p26 stale send raises the banner, not a reload",
+				await srOk(
+					pageB.waitForSelector("#stalemain:visible", { timeout: 10_000 }),
+				),
+			);
+			check(
+				"p26 stale tab keeps the old transcript until Load current",
+				!((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
+					"S4-MARKER",
+				),
 			);
 			await pageB.screenshot({ path: path.join(OUT, "54-p26-stale-409.png") });
+			await pageB.click("#stalemain-load");
+			check(
+				"p26 Load current shows the current main",
+				await srAgent(pageB, "S4-MARKER", 10_000),
+			);
+			check(
+				"p26 Load current clears the banner and enables Send",
+				await srOk(
+					pageB.waitForFunction(
+						() => {
+							const b = document.getElementById("stalemain");
+							const s = document.getElementById(
+								"sendbtn",
+							) as HTMLButtonElement | null;
+							return (
+								b !== null &&
+								b.style.display === "none" &&
+								s !== null &&
+								s.style.display !== "none" &&
+								!s.disabled
+							);
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
 
 			// P2-7: reordered past loads never split the shown transcript from
 			// the Make-current target. S1 (P61-FIRST) loads slow, S3 (p25
@@ -5112,14 +5216,12 @@ try {
 		}
 	});
 
-	// SSE-reconnect legs on the scriptable fake. A tab that missed
-	// main/changed while its SSE was down adopts the current main when
-	// the stream reopens (same adopt path); when a turn is live at
-	// reopen the transcript swap defers until it completes (pending
-	// refresh: Send refused with the adopting visual, adoption on
-	// completion, next send on the new main), and the generation-gate
-	// legs (a late history response and a stale swap response both
-	// lose to the adopted generation). Screenshots 56-60.
+	// Stale-main legs on the scriptable fake. A tab that missed
+	// main/changed while its SSE was down banners when the stream
+	// reopens and Loads current explicitly; Load current onto a live
+	// turn shows that turn's transcript with Stop (and Stop works); a
+	// late history response loses to the adopted generation.
+	// Screenshots 56-59.
 	const r2 = stubT50Bin();
 	await withT50Env(r2.log, async () => {
 		const srvR = await startServer({
@@ -5182,10 +5284,6 @@ try {
 				pg.evaluate(
 					() => (window as unknown as Record<string, unknown>)["__mainSession"],
 				);
-			const rMainGenOf = (pg: Page): Promise<unknown> =>
-				pg.evaluate(
-					() => (window as unknown as Record<string, unknown>)["__mainGen"],
-				);
 
 			// S1 gets its marker; B loads onto S1 (reloaded onto the
 			// settled history, like the swap-review block — B's first
@@ -5229,33 +5327,57 @@ try {
 			await rIdle(page);
 			await pageR.evaluate(() => window.__smoke?.reconnectStream());
 			check(
-				"r2 reconnected tab adopts the current main id",
+				"r2 reconnected tab banners instead of adopting",
+				await rOk(
+					pageR.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"r2 reconnected tab keeps the old transcript",
+				((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S1-MARKER",
+				),
+			);
+			check(
+				"r2 reconnected tab disables Send while stale",
+				(await pageR.locator("#sendbtn:visible").count()) === 1 &&
+					(await pageR.locator("#sendbtn").isDisabled()),
+			);
+			await pageR.screenshot({ path: path.join(OUT, "56-r2-reconnected.png") });
+			await pageR.click("#stalemain-load");
+			check(
+				"r2 Load current adopts the current main id",
 				await rOk(
 					pageR.waitForFunction(
 						() =>
 							(window as unknown as Record<string, unknown>)[
 								"__mainSession"
-							] === "t50-s2",
+							] === "t50-s2" &&
+							document.getElementById("stalemain")?.style.display === "none",
 						undefined,
 						{ timeout: 15_000 },
 					),
 				),
 			);
 			check(
-				"r2 reconnected tab shows the new transcript",
+				"r2 Load current shows the new transcript",
 				await rAgent(pageR, "R2-S2-MARKER", 10_000),
 			);
 			check(
-				"r2 reconnected tab drops the old transcript",
+				"r2 Load current drops the old transcript",
 				!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
 					"R2-S1-MARKER",
 				),
 			);
-			await pageR.screenshot({ path: path.join(OUT, "56-r2-reconnected.png") });
+			check(
+				"r2 Load current enables Send",
+				(await pageR.locator("#sendbtn:visible").count()) === 1 &&
+					!(await pageR.locator("#sendbtn").isDisabled()),
+			);
 
-			// Leg 2 (variant): a turn is live on S3 at reconnect. B's
-			// reconcile history stays held until S3's turn/started
-			// reaches B's fresh stream, so the adoption must defer.
+			// Leg 2: a turn is live on S3 when B Loads current. B is deaf to
+			// the turn/started, so Stop after the load is history-driven
+			// alone — and Stop works from B.
 			await pageR.evaluate(() => window.__smoke?.dropStream());
 			await page.click("#newsession-btn");
 			await page.waitForSelector("#newsession-confirm:visible", {
@@ -5267,102 +5389,78 @@ try {
 				undefined,
 				{ timeout: 15_000 },
 			);
+			// The adopting flag still owns the composer until the swap
+			// settles — the empty transcript alone doesn't prove it.
+			await rOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
 			await page.fill("#chatinput", "R2-S3-MARKER");
 			await page.press("#chatinput", "Enter");
 			check("r2 S3 marker lands", await rAgent(page, "R2-S3-MARKER"));
 			await rIdle(page);
-			let releaseHist!: () => void;
-			const histGate = new Promise<void>((r) => {
-				releaseHist = r;
-			});
-			let heldFirst = false;
-			await pageR.route("**/api/chat/history", async (route) => {
-				// Gate before fetching: the released response must reflect
-				// the live turn (round 3 follows the server's running flag).
-				if (!heldFirst) {
-					heldFirst = true;
-					await histGate;
-				}
-				const res = await route.fetch();
-				await route.fulfill({ response: res });
-			});
-			await pageR.evaluate(() => window.__smoke?.reconnectStream());
 			await page.fill("#chatinput", "NEED-APPROVAL r2 live");
 			await page.click("#sendbtn");
 			await page.waitForSelector(".appr-card.hold-pending", {
 				timeout: 15_000,
 			});
+			await pageR.evaluate(() => window.__smoke?.reconnectStream());
 			check(
-				"r2 reconnecting tab sees the live turn",
+				"r2 reconnected tab banners on the live swap",
+				await rOk(
+					pageR.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"r2 reconnect touches no run state",
+				(await pageR.locator("#stopbtn:visible").count()) === 0,
+			);
+			await pageR.click("#stalemain-load");
+			check(
+				"r2 live Load current shows the current transcript",
+				await rAgent(pageR, "R2-S3-MARKER", 10_000),
+			);
+			check(
+				"r2 live Load current shows Stop for the live turn",
 				await rOk(
 					pageR.waitForFunction(
 						() => {
 							const b = document.getElementById(
 								"stopbtn",
 							) as HTMLButtonElement | null;
-							return b !== null && b.style.display !== "none";
+							return b !== null && b.style.display !== "none" && !b.disabled;
 						},
 						undefined,
 						{ timeout: 15_000 },
 					),
 				),
 			);
-			releaseHist();
-			await new Promise((r) => setTimeout(r, 750));
-			check(
-				"r2 pending keeps the old transcript mid-stream",
-				((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
-					"R2-S2-MARKER",
-				),
-			);
-			// Refusal dispatches nothing: a 409-restore would also keep
-			// the draft, so the spy (not the input) proves it.
-			let r2sends = 0;
-			await pageR.route("**/api/chat/send", async (route) => {
-				r2sends += 1;
-				const res = await route.fetch();
-				await route.fulfill({ response: res });
-			});
-			await pageR.fill("#chatinput", "R2-PENDING-DRAFT");
-			await pageR.press("#chatinput", "Enter");
-			await new Promise((r) => setTimeout(r, 500));
-			check(
-				"r2 pending refuses Send and keeps the draft",
-				r2sends === 0 &&
-					(await pageR.locator("#chatinput").inputValue()) ===
-						"R2-PENDING-DRAFT" &&
-					!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
-						"R2-PENDING-DRAFT",
-					),
-				`sends=${r2sends}`,
-			);
-			await pageR.unroute("**/api/chat/send");
-			await pageR.fill("#chatinput", "");
-			await pageR.screenshot({ path: path.join(OUT, "57-r2-pending.png") });
-			await pageR
-				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
-				.first()
-				.click();
-			check(
-				"r2 adoption lands on completion",
-				await rAgent(pageR, "R2-S3-MARKER", 15_000),
-			);
-			check(
-				"r2 adoption drops the old transcript",
-				!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
-					"R2-S2-MARKER",
-				),
-			);
+			await pageR.screenshot({ path: path.join(OUT, "57-r2-live-load.png") });
+			await pageR.click("#stopbtn");
 			await rIdle(page);
 			await rIdle(pageR);
+			check(
+				"r2 Stop from the loaded tab settles the live turn",
+				(await pageR.locator(".appr-card.hold-pending").count()) === 0 &&
+					(await pageR.locator("#sendbtn:visible").count()) === 1 &&
+					!(await pageR.locator("#sendbtn").isDisabled()),
+			);
 			await pageR.fill("#chatinput", "R2-NEXT-ON-S3");
 			await pageR.press("#chatinput", "Enter");
 			check(
-				"r2 next send lands on the adopted main",
+				"r2 next send lands on the loaded main",
 				await rAgent(pageR, "R2-NEXT-ON-S3"),
 			);
 			await rIdle(pageR);
-			check("r2 adopted main id is S3", (await rMainOf(pageR)) === "t50-s3");
+			check("r2 loaded main id is S3", (await rMainOf(pageR)) === "t50-s3");
 			// The send really landed on S3 (user rows never stream to
 			// other tabs, so the server history — not tab A — proves it).
 			const r2hist = await page.evaluate(async () => {
@@ -5377,8 +5475,7 @@ try {
 				r2hist.sessionId === "t50-s3" &&
 					r2hist.messages.some((m) => m.text.includes("R2-NEXT-ON-S3")),
 			);
-			await pageR.screenshot({ path: path.join(OUT, "58-r2-adopted.png") });
-			await pageR.unroute("**/api/chat/history");
+			await pageR.screenshot({ path: path.join(OUT, "58-r2-loaded.png") });
 
 			// Leg 3a (late history): hold S3's history, publish S4, render
 			// S4's history, release S3's response — the tab stays on S4
@@ -5422,6 +5519,20 @@ try {
 				undefined,
 				{ timeout: 15_000 },
 			);
+			// The adopting flag still owns the composer until the swap
+			// settles — the empty transcript alone doesn't prove it.
+			await rOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
 			await page.fill("#chatinput", "R2-S4-MARKER");
 			await page.press("#chatinput", "Enter");
 			check("r2 S4 marker lands", await rAgent(page, "R2-S4-MARKER"));
@@ -5444,103 +5555,6 @@ try {
 			await page.screenshot({ path: path.join(OUT, "59-r2-late-history.png") });
 			await page.unroute("**/api/chat/history");
 
-			// Leg 3b (stale reconcile): A's reconnect reconcile for S5
-			// stays held while B swaps S5->S6; A adopts S6 off the
-			// stream, then the older S5 reconcile releases and must lose
-			// (this is the applyMainChanged side of the generation gate;
-			// the reconcile discards its transcript, so only the adopt
-			// path sees the stale pair).
-			let releaseR!: () => void;
-			const rGate = new Promise<void>((r) => {
-				releaseR = r;
-			});
-			let heldR = false;
-			let hitR = false;
-			await page.route("**/api/chat/history", async (route) => {
-				const res = await route.fetch();
-				if (!heldR) {
-					heldR = true;
-					hitR = true;
-					await rGate;
-				}
-				await route.fulfill({ response: res });
-			});
-			await page.evaluate(() => window.__smoke?.dropStream());
-			await pageR.click("#newsession-btn");
-			await pageR.waitForSelector("#newsession-confirm:visible", {
-				timeout: 5_000,
-			});
-			await pageR.click("#newsession-go");
-			check(
-				"r2 B publishes S5 while A is deaf",
-				await rOk(
-					pageR.waitForFunction(
-						() =>
-							(window as unknown as Record<string, unknown>)[
-								"__mainSession"
-							] === "t50-s5",
-						undefined,
-						{ timeout: 15_000 },
-					),
-				),
-			);
-			await pageR.fill("#chatinput", "R2-S5B-MARKER");
-			await pageR.press("#chatinput", "Enter");
-			check("r2 S5B marker lands", await rAgent(pageR, "R2-S5B-MARKER"));
-			await rIdle(pageR);
-			await page.evaluate(() => window.__smoke?.reconnectStream());
-			{
-				const start = Date.now();
-				while (!hitR) {
-					if (Date.now() - start > 15_000)
-						throw new Error("r2 S5 reconcile never held");
-					await new Promise((r) => setTimeout(r, 50));
-				}
-			}
-			await pageR.click("#newsession-btn");
-			await pageR.waitForSelector("#newsession-confirm:visible", {
-				timeout: 5_000,
-			});
-			await pageR.click("#newsession-go");
-			check(
-				"r2 A adopts S6 off the stream",
-				await rOk(
-					page.waitForFunction(
-						() =>
-							(window as unknown as Record<string, unknown>)[
-								"__mainSession"
-							] === "t50-s6",
-						undefined,
-						{ timeout: 15_000 },
-					),
-				),
-			);
-			// The stale adopt self-heals its id (its own loadHistory
-			// re-reads current), so only the adopted generation betrays
-			// it: gated stays, ungated drops to the stale pair's.
-			const genBefore = await rMainGenOf(page);
-			releaseR();
-			await new Promise((r) => setTimeout(r, 750));
-			check(
-				"r2 stale reconcile keeps the adopted generation",
-				(await rMainGenOf(page)) === genBefore,
-				`gen=${await rMainGenOf(page)} before=${genBefore}`,
-			);
-			check(
-				"r2 stale reconcile keeps the current main id",
-				(await rMainOf(page)) === "t50-s6",
-			);
-			check(
-				"r2 stale reconcile keeps the current transcript",
-				!((await page.locator("#pane-chat").textContent()) ?? "").includes(
-					"R2-S5B-MARKER",
-				),
-			);
-			await page.screenshot({
-				path: path.join(OUT, "60-r2-stale-response.png"),
-			});
-			await page.unroute("**/api/chat/history");
-
 			// Quiescence before the stop (mirrors the T60 block).
 			await page.evaluate(async () => {
 				await Promise.all(
@@ -5556,14 +5570,12 @@ try {
 		}
 	});
 
-	// Round 3 (P1-A/P1-B): a deferred adoption follows the server, and an
-	// accepted history advances the generation atomically.
-	// P1-A: B defers S2 while a turn runs, drops again, misses the
-	// completion; the next reconnect adopts AND clears the pending Send
-	// lock (base: adopts but Send stays hidden forever).
-	// P1-B: S2's history held, S3's history loaded while deaf, S2's
-	// released — the tab stays on S3 with only S3's markers (base: the
-	// stale S2 appends and steals the id). Screenshots 61-63.
+	// Stale-banner + S1 + P1-B legs on the scriptable fake. B drops its
+	// stream, A swaps S1->S2, B reconnects onto the banner and Loads
+	// current explicitly; a held idle boot history released after a send
+	// never hides Stop (S1); S2's history held, S3's history loaded while
+	// deaf, S2's released — the tab stays on S3 with only S3's markers
+	// (P1-B generation gate). Screenshots 61-63.
 	const r3 = stubT50Bin();
 	await withT50Env(r3.log, async () => {
 		const srv3 = await startServer({
@@ -5649,9 +5661,7 @@ try {
 				await sAgent(page3, "R3-S1-MARKER"),
 			);
 
-			// P1-A: B deaf, A swaps S1->S2 and marks it, B reconnects with
-			// its reconcile history held until S2's live turn/started
-			// reaches the fresh stream — the adoption must defer.
+			// SSE drop, swap, reconnect: B banners and Loads current.
 			await page3.evaluate(() => window.__smoke?.dropStream());
 			await page.click("#newsession-btn");
 			await page.waitForSelector("#newsession-confirm:visible", {
@@ -5663,108 +5673,126 @@ try {
 				undefined,
 				{ timeout: 15_000 },
 			);
+			// The adopting flag still owns the composer until the swap
+			// settles — the empty transcript alone doesn't prove it.
+			await sOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
 			await page.fill("#chatinput", "R3-S2-MARKER");
 			await page.press("#chatinput", "Enter");
 			check("r3 S2 marker lands", await sAgent(page, "R3-S2-MARKER"));
 			await sIdle(page);
-			let releaseR3!: () => void;
-			const r3Gate = new Promise<void>((r) => {
-				releaseR3 = r;
-			});
-			let heldR3 = false;
-			await page3.route("**/api/chat/history", async (route) => {
-				// Gate before fetching: the released response must reflect
-				// the live turn (round 3 follows the server's running flag).
-				if (!heldR3) {
-					heldR3 = true;
-					await r3Gate;
-				}
-				const res = await route.fetch();
-				await route.fulfill({ response: res });
-			});
 			await page3.evaluate(() => window.__smoke?.reconnectStream());
-			await page.fill("#chatinput", "NEED-APPROVAL r3 live");
-			await page.click("#sendbtn");
-			await page.waitForSelector(".appr-card.hold-pending", {
-				timeout: 15_000,
-			});
 			check(
-				"r3 reconnecting tab sees the live turn",
+				"r3 reconnected tab banners on the missed swap",
+				await sOk(
+					page3.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"r3 reconnected tab keeps the old transcript",
+				((await page3.locator("#pane-chat").textContent()) ?? "").includes(
+					"R3-S1-MARKER",
+				),
+			);
+			await page3.screenshot({ path: path.join(OUT, "61-r3-banner.png") });
+			await page3.click("#stalemain-load");
+			check(
+				"r3 Load current shows the new transcript",
+				await sAgent(page3, "R3-S2-MARKER", 10_000),
+			);
+			check(
+				"r3 Load current clears the banner and enables Send",
 				await sOk(
 					page3.waitForFunction(
 						() => {
-							const b = document.getElementById(
-								"stopbtn",
+							const b = document.getElementById("stalemain");
+							const s = document.getElementById(
+								"sendbtn",
 							) as HTMLButtonElement | null;
-							return b !== null && b.style.display !== "none";
+							return (
+								b !== null &&
+								b.style.display === "none" &&
+								s !== null &&
+								s.style.display !== "none" &&
+								!s.disabled
+							);
 						},
 						undefined,
 						{ timeout: 15_000 },
 					),
 				),
 			);
-			releaseR3();
+
+			// S1: a held idle boot history released after a send never
+			// hides Stop. The hold fetches first (an idle snapshot, the
+			// server is quiet), then gates the fulfill past the send.
+			let releaseS1!: () => void;
+			const s1Gate = new Promise<void>((r) => {
+				releaseS1 = r;
+			});
+			let heldS1 = false;
+			let hitS1 = false;
+			await page.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldS1) {
+					heldS1 = true;
+					hitS1 = true;
+					await s1Gate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page.reload({ waitUntil: "load" });
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			{
+				const start = Date.now();
+				while (!hitS1) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r3 S1 boot history never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			// A held turn: a plain turn would complete inside the
+			// release window and idle honestly, proving nothing.
+			await page.fill("#chatinput", "HOLD-OPEN S1-PROBE");
+			await page.press("#chatinput", "Enter");
+			check(
+				"r3 send lands while boot history is held",
+				await sOk(
+					page.waitForSelector("#stopbtn:visible", { timeout: 15_000 }),
+				),
+			);
+			releaseS1();
 			await new Promise((r) => setTimeout(r, 750));
 			check(
-				"r3 pending keeps the old transcript mid-stream",
-				((await page3.locator("#pane-chat").textContent()) ?? "").includes(
-					"R3-S1-MARKER",
-				),
+				"r3 stale idle snapshot keeps Stop up",
+				(await page.locator("#stopbtn:visible").count()) === 1 &&
+					(await page.locator("#sendbtn:visible").count()) === 0,
 			);
-			await page3.unroute("**/api/chat/history");
-			await page3.screenshot({ path: path.join(OUT, "61-r3-pending.png") });
-
-			// P1-A: B drops again while still pending, misses the
-			// completion, reconnects. The server is idle: B adopts S2
-			// AND Send comes back (base: Send stays hidden forever).
-			await page3.evaluate(() => window.__smoke?.dropStream());
-			await page
-				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
-				.first()
-				.click();
+			await page.screenshot({ path: path.join(OUT, "62-r3-s1-stop.png") });
+			await page.unroute("**/api/chat/history");
+			await page.click("#stopbtn");
 			await sIdle(page);
-			await page3.evaluate(() => window.__smoke?.reconnectStream());
-			check(
-				"r3 second reconnect adopts the current main id",
-				await sOk(
-					page3.waitForFunction(
-						() =>
-							(window as unknown as Record<string, unknown>)[
-								"__mainSession"
-							] === "t50-s2",
-						undefined,
-						{ timeout: 15_000 },
-					),
-				),
-			);
-			check(
-				"r3 second reconnect shows the new transcript",
-				await sAgent(page3, "R3-S2-MARKER", 10_000),
-			);
-			check(
-				"r3 second reconnect brings Send back",
-				await sOk(
-					page3.waitForSelector("#sendbtn:visible", { timeout: 10_000 }),
-				),
-			);
-			await page3.fill("#chatinput", "R3-NEXT-ON-S2");
-			await page3.press("#chatinput", "Enter");
-			check(
-				"r3 next send dispatches on the adopted main",
-				await sAgent(page3, "R3-NEXT-ON-S2"),
-			);
-			// Non-fatal quiescence: on the pre-fix client Send never comes
-			// back, and P1-B below must still run (it reloads B fresh).
-			await sOk(sIdle(page3));
-			check("r3 adopted main id is S2", (await sMainOf(page3)) === "t50-s2");
-			await page3.screenshot({ path: path.join(OUT, "62-r3-readopted.png") });
+			check("r3 held send still echoes", await sAgent(page, "S1-PROBE"));
 
 			// P1-B (reviewer's repro): hold S2's initial history, load S3's
 			// history while SSE is down, release S2's — B stays on S3
-			// with only S3's markers. SSE stays aborted from boot so no
-			// reconcile adoption can mask the loadHistory generation
-			// gate; the S3 load goes through the seam (no adopt, no
-			// reload, so the held S2 still lands afterwards).
+			// with only S3's markers. SSE stays hung from boot so the tab
+			// never hears the swap; the S3 load goes through the seam
+			// (render-only, so the held S2 still lands afterwards).
 			// Deafen by hanging the stream request: no response, no error,
 			// no open — the tab stays deaf with a clean console.
 			await page3.route("**/api/chat/events", async () => {
@@ -5852,7 +5880,288 @@ try {
 		}
 	});
 
-	// T89: expected-error exceptions are route-specific. The nine
+	// Worker-kill legs on the scriptable fake. A live turn runs with two
+	// tabs watching; SIGKILL the worker: every tab gets run/state (Stop
+	// hidden, Send back, dead prompts settled), the next send 409s onto
+	// the banner (the respawned main is a new session), and Load current
+	// + send recover cleanly. Screenshots 64-65.
+	const kk = stubT50Bin();
+	await withT50Env(kk.log, async () => {
+		const srvK = await startServer({
+			dataHome: mktmp("ui-smoke-kill-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: kk.bin,
+		});
+		const pageK = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		pageK.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		pageK.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		pageK.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srvK.url, { waitUntil: "load" });
+			const batchK = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const kIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const kAgent = (pg: Page, probe: string, ms = 30_000): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const kOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			const kStopHidden = (pg: Page): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						() => {
+							const b = document.getElementById(
+								"stopbtn",
+							) as HTMLButtonElement | null;
+							return b === null || b.style.display === "none";
+						},
+						undefined,
+						{ timeout: 15_000 },
+					)
+					.then(() => true)
+					.catch(() => false);
+
+			// A seeds S1, swaps to S2 and marks it; K loads onto S2; a held
+			// turn goes live on both. (S2, not S1: the fake mints session
+			// ids per worker, so the respawned worker's first session would
+			// collide with a pinned S1 and the post-kill send wouldn't 409.)
+			await page.fill("#chatinput", "KILL-S1-SEED");
+			await page.press("#chatinput", "Enter");
+			check("kill first exchange lands", await kAgent(page, "KILL-S1-SEED"));
+			await kIdle(page);
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await kOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
+			await page.fill("#chatinput", "KILL-S2-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("kill S2 marker lands", await kAgent(page, "KILL-S2-MARKER"));
+			await kIdle(page);
+			await pageK.goto(srvK.url, { waitUntil: "load" });
+			await pageK.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageK.reload({ waitUntil: "load" });
+			await pageK.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"kill K shows S2 without sending",
+				await kAgent(pageK, "KILL-S2-MARKER"),
+			);
+			await page.fill("#chatinput", "NEED-APPROVAL kill live");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"kill both tabs show Stop for the live turn",
+				(await page.locator("#stopbtn:visible").count()) === 1 &&
+					(await pageK.locator("#stopbtn:visible").count()) === 1,
+			);
+
+			// Raw SSE witness (node side): the broadcast itself, not just
+			// its UI shadow.
+			const sseMethods: string[] = [];
+			const stream = await fetch(`${srvK.url}api/chat/events`);
+			if (!stream.body) throw new Error("kill leg: no SSE body");
+			const reader = stream.body.getReader();
+			const decoder = new TextDecoder();
+			let sseBuf = "";
+			let sseOpen = true;
+			const pump = (async () => {
+				while (sseOpen) {
+					const { done, value } = await reader.read();
+					if (done) return;
+					sseBuf += decoder.decode(value, { stream: true });
+					for (;;) {
+						const idx = sseBuf.indexOf("\n\n");
+						if (idx < 0) break;
+						const frame = sseBuf.slice(0, idx);
+						sseBuf = sseBuf.slice(idx + 2);
+						for (const line of frame.split("\n")) {
+							if (!line.startsWith("data: ")) continue;
+							try {
+								const evt = JSON.parse(line.slice("data: ".length)) as Record<
+									string,
+									unknown
+								>;
+								if (typeof evt["method"] === "string")
+									sseMethods.push(evt["method"]);
+							} catch {
+								// ignore partial frames
+							}
+						}
+					}
+				}
+			})();
+
+			// Kill the worker under the live turn. /api/status probes
+			// (`muse --version` through the shim) log their own SPAWN lines
+			// and exit at once, so the victim is the last SPAWN pid that
+			// is still alive — never the last line.
+			const pids = [
+				...nodeFs.readFileSync(kk.log, "utf8").matchAll(/SPAWN pid=(\d+)/g),
+			].map((m) => Number(m[1]));
+			const alive = pids.filter((pid) => {
+				try {
+					process.kill(pid, 0);
+					return true;
+				} catch {
+					return false;
+				}
+			});
+			const victim = alive.at(-1);
+			if (!victim) throw new Error("kill leg: no live worker pid in log");
+			process.kill(victim, "SIGKILL");
+			{
+				const start = Date.now();
+				while (!sseMethods.includes("run/state")) {
+					if (Date.now() - start > 15_000)
+						throw new Error(
+							`kill leg: no run/state in ${sseMethods.join(",")}`,
+						);
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			check("kill run/state broadcasts", sseMethods.includes("run/state"));
+			check("kill A hides Stop", await kStopHidden(page));
+			check("kill K hides Stop", await kStopHidden(pageK));
+			check(
+				"kill both tabs get Send back",
+				(await page.locator("#sendbtn:visible").count()) === 1 &&
+					!(await page.locator("#sendbtn").isDisabled()) &&
+					(await pageK.locator("#sendbtn:visible").count()) === 1 &&
+					!(await pageK.locator("#sendbtn").isDisabled()),
+			);
+			await page.screenshot({ path: path.join(OUT, "64-kill-runstate.png") });
+
+			// The next send respawns onto a new main: 409, draft kept,
+			// banner up — then Load current + send recover cleanly.
+			await page.fill("#chatinput", "KILL-PROBE");
+			await page.press("#chatinput", "Enter");
+			check(
+				"kill stale send restores the draft",
+				await kOk(
+					page.waitForFunction(
+						() =>
+							(document.getElementById("chatinput") as HTMLInputElement | null)
+								?.value === "KILL-PROBE",
+						undefined,
+						{ timeout: 10_000 },
+					),
+				),
+			);
+			check(
+				"kill stale send raises the banner",
+				await kOk(
+					page.waitForSelector("#stalemain:visible", { timeout: 10_000 }),
+				),
+			);
+			await page.click("#stalemain-load");
+			// The banner clears only after the whole load settles, so its
+			// absence — not the synchronous message clear — gates the send.
+			check(
+				"kill Load current lands on the respawned main",
+				await kOk(
+					page.waitForFunction(
+						() =>
+							document.getElementById("stalemain")?.style.display === "none" &&
+							document.querySelectorAll("#pane-chat .msg").length === 0,
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			await page.fill("#chatinput", "KILL-AFTER");
+			await page.press("#chatinput", "Enter");
+			check("kill send works after recovery", await kAgent(page, "KILL-AFTER"));
+			await kIdle(page);
+			await page.screenshot({ path: path.join(OUT, "65-kill-recovered.png") });
+
+			sseOpen = false;
+			try {
+				await reader.cancel();
+			} catch {
+				// already closed
+			}
+			await pump;
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchK;
+		} finally {
+			await pageK.close();
+			await srvK.stop();
+		}
+	});
+
+	// T89: expected-error exceptions are route-specific. The ten
 	// deliberate failures (each leg asserts its own honest UI above):
 	// - fake-ref open-in-tab: GET /api/chat/output -> 400 (MspError)
 	// - wrong-password unlock: POST /api/auth/unlock -> 401
@@ -5863,6 +6172,7 @@ try {
 	// - swap while running (T60 leg): POST /api/chat/new -> 409
 	// - resume while running (T60 leg): POST /api/chat/resume -> 409
 	// - stale-tab send (swap-review leg): POST /api/chat/send -> 409 main-changed
+	// - post-kill send (worker-kill leg): POST /api/chat/send -> 409 main-changed
 	// Query strings are ignored in the path match (the fake ref carries
 	// query params); match on pathname only.
 	const EXPECTED_FAILED: FailedResponse[] = [
@@ -5883,6 +6193,7 @@ try {
 		},
 		{ status: 500, method: "POST", pathname: "/api/chat/send" },
 		{ status: 403, method: "POST", pathname: "/api/chat/send" },
+		{ status: 409, method: "POST", pathname: "/api/chat/send" },
 		{ status: 409, method: "POST", pathname: "/api/chat/send" },
 	];
 	const failedKey = (f: FailedResponse): string =>

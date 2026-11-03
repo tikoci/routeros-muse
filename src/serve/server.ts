@@ -889,6 +889,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// so Force can wait instead of claiming a ghost.
 	type PendingStart = {
 		worker: Promise<MspClient> | null;
+		client: MspClient;
 		completedIds: Set<string>;
 		untypedCompleted: boolean;
 		stopQueued: boolean;
@@ -896,10 +897,27 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		resolveDone: () => void;
 	};
 	let pendingStart: PendingStart | null = null;
+	// S3: a turn/start whose ack never answered (timeout, not a host
+	// refusal) while its worker stayed alive. The turn may be live on
+	// the worker, so the run is unresolved — history reports running
+	// until a force-stop teardown resolves it — and Stop/Force route
+	// through teardown instead of the (unknown) turn id.
+	type UnresolvedStart = {
+		worker: Promise<MspClient> | null;
+		client: MspClient;
+	};
+	let unresolvedStart: UnresolvedStart | null = null;
 	/** The live-run state /api/chat/stop uses, for history + swap answers. */
 	function liveRun(): { running: boolean; turnId: string | null } {
 		const pending = pendingStart !== null && pendingStart.worker === mspPromise;
-		return { running: lastTurnId !== null || pending, turnId: lastTurnId };
+		const unresolved =
+			unresolvedStart !== null && unresolvedStart.worker === mspPromise;
+		// While unresolved the tracked id is the previous turn's (the
+		// live turn, if any, never acked an id) — report unknown.
+		return {
+			running: lastTurnId !== null || pending || unresolved,
+			turnId: unresolved ? null : lastTurnId,
+		};
 	}
 	// T60/T85 lifecycle lock: send holds it from main-resolve to
 	// turn-start ack; a main swap (new/resume) holds it from the busy
@@ -1179,7 +1197,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	 * child left. Past chats survive in the muse session store and
 	 * resume from there (T60 seam).
 	 */
-	async function stopWorker(): Promise<void> {
+	async function stopWorker(
+		reason = "worker-stopped",
+		broadcast = true,
+	): Promise<void> {
 		const prev = mspPromise;
 		mspPromise = null;
 		mspOwner = null;
@@ -1194,6 +1215,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			pendingStart = null;
 			p.resolveDone();
 		}
+		// S3: an unresolved start dies with the worker it was captured on.
+		unresolvedStart = null;
 		// T81: only a published session dies with its worker. An
 		// in-flight reservation (mainSettled false) survives the
 		// stop, so its guard adopts the live generation instead of
@@ -1221,12 +1244,33 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		settingsStamp = null;
 		sessionStartedAt = null;
 		if (prev) {
+			// run/state: every tab clears its running UI on this (Stop
+			// hidden, Send back unless its main went stale). Only when a
+			// worker actually went away — first-spawn calls with nothing
+			// cached stay silent — and never on server shutdown (the
+			// listener is already down; tabs must not chase the broadcast
+			// with stats/pending fetches against it).
+			if (broadcast)
+				emit({ method: "run/state", params: { running: false, reason } });
 			try {
 				await (await prev).close();
 			} catch {
 				// already gone; the verdict stands
 			}
 		}
+	}
+
+	/**
+	 * The worker exited on its own (crash, kill, EOF): invalidate the
+	 * cached worker/main exactly like an intentional stop, so the next
+	 * history/send spawns fresh instead of timing out on the corpse,
+	 * and broadcast run/state so tabs clear their running UI. The
+	 * mspPromise guard keeps exactly one emit: an intentional stopWorker
+	 * nulls first, so a trailing exit lands here as a no-op.
+	 */
+	function handleWorkerExit(worker: Promise<MspClient>, reason: string): void {
+		if (mspPromise !== worker) return;
+		void stopWorker(reason);
 	}
 
 	/**
@@ -1336,7 +1380,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// New owner (or first spawn): stop any previous worker, then
 		// spawn under the new owner's unlock context. stopWorker's
 		// sync prefix runs now (captures + nulls); the spawn waits it.
-		const stopping = stopWorker();
+		const stopping = stopWorker("takeover");
 		mspOwner = key;
 		// T71: every spawn/takeover starts a new run generation (the
 		// stopWorker above already bumped for the teardown; this bump is
@@ -1391,6 +1435,14 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				return client;
 			})();
 			mspPromise = spawned;
+			// A worker that dies on its own invalidates + broadcasts
+			// (run/state) instead of lingering as a corpse that times
+			// out later view/page calls.
+			spawned.then(
+				(client) =>
+					client.onExit(() => handleWorkerExit(spawned, "worker-exited")),
+				() => {},
+			);
 			spawned.catch(() => {
 				if (mspPromise === spawned) mspPromise = null;
 			});
@@ -1543,6 +1595,16 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				status: 409,
 				error: "turn-running",
 				why: "a turn is still running — press Stop first, then switch sessions",
+			};
+		}
+		// S3: an unresolved start may hold a live turn on the worker —
+		// swapping under it would orphan the turn onto a past session.
+		if (unresolvedStart !== null && unresolvedStart.worker === mspPromise) {
+			return {
+				ok: false,
+				status: 409,
+				error: "turn-running",
+				why: "a turn start never answered — press Stop first, then switch sessions",
 			};
 		}
 		if (stopInFlight > 0) {
@@ -2083,7 +2145,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// P1-3: queued work on the lifecycle lock invalidates
 						// deterministically instead of respawning this owner.
 						ownerGeneration += 1;
-						await stopWorker();
+						await stopWorker("locked");
 					}
 					return new Response(JSON.stringify({ ok: true }), {
 						headers: {
@@ -2857,7 +2919,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								{
 									ok: false,
 									error: "main-changed",
-									why: "the main session changed — your draft was kept and the chat reloaded; send again",
+									why: "the main session changed — your draft was kept; load the current chat, then send again",
 									sessionId: sid,
 									generation: runGeneration,
 									running: run.running,
@@ -2880,6 +2942,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							});
 							const pending: PendingStart = {
 								worker: mspPromise,
+								client,
 								completedIds: new Set(),
 								untypedCompleted: false,
 								stopQueued: false,
@@ -2896,6 +2959,25 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							} catch (err) {
 								if (pendingStart === pending) pendingStart = null;
 								resolveDone();
+								if (!(err instanceof MspError)) {
+									// S3: an ambiguous ack failure (timeout) on
+									// a live worker — the turn may have
+									// started. Keep the run unresolved instead
+									// of clearing to idle; a dead worker needs
+									// no marker (the exit watcher answers).
+									let alive = false;
+									try {
+										alive = !(await client.waitForExit(0));
+									} catch {
+										alive = false;
+									}
+									if (alive && mspPromise === pending.worker) {
+										unresolvedStart = {
+											worker: pending.worker,
+											client,
+										};
+									}
+								}
 								throw err;
 							}
 							// Reconcile before installing: a completion
@@ -2950,18 +3032,14 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// T71 graceful stop: pinned interrupt, capped at 10s. Every
 					// answer carries the correlation IDs (turnId + generation)
 					// so the UI can pin a later Force stop to this moment.
-					const client = msp;
-					const sid = mainSession;
-					const turnId = lastTurnId;
+					// S2: a pending start wins over any tracked turn — the
+					// tracked id is the previous turn's, and interrupting
+					// it would miss the turn that is actually starting.
 					const pending = pendingStart;
-					if (
-						(!client || !sid || !turnId) &&
-						pending !== null &&
-						pending.worker === mspPromise
-					) {
-						// Round 3 (P2-D): no live turn yet, but a turnStart is
-						// in flight — record the stop; the send interrupts on
-						// ack through the T71 path above.
+					if (pending !== null && pending.worker === mspPromise) {
+						// Round 3 (P2-D): a turnStart is in flight — record
+						// the stop; the send interrupts on ack through the
+						// T71 path above.
 						pending.stopQueued = true;
 						return json({
 							ok: true,
@@ -2971,6 +3049,24 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							generation: runGeneration,
 						});
 					}
+					// S3: the start never answered and its turn id is
+					// unknown — nothing to interrupt; the UI offers Force
+					// (worker teardown) off this answer.
+					if (
+						unresolvedStart !== null &&
+						unresolvedStart.worker === mspPromise
+					) {
+						return json({
+							ok: true,
+							stopped: false,
+							turnId: null,
+							generation: runGeneration,
+							why: "the turn start never answered — Force stop tears the worker down",
+						});
+					}
+					const client = msp;
+					const sid = mainSession;
+					const turnId = lastTurnId;
 					if (!client || !sid || !turnId) {
 						return json({
 							ok: true,
@@ -3051,6 +3147,50 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								generation: runGeneration,
 							});
 						}
+						// EOF→TERM→KILL teardown shared by the interrupt-stage
+						// fallback below and the unknown-turn-id paths (S3):
+						// each stage waits ≤5s for the exit. Returns the
+						// killing step, or null when the worker survived
+						// SIGKILL.
+						const escalateTeardown = async (
+							target: MspClient,
+						): Promise<"exit" | "term" | "kill" | null> => {
+							target.stdinEof();
+							if (await target.waitForExit(5000)) return "exit";
+							target.kill("SIGTERM");
+							if (await target.waitForExit(5000)) return "term";
+							target.kill("SIGKILL");
+							if (await target.waitForExit(5000)) return "kill";
+							return null;
+						};
+						// S3: the turn id is unknown (a start that never
+						// acked) — the only honest stop is tearing the
+						// captured worker down. Reaps + retires the pin on
+						// success like every other effective force stop.
+						const teardownUnknownTurn = async (target: {
+							worker: Promise<MspClient> | null;
+							client: MspClient;
+						}): Promise<Response> => {
+							const mine = mspPromise;
+							const step = await escalateTeardown(target.client);
+							if (step === null) {
+								return json({
+									ok: false,
+									why: "worker survived SIGKILL",
+									turnId: lastTurnId,
+									generation: runGeneration,
+								});
+							}
+							if (mspPromise === mine) await stopWorker("force-stop");
+							if (mspPromise === mine) runGeneration += 1;
+							return json({
+								ok: true,
+								forced: true,
+								step,
+								turnId: lastTurnId,
+								generation: runGeneration,
+							});
+						};
 						const pending = pendingStart;
 						if (pending !== null && pending.worker === mspPromise) {
 							// Round 3 (P2-D): a turnStart is in flight — wait
@@ -3066,12 +3206,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									() => new Error("start timed out"),
 								);
 							} catch {
-								return json({
-									ok: false,
-									why: "the turn is still starting — retry",
-									turnId: lastTurnId,
-									generation: runGeneration,
-								});
+								// S3: still starting after 10s — the turn id
+								// is unknown and may stay unknown (the ack
+								// can time out at 30s). Tear the captured
+								// worker down; a retry loop would just wait
+								// out the timeout and then lie idle.
+								if (body.generation !== runGeneration) {
+									return json({
+										ok: false,
+										code: "stale-generation",
+										why: "run changed since Stop was pressed",
+										turnId: lastTurnId,
+										generation: runGeneration,
+									});
+								}
+								return await teardownUnknownTurn(pending);
 							}
 							if (body.generation !== runGeneration) {
 								return json({
@@ -3082,6 +3231,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									generation: runGeneration,
 								});
 							}
+						}
+						const stuck = unresolvedStart;
+						if (stuck !== null && stuck.worker === mspPromise) {
+							// S3: the start never answered — there is no
+							// interrupt to send. History stays running until
+							// this teardown resolves.
+							return await teardownUnknownTurn(stuck);
 						}
 						const client = msp;
 						const sid = mainSession;
@@ -3149,7 +3305,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							// standard teardown only when the worker is actually
 							// gone (close on a dead worker resolves promptly).
 							if (stillMine() && (await client.waitForExit(0))) {
-								await stopWorker();
+								await stopWorker("force-stop");
 							} else if (stillMine() && lastTurnId === turnId) {
 								lastTurnId = null;
 							}
@@ -3163,52 +3319,25 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								generation: runGeneration,
 							});
 						}
-						// Stage 2: stdin EOF with a ≤5s exit wait. close() itself
-						// waits unboundedly, so EOF + bounded wait are spelled out.
-						client.stdinEof();
-						if (await client.waitForExit(5000)) {
-							if (stillMine()) await stopWorker();
-							if (changedMidForce()) return changedAnswer();
-							if (stillMine()) runGeneration += 1;
+						// Stages 2-4: stdin EOF, SIGTERM, SIGKILL with ≤5s exit
+						// waits each. close() itself waits unboundedly, so EOF
+						// + bounded wait are spelled out in the shared helper.
+						const step = await escalateTeardown(client);
+						if (step === null) {
 							return json({
-								ok: true,
-								forced: true,
-								step: "exit",
+								ok: false,
+								why: "worker survived SIGKILL",
 								turnId: lastTurnId,
 								generation: runGeneration,
 							});
 						}
-						// Stage 3: SIGTERM + ≤5s.
-						client.kill("SIGTERM");
-						if (await client.waitForExit(5000)) {
-							if (stillMine()) await stopWorker();
-							if (changedMidForce()) return changedAnswer();
-							if (stillMine()) runGeneration += 1;
-							return json({
-								ok: true,
-								forced: true,
-								step: "term",
-								turnId: lastTurnId,
-								generation: runGeneration,
-							});
-						}
-						// Stage 4: SIGKILL + ≤5s.
-						client.kill("SIGKILL");
-						if (await client.waitForExit(5000)) {
-							if (stillMine()) await stopWorker();
-							if (changedMidForce()) return changedAnswer();
-							if (stillMine()) runGeneration += 1;
-							return json({
-								ok: true,
-								forced: true,
-								step: "kill",
-								turnId: lastTurnId,
-								generation: runGeneration,
-							});
-						}
+						if (stillMine()) await stopWorker("force-stop");
+						if (changedMidForce()) return changedAnswer();
+						if (stillMine()) runGeneration += 1;
 						return json({
-							ok: false,
-							why: "worker survived SIGKILL",
+							ok: true,
+							forced: true,
+							step,
 							turnId: lastTurnId,
 							generation: runGeneration,
 						});
@@ -4153,7 +4282,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			clearInterval(hb);
 			relay.stop();
 			server.stop();
-			await stopWorker();
+			await stopWorker("shutdown", false);
 		},
 	};
 }
