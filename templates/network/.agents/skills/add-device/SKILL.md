@@ -24,9 +24,10 @@ owner's dialog), never ask for a password at any step.
 
 ### 0. Check (duplicate-first, read-only)
 
-- `centrs devices list --json` on the CLI (seeded shell
-  rules cover reads — routine device work goes through the
-  CLI, not MCP tools): if the host is already a target, stop
+- `centrs devices list --json` on the CLI (routine device
+  work goes through the CLI, not MCP tools; it is not in the
+  seeded read set, so the owner may be asked to approve it
+  once): if the host is already a target, stop
   and open that card instead of adding. Same rule for
   `router.toml`: a `[device]` with that host or id means it
   is already registered.
