@@ -406,10 +406,10 @@ id = "T41"
 title = "Renderer: T3 patterns plus template-declared JS"
 status = "needed"
 detail = "Port T3 transcript-UX patterns into the vanilla stack per T42 findings; template-declared JS/CSS needs manifest (markdown, mermaid, monaco first). Developer 2026-11-02: skipped for now (design pass cancelled before it produced anything); revisit later."
-evidence = "T42 landed (notes/t42-t3-ux.md schemes); chat-window behavior inventory in notes/t41-chat-inventory.md (GAP6 reply chrome plus GAP7 work-group grouping fold into this task); T62 row-system inputs in notes/t62-resweep.md (15-kind union, grouping, stable identity; last-ready claim NOT verified, do not build on it); T80 review: D17 artifact viewer and offline topology dependency now explicit in T83; keep transcript work distinct from actual artifact display."
+evidence = "T42 landed (notes/t42-t3-ux.md schemes); chat-window behavior inventory in notes/t41-chat-inventory.md (GAP6 reply chrome plus GAP7 work-group grouping fold into this task); T62 row-system inputs in notes/t62-resweep.md (15-kind union, grouping, stable identity; last-ready claim NOT verified, do not build on it); T80 review: D17 artifact viewer and offline topology dependency now explicit in T83; keep transcript work distinct from actual artifact display. Developer agenda 2026-11-03: basic chat markdown carved out as T141 (shared safe renderer) and panel markdown view as T142; end-of-turn emphasis (GAP6-adjacent) as T140. This task remains the larger template-declared renderer design."
 blocked_by = ["T42", "T37"]
 agent = ""
-updated = "2026-11-02"
+updated = "2026-11-03"
 
 [[task]]
 id = "T44"
@@ -466,10 +466,10 @@ id = "T47"
 title = "Device health plus access mode: reachability and RO/RW display"
 status = "needed"
 detail = "Device cards check reachability via centrs (human and agent both see it, including the no-password case) and show RO/RW mode. Needs a spike first: which centrs surface owns reachability plus access level per D23."
-evidence = "user report 2026-11-01"
+evidence = "user report 2026-11-01; developer agenda 2026-11-03: per-device stats tab (resources, warning/error logs, routes, addresses, webfig link) filed as T145; reachability plus RO/RW display stays here."
 blocked_by = []
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-03"
 
 [[task]]
 id = "T48"
@@ -951,7 +951,7 @@ scope_bridge = "Proposed browser emulator (e.g. xterm.js plus fit addon, bundled
 acceptance = "Real-router-first slice after T86/D49 uses the real-device, authentication, lifecycle, confinement and mode checks below without waiting on C24. If optional centrs-CHR support is selected, require C24 and a disposable-CHR SSH round trip with real keystrokes, Tab/help, Ctrl-C, password/key prompts, initial size and resize/reveal, disconnect/reconnect, multiple independent target panes, repeat-open deduplication and bounded output. Encrypted-CDB real-device selector path with fixture plus owner-approved/read-only real-router terminal check; trusted-L2 MAC-Telnet proof if included in first release. Unauthenticated/cross-origin/foreign-session sockets and unknown targets refused before spawn; lock, expiry, socket loss, tab close, unpinned replacement and server shutdown leave no centrs/ssh descendants. Sweep all capability/no-workspace modes and clean console; make gate and records check. Mac-first platform evidence required, Windows separate. Wire contracts require captures when implemented."
 scope_options = "T116 developer follow-up: CHR support may be omitted from the first T95 slice. Real-device-first terminal through centrs can proceed after T86/D49 without C24; C24 gates only optional centrs-provider CHR support. Alternate optional CHR adapter: quickchr console <name> or the public QuickCHR.get(name).serial() streams, with the same pinned tab UX and no automatic start. This is an explicit quickchr-owned serial transport option to investigate, not a Muse-side workaround for centrs endpoint resolution. No adapter selected or implemented."
 console_homework = "Installed quickchr 0.5.4 and sibling 6465b5f expose console CLI and ChrInstance.serial() readable/writable streams. CLI attach requires an interactive TTY, attaches to an already-running background machine, nudges with CR and Ctrl-A X detaches. CLI Ctrl-A C also exposes QEMU monitor (quit can stop the VM), so a RouterOS-only tab should prefer evaluating the public serial stream API rather than exposing the entire CLI mux. This could avoid a local PTY for the CHR adapter only. Source notes guest serial login can survive host disconnect: teardown is not logout or credential revocation. Before selecting it, prove fresh/already-authenticated login behavior, stream cancellation/socket cleanup, competing attachments/agent serial access, VM-stop/restart, resize behavior and supported platforms on a disposable CHR. None was live-probed in T116. Do not use start --fg as attach: lifecycle paths can launch/relaunch the VM."
-pending = "D49 records proposed unpin/replacement and direct-console access policy for developer review. Actual browser/PTY/centrs interoperability, SSH resize/line editing, platform behavior, real-router auth and CHR provider/serial behavior remain unproven in Muse; upstream existing CHR-passed matrix is source evidence only. SSH terminal does not automatically use a CDB record password; owner prompts or SSH agent/key must work. Do not advertise centrs execute validation/confirmation as guarding raw terminal input. C24 bug filed as https://github.com/tikoci/centrs/issues/610; CHR support is optional, not a blocker for the first real-router slice."
+pending = "D49 records proposed unpin/replacement and direct-console access policy for developer review. Actual browser/PTY/centrs interoperability, SSH resize/line editing, platform behavior, real-router auth and CHR provider/serial behavior remain unproven in Muse; upstream existing CHR-passed matrix is source evidence only. SSH terminal does not automatically use a CDB record password; owner prompts or SSH agent/key must work. Do not advertise centrs execute validation/confirmation as guarding raw terminal input. C24 bug filed as https://github.com/tikoci/centrs/issues/610; CHR support is optional, not a blocker for the first real-router slice. Developer agenda 2026-11-03: show the concept now via a coming-soon placeholder tab (T149); centrs is working on the terminal-to-quickchr bug (C24) now; SSH keys need more UX work and testing, so start the first real transport with MAC-Telnet (needs only the MAC address, no keys)."
 evidence = "T114 2026-11-02: bundled centrs 0.1.9-next.24 terminal --help reports SSH and MAC-Telnet; offline terminal --quickchr t95-scope-not-a-vm --json exits 1 with usage/fanout-not-supported (context.flag=--quickchr), same on sibling centrs 5112ed6. Source: centrs src/terminal.ts runTerminal uses injectable TerminalIo for MAC-Telnet but SSH inherits stdio; buildSshTerminalArgv omits BatchMode and never passes resolved password. docs/MATRIX.md marks both terminal transports CHR-passed (not re-run). quickchr docs/centrs-interface.md and centrs resolver/quickchr-provider.ts already define service-specific SSH endpoint/key/trust resolution for other commands. Bun 1.4.4 installed; bun-types exposes Terminal write/resize/close (not runtime-probed). UI src/serve/ui.html openSlot/wireWorkingTab/loadDevices/loadTwins inspected. Interactive illustrative sketch docs/concepts/t95-terminal-candidate.html; no device contacted or VM started."
 blocked_by = ["T86", "D49"]
 agent = ""
@@ -1335,6 +1335,182 @@ status = "needed"
 detail = "Executes D52 and absorbs T67. Bump @tikoci/centrs to 0.1.9 (#600/#582/#551) and refresh the lock. New workspaces are created encrypted: scaffold runs centrs devices init --encrypt with CENTRS_CDB_PASSWORD in the child env only (never argv, never logged, never in workspace files), keeping no-clobber and the existing rollback. CLI: init and start option 1 prompt on a TTY for template (minimal|network, default minimal, --template skips) and password (hidden, typed twice, non-empty); off a TTY --password-stdin, else an explicit --open-cdb escape; no silent open CDB. Browser picker: Create form gets template choice plus password and confirm; the server initializes encrypted, spawns routeros-muse start <dir> --no-open on a free port (detached from the request, logs bounded), waits for /api/status, returns the URL, and the browser navigates there and lands on the lock screen (no token, password never sent to the child). Existing open CDB overlay: Encrypt now (password plus confirm) runs centrs devices encrypt --no-backup, then shows the lock screen and warns about pre-existing device.cdb.bak.* plaintext copies. Missing-CDB workspace overlay: Create encrypted registry (password plus confirm, D32 scope: loopback, bound path, no clobber). Retire CDB_ENCRYPT_STEERING and the WinBox and tikoci/centrs#558 guidance. README quick start leads with the new flow."
 evidence = "developer agenda 2026-11-03: centrs#600 merged (2d523de), in npm @tikoci/centrs 0.1.9 (gitHead 0319296); repo pins next = 0.1.9-next.24 in bun.lock. Current flow: picker create returns a command to copy (server.ts /api/workspaces create), scaffold makes an open device.cdb, overlay steers to WinBox."
 acceptance = "Fail-first tests: encrypted scaffold (password only in env, 0600, rollback on centrs failure), TTY prompt and --password-stdin paths, picker create spawn plus redirect, encrypt-now with --no-backup, overlays. Hermetic (stub muse, temp dirs, real centrs against temp CDBs). Live sweep: bun run start from a non-workspace, create minimal and network workspaces through both the TTY and the picker, unlock at the lock screen, add a device with credentials, and confirm an agent-shell centrs read sees the encrypted CDB. Console clean, shots eyeballed. make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T134"
+title = "GitHub push gate: publish routeros-muse to public GitHub after T133 plus test sessions (D34)"
+status = "needed"
+detail = "Executes the D34 GitHub step. Developer 2026-11-03: GitHub was never the blocker, having no auth scheme was; T133 (encrypted new-workspace flow, centrs#600) closes that. Sequence: T133 lands, then a few developer test sessions on the new flow, then the D34 final local sweep (README/docs read well, basic path works) and a D1 privacy pass over history (no creds, tokens, serials, public IPs, people, locations; out/ captures never committed), then create the tikoci/routeros-muse remote and push. Developer pulls the trigger. T96 (de-lab template skills) already landed. T24 covers the owner-repo workflow, not this push."
+evidence = "agenda push gate (2026-11-03): developer agenda 2026-11-03 places the push after T133 and test sessions, before the UX items. D34 outcome: GitHub (public OK) waits on README/docs plus basic path, then final local sweep plus real test turns."
+acceptance = "T133 done; developer test sessions recorded in evidence; D1 history scan command plus output clean; make gate and records check pass on the pushed commit; remote URL recorded here."
+blocked_by = ["T133"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T135"
+title = "Light CRUD over the CDB in the UI: add, edit, remove devices directly"
+status = "needed"
+detail = "Developer 2026-11-03: light CRUD over the CDB in the UI; Add device no longer goes through chat, it creates the device directly. Today the left-panel Add Device button injects a chat prompt (src/serve/ui.html adddevice handler: Settled: Add Device is an idle-time prompt injection, not a form) and the only direct writes are the T110 add dialog (agent-opened via ui_add_device) and the T48 credentials modal. Scope: create (the T136 form), edit (host, user, password, ssh-key and other centrs record fields via centrs devices set), remove (centrs devices remove with a confirm), all against the bound CDB with the existing unlock env, redaction rules (no cleartext passwords in envelopes or logs) and re-read-before-write (C15). Multi-user (target,user) identity stays with T68. Until D53 decides the router.toml role, workspace mode keeps the T110 path (router.toml entry plus CDB record) for create and the list source unchanged; if D53 lands as recommended the list reads the CDB in both modes. Ships together with T136 (same slice) and T137 (Edit entry point)."
+evidence = "agenda #1 (2026-11-03): developer agenda 2026-11-03. Current state: ui.html:458 Add Device button title Ask the agent to add a device; ui.html:4333 send() prompt to record it in router.toml; openAddDevice/saveAddDevice (T110) and openCred (T48) are the existing direct-write dialogs; server.ts add-device route appends [device] to router.toml then creates the CDB record."
+acceptance = "Fail-first tests for create/edit/remove against temp CDBs (open and encrypted) through real centrs; secrets never echoed. UI slice smoke-gated: add, edit, remove a device in workspace and no-workspace modes, console clean, shots eyeballed; make gate and records check pass."
+blocked_by = ["T133"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T136"
+title = "Add Device button opens a credentials form instead of a chat prompt"
+status = "needed"
+detail = "Developer 2026-11-03: Add devices is chat today; bring up a form with credentials instead. Reuse the T110 Add Device dialog (openAddDevice/saveAddDevice, already hardened per T72) from the left-panel button with empty host/user/id fields; the agent path (ui_add_device) keeps prefilling the same dialog. Retire the idle-time prompt injection. Relates to T110 (dialog plus agent handoff, done) and T68 (credential profiles/multi-user follow-ups). Same slice as T135 (create leg)."
+evidence = "agenda #2 (2026-11-03): developer agenda 2026-11-03. ui.html:4333 adddevice click sends a chat prompt; ui.html:1705 openAddDevice requires a host argument today."
+acceptance = "Smoke leg: click Add Device, form opens (no chat turn starts), fill host/user/password, device appears in the list; validation errors stay in the form; console clean; make gate and records check pass."
+blocked_by = ["T133"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T137"
+title = "Rename the device card Credentials button to Edit, placed in the card's top corner"
+status = "needed"
+detail = "Developer 2026-11-03: rename Devices (Credentials) to Edit so it sits in the top corner. The device card currently appends a credrow with a Credentials / Set credentials button (ui.html loadDevices). Move a compact Edit control into the card's top row; it opens the credentials modal now and the T135 edit form once that lands. Keep the missing-password signal (the need styling or a badge) visible without the long label."
+evidence = "agenda #3 (2026-11-03): developer agenda 2026-11-03. ui.html:3550 b.textContent = needs ? Set credentials : Credentials."
+acceptance = "Smoke: card shows Edit in the top corner, opens the modal, missing-password state still visible; console clean, shots eyeballed; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T138"
+title = "Launched browser window is too wide: size it to fit with no scroll bars"
+status = "needed"
+detail = "Developer 2026-11-03: the window is the wrong size (too wide) when bun run launches the browser in a window; it should have no scroll bars. Today src/cli/open.ts spawns open / cmd start / xdg-open with the bare URL (no size hint). Investigate where the window size comes from (browser app-window mode, last-used size) and fix both sides: a sane launch size where the platform allows it, and a layout that fits any reasonable viewport without page-level horizontal or vertical scroll bars (panes scroll internally). Mac-first per D14; record which platform each proof came from."
+evidence = "agenda #4 (2026-11-03): developer agenda 2026-11-03. src/cli/open.ts browserOpenCommand has no window geometry."
+acceptance = "Smoke at several viewport sizes asserts document scrollWidth/scrollHeight do not exceed the viewport; live launch via bun run start on the developer's Mac shows no scroll bars; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T139"
+title = "Chat: do not render a bubble until it has content"
+status = "needed"
+detail = "Developer 2026-11-03: in chat, bubbles render for messages with no content and look weird; don't render one until it has something to show. Create the row lazily on the first non-empty delta (or keep it hidden until then), and drop rows that complete empty. Applies to agent text, reasoning and tool rows alike; keep stable row identity for streaming."
+evidence = "agenda #5 (2026-11-03): developer agenda 2026-11-03. Bubble styling came from T46 (done)."
+acceptance = "Smoke leg with a fake stream that emits an empty item then content: no empty bubble at any point, one bubble after content; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T140"
+title = "Chat: make the final message of a completed turn stand out as the summary"
+status = "needed"
+detail = "Developer 2026-11-03: in chat, the last message after the turn stops should stand out more, so it's clear it's the summary/end message. On turn/completed, mark the last agent text row (distinct styling, e.g. stronger border or a small end-of-turn label) and clear the mark when a new turn starts. Relates to T41 GAP6 reply chrome."
+evidence = "agenda #6 (2026-11-03): developer agenda 2026-11-03. T41 evidence: GAP6 reply chrome in notes/t41-chat-inventory.md."
+acceptance = "Smoke: after a completed fake turn the last agent row carries the end-of-turn marker, earlier rows do not, a new turn clears it; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T141"
+title = "Basic markdown rendering in chat (shared safe renderer)"
+status = "needed"
+detail = "Developer 2026-11-03: in chat, basic markdown rendering. Build one small safe markdown-to-HTML renderer (headings, emphasis, inline code, fenced code, lists, links, tables if cheap) with escaping first and no raw HTML passthrough, shared with the panel file view (T142). Links keep the T109 rules (workspace paths open in a tab, never-displayed files plain text, outside paths never links). Offline, no CDN; vendored or zero-dep per repo rules. Carved out of T41 (template-declared JS, markdown first), which stays as the larger renderer design."
+evidence = "agenda #7 (2026-11-03): developer agenda 2026-11-03. T41 detail lists markdown first; T109 link behavior done."
+acceptance = "Fail-first renderer unit tests including XSS cases (script tags, javascript: links, attribute injection); smoke leg renders a markdown reply with list/code/link; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T142"
+title = "Panel file view: render markdown files as HTML"
+status = "needed"
+detail = "Developer 2026-11-03: panel file view, render markdown as HTML. The doc tab shows .md as text today; render it with the T141 renderer, keep a raw/source toggle, and keep per-tab state (T99)."
+evidence = "agenda #8 (2026-11-03): developer agenda 2026-11-03. Shares the renderer with T141."
+acceptance = "Smoke: open a workspace .md, rendered headings/lists/code visible, source toggle works; console clean; make gate and records check pass."
+blocked_by = ["T141"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T143"
+title = "Left panel: workspace files as a basic tree instead of recents"
+status = "needed"
+detail = "Developer 2026-11-03: left panel, show the workspace's files as a basic tree, not the most recent files; recents may come back later, maybe as a toggle. Replace the Workspace · recent section (listRecents in src/lib/workspace.ts: curated workspace.toml, router.toml, operations/inbox/observations/reports plus render primaries) with a collapsible tree of the workspace root. Same confinement as the existing viewer: hide dotfiles, private homes, device.cdb and backups, and other never-displayed files; open .md/.toml/artifacts in the existing tab types. Keep listRecents code for a later toggle. Feeds T148 (any TOML file opens from the tree)."
+evidence = "agenda #9 (2026-11-03): developer agenda 2026-11-03. src/lib/workspace.ts listRecents; ui.html:461 Workspace · recent section, loadRecents."
+acceptance = "Fail-first test that the tree listing excludes device.cdb, .bak, dotfiles and paths outside the root; smoke: expand a folder, open a file in a tab; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T144"
+title = "Chat composer: disable + File with a future tooltip"
+status = "needed"
+detail = "Developer 2026-11-03: in chat, disable the + File button with a future tooltip. The composer + File (id composerfile, title Open a file...) becomes disabled with a tooltip saying file attach is coming in a future release; no handler fires."
+evidence = "agenda #10 (2026-11-03): developer agenda 2026-11-03. ui.html:503 composerfile button."
+acceptance = "Smoke: + File is disabled and shows the future tooltip; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T145"
+title = "Devices tab: basic per-device stats plus a webfig link"
+status = "needed"
+detail = "Developer 2026-11-03: devices tab, basic stats per device: resources, recent warning/error logs, /ip/route, /ip/address (perhaps a column for IPv4 vs IPv6), plus a webfig link on the IP address that has comment=defconf (if one exists), using the /ip/service www or www-ssl port (if enabled), opening in a browser tab. Today the device stats tab shows identity plus /system/resource (src/lib/fleet.ts deviceStats via centrs retrieve). Add retrieves for /log (warning/error topics, last N), /ip/route, /ip/address and /ipv6/address, /ip/service; all reads through centrs, never raw transport. Webfig URL: http(s)://<defconf address>:<port>/ only when the service is enabled and not restricted away from us; omit the link otherwise. Relates to T47 (reachability plus RO/RW display); wire shapes come from captures on a disposable CHR (bigdude reads OK, no writes). Data assembly lives in a reusable function so T146 can insert the same summary."
+evidence = "agenda #11 (2026-11-03): developer agenda 2026-11-03. src/lib/fleet.ts:232 live stats = identity plus resource only. routeros-webfig skill covers the URL scheme."
+acceptance = "Fail-first tests on captured fixtures (defconf present/absent, www vs www-ssl, service disabled, IPv6 present); live read on a disposable CHR recorded as command plus output; smoke: stats tab shows the sections and the webfig link opens in a new browser tab; console clean; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T146"
+title = "Chat + Device: insert the device's stats as agent input plus a summary card"
+status = "needed"
+detail = "Developer 2026-11-03: in chat, + Device should work. It adds router stats: the same information as the devices tab, inserted as agent input with the instruction that the user added this device to the chat; maybe render a nice card with similar, perhaps summarized, data. Today + Device (tadddev) only scrolls the Devices section into view; T49 attaches selected-target metadata as a context preamble (stripped from display by T107). Pick a device, gather the T145 summary, add it to the next turn's context with the user-added-this-device instruction, and render a compact device card in the transcript. Relates to T61 (@device composer trigger), which can reuse the same insertion."
+evidence = "agenda #12 (2026-11-03): developer agenda 2026-11-03. ui.html:4402 + Device pill scrolls the Devices section; T49/T107 context preamble path."
+acceptance = "Smoke: + Device picker adds a device card and the next turn input carries the stats block (fake backend asserts it); preamble never rendered raw; console clean; make gate and records check pass."
+blocked_by = ["T145"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T147"
+title = "Devices tab: fix the button styling"
+status = "needed"
+detail = "Developer 2026-11-03: devices tab, the buttons look bad. Restyle the device tab and card action buttons into one consistent button set (size, spacing, alignment, primary versus secondary) after T145 settles the tab layout; include the T137 Edit control."
+evidence = "agenda #13 (2026-11-03): developer agenda 2026-11-03."
+acceptance = "Smoke shots of the devices tab and cards in workspace and no-workspace modes, eyeballed by the developer; console clean; make gate and records check pass."
+blocked_by = ["T145"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T148"
+title = "Execute D53: device files versus the CDB; UI renders any TOML from the file tree"
+status = "needed"
+detail = "Developer 2026-11-03: review devices.toml/router.toml with a focus on the CDB in our scheme. Execute the D53 outcome. If the recommendation holds: device list, add, and preallow host seeding read the CDB in both modes (drop the router.toml/cdb split in fleet.ts listDevices), router.toml becomes optional annotations managed by instructions/skills, templates and docs updated together, and the TOML editor opens any TOML file from the T143 tree while the picker keeps the well-known files (workspace.toml, router.toml). Coordinate with T92/T99 (TOML editor stale state and per-tab state)."
+evidence = "agenda #14 (2026-11-03): developer agenda 2026-11-03. See D53 for the current-state inventory."
+acceptance = "Fail-first tests for the chosen device source (workspace with and without router.toml), preallow host seeding, and arbitrary TOML open from the tree; smoke across workspace and no-workspace modes; console clean; make gate and records check pass."
+blocked_by = ["D53", "T143"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T149"
+title = "Terminal placeholder: show a Terminal tab with coming soon"
+status = "needed"
+detail = "Developer 2026-11-03: a terminal window shown with coming soon, so the concept is visible. Add a Terminal entry (device card/tab action) that opens a placeholder center tab saying coming soon, naming the planned transports; no PTY, socket or centrs spawn. The real terminal stays T95 (blocked on T86/D49; CHR support on C24, which centrs is fixing now). Developer suggests the first real transport be MAC-Telnet since it needs only the MAC address, no keys; SSH keys need more UX work and testing."
+evidence = "agenda #15 (2026-11-03): developer agenda 2026-11-03. Sketch docs/concepts/t95-terminal-candidate.html."
+acceptance = "Smoke: Terminal action opens the placeholder tab, no network or process activity; console clean; make gate and records check pass."
 blocked_by = []
 agent = ""
 updated = "2026-11-03"
