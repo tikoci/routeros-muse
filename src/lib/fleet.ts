@@ -126,10 +126,11 @@ export type CdbListResult =
  * it is filtered from the inventory like everywhere else. The mapping
  * preserves (target, user) and nothing else.
  *
- * TEMPORARY redaction guard (T64) pending tikoci/centrs#551 (C13):
- * centrs show/mutation envelopes print cleartext passwords today, so
- * no handler forwards raw record envelopes to UI/chat/logs — this
- * projection allowlists id/cdb/user and drops everything else.
+ * Defense-in-depth redaction guard (T64, C13): centrs#551 shipped
+ * in 0.1.9 (show/mutation envelopes withhold passwords by default),
+ * and this projection keeps us independent of that — no handler
+ * forwards raw record envelopes to UI/chat/logs; it allowlists
+ * id/cdb/user and drops everything else.
  */
 export function cdbRowsToDevices(data: unknown): Device[] {
 	const rows = Array.isArray(data)
@@ -338,9 +339,8 @@ export async function doctorTwins(
 
 /**
  * Redaction-aware projection of one CDB record (T48). Extends the T64
- * guard above: `devices show` and every mutation envelope print the
- * record password in cleartext (tikoci/centrs#551, C13), so no caller
- * forwards a raw entry — this shape carries the context a credentials
+ * guard above: no caller forwards a raw entry — this shape carries
+ * the context a credentials
  * modal needs (target, user, handles, ssh-key path, whether a password
  * is saved) and drops the password itself. Fixed key order doubles as
  * the canonical snapshot for the C15 interim conflict check below.

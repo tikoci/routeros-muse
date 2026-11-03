@@ -489,7 +489,10 @@ describe("fail closed on an unsafe per-workspace home", () => {
 						expect(String(pre["homeError"] ?? "")).toMatch(/symlink/i);
 						const res = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello" }),
 						});
 						expect(res.status).toBe(500);
@@ -540,11 +543,15 @@ describe("spawn isolation on every path", () => {
 						const priv = privateConfigHome(srv.dataHome, ws);
 						const recheck = await fetch(`${srv.url}api/auth/oauth-recheck`, {
 							method: "POST",
+							headers: { origin: new URL(srv.url).origin },
 						});
 						expect(recheck.status).toBe(200);
 						const send = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello" }),
 						});
 						expect(send.status).toBe(200);
@@ -749,6 +756,7 @@ describe("round-4 review fixes", () => {
 					try {
 						const r = await fetch(`${srv.url}api/auth/oauth-recheck`, {
 							method: "POST",
+							headers: { origin: new URL(srv.url).origin },
 						});
 						expect(r.status).toBe(200);
 						const argvLog = path.join(bin, "argv.log");

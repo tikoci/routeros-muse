@@ -150,6 +150,42 @@ function watchAppBatch(page: Page): Promise<unknown[]> {
 	);
 }
 
+// T133: kill the listener on a port (a spawned child after the
+// browser handoff). LISTEN-only: the page still holds outbound
+// sockets (SSE) to the child, and those belong to the browser.
+// True when the port refuses afterwards.
+async function killPort(port: number): Promise<boolean> {
+	for (let i = 0; i < 50; i++) {
+		const found = childProcess.spawnSync(
+			"lsof",
+			["-ti", `tcp:${port}`, "-sTCP:LISTEN"],
+			{ encoding: "utf8" },
+		);
+		const pids = (found.stdout || "").split(/\s+/).filter(Boolean);
+		if (pids.length === 0) {
+			try {
+				await fetch(`http://127.0.0.1:${port}/api/auth/state`);
+			} catch {
+				return true;
+			}
+		} else {
+			for (const pid of pids) {
+				try {
+					process.kill(Number(pid), "SIGTERM");
+				} catch {
+					// Raced away; the refusal check below decides.
+				}
+			}
+		}
+		if (found.error) {
+			const fuser = childProcess.spawnSync("fuser", ["-k", `${port}/tcp`]);
+			if (fuser.error) throw new Error("killPort needs lsof or fuser");
+		}
+		await new Promise((r) => setTimeout(r, 200));
+	}
+	return false;
+}
+
 const srv = await startServer({
 	dataHome: SMOKE_DATA_HOME,
 	configHome: SMOKE_CONFIG_HOME,
@@ -2012,6 +2048,60 @@ try {
 		await openSrv.stop();
 	}
 
+	// T133: encrypt-now turns an open CDB encrypted from the overlay,
+	// then the lock screen gates with the new password.
+	const encWs = makeWorkspace();
+	const encInit = childProcess.spawnSync("centrs", ["devices", "init"], {
+		env: { ...process.env, CENTRS_CDB_FILE: path.join(encWs, "device.cdb") },
+	});
+	if (encInit.error || encInit.status !== 0) {
+		throw new Error("encrypt-now smoke needs working centrs devices init");
+	}
+	const encSrv = await startServer({
+		dataHome: SMOKE_DATA_HOME,
+		configHome: SMOKE_CONFIG_HOME,
+		workspace: encWs,
+		provider: "echo",
+		museHome: makeHome(),
+	});
+	try {
+		await page.goto(encSrv.url, { waitUntil: "load" });
+		await page.waitForSelector("#guidescreen.open", { timeout: 15_000 });
+		const encTitle = (await page.locator("#guidetitle").textContent()) ?? "";
+		check(
+			"open CDB routes to encryption guidance",
+			encTitle === "Encryption needed",
+			encTitle,
+		);
+		check(
+			"encrypt form shows on loopback",
+			await page.locator("#guideform").isVisible(),
+		);
+		await page.screenshot({ path: path.join(OUT, "10b-encrypt-form.png") });
+		await page.fill("#guidepw", "smoke-enc-pw");
+		await page.fill("#guidepw2", "smoke-enc-pw");
+		await page.click("#guidego");
+		await page.waitForSelector("#lockscreen.open", { timeout: 30_000 });
+		check("encrypt-now lands on the lock screen", true);
+		const encBatch = watchAppBatch(page);
+		await page.fill("#lockpw", "smoke-enc-pw");
+		await page.click("#lockgo");
+		await page.waitForFunction(
+			() =>
+				!document.getElementById("lockscreen")?.classList.contains("open") &&
+				(document.getElementById("set-auth")?.textContent ?? "").startsWith(
+					"unlocked",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		await encBatch;
+		check("encrypted workspace unlocks with the new password", true);
+		await page.screenshot({ path: path.join(OUT, "10c-encrypt-unlocked.png") });
+	} finally {
+		await encSrv.stop();
+	}
+
 	// T64: a workspace without device.cdb routes to setup guidance
 	// (fail-closed binding: the server never falls back to the
 	// operator store). The full creation flow lands with T40.
@@ -2039,6 +2129,32 @@ try {
 			guideSub,
 		);
 		await page.screenshot({ path: path.join(OUT, "11-missing.png") });
+		// T133: the missing overlay creates the registry encrypted,
+		// then the lock screen gates with the new password.
+		check(
+			"create-registry form shows on loopback",
+			await page.locator("#guideform").isVisible(),
+		);
+		await page.fill("#guidepw", "smoke-missing-pw");
+		await page.fill("#guidepw2", "smoke-missing-pw");
+		await page.click("#guidego");
+		await page.waitForSelector("#lockscreen.open", { timeout: 30_000 });
+		check("registry create lands on the lock screen", true);
+		const missBatch = watchAppBatch(page);
+		await page.fill("#lockpw", "smoke-missing-pw");
+		await page.click("#lockgo");
+		await page.waitForFunction(
+			() =>
+				!document.getElementById("lockscreen")?.classList.contains("open") &&
+				(document.getElementById("set-auth")?.textContent ?? "").startsWith(
+					"unlocked",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		await missBatch;
+		check("created registry unlocks with its password", true);
+		await page.screenshot({ path: path.join(OUT, "11b-missing-created.png") });
 	} finally {
 		await missSrv.stop();
 	}
@@ -2335,19 +2451,67 @@ try {
 			{ timeout: 10_000 },
 		);
 		check("prune drops the dead entry", true);
+		// T133 review: open is the same spawn+redirect launch as
+		// create (Retry = open). The live workspace needs an
+		// encrypted CDB so the child lands locked.
+		const openInit = childProcess.spawnSync(
+			"centrs",
+			["devices", "init", "--encrypt", "--format", "json"],
+			{
+				env: {
+					...process.env,
+					CENTRS_CDB_FILE: path.join(pickLive, "device.cdb"),
+					CENTRS_CDB_PASSWORD: "smoke-open-pw",
+				},
+				encoding: "utf8",
+			},
+		);
+		if (openInit.error || openInit.status !== 0)
+			throw new Error("open smoke needs working centrs devices init");
+		const openPickPort = new URL(page.url()).port;
 		await page.click("#pklist button.minibtn");
 		await page.waitForFunction(
-			() =>
-				(document.getElementById("pkcmd")?.textContent ?? "").includes("serve"),
-			undefined,
-			{ timeout: 10_000 },
+			(port) => new URL(location.href).port !== port,
+			openPickPort,
+			{ timeout: 60_000 },
 		);
-		const openCmd = (await page.locator("#pkcmd").textContent()) ?? "";
+		const openChildUrl = page.url();
+		const openChildPort = Number(new URL(openChildUrl).port);
 		check(
-			"open prints the restart command",
-			openCmd.includes("serve") && openCmd.includes(pickLive),
-			openCmd,
+			"open spawns and navigates to the child",
+			openChildPort !== Number(openPickPort),
+			openChildUrl,
 		);
+		await page.waitForSelector("#lockscreen.open", { timeout: 15_000 });
+		check("open lands on the child lock screen", true);
+		const openBatch = watchAppBatch(page);
+		await page.fill("#lockpw", "smoke-open-pw");
+		await page.click("#lockgo");
+		await page.waitForFunction(
+			() =>
+				!document.getElementById("lockscreen")?.classList.contains("open") &&
+				(document.getElementById("set-auth")?.textContent ?? "").startsWith(
+					"unlocked",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		await openBatch;
+		check("open child unlocks with the registry password", true);
+		await page.screenshot({ path: path.join(OUT, "12a-open-child.png") });
+		// Back on the picker before killing the child.
+		await page.goto(pickSrv.url, { waitUntil: "load" });
+		check(
+			"open child cleaned up after the handoff",
+			await killPort(openChildPort),
+		);
+		// Fresh load lands off the workspace view: re-open it.
+		await page.waitForSelector("#crviewbtn-ws:visible", { timeout: 15_000 });
+		await page.click("#crviewbtn-ws");
+		await page.waitForSelector("#rview-ws.active", { timeout: 10_000 });
+		// T133: the create form is password-gated client-side too.
+		await page.fill("#pkpass", "smoke-pw");
+		await page.fill("#pkpass2", "smoke-pw");
 		await page.fill("#pkname", "../evil");
 		await page.click("#pkcreate");
 		await page.waitForFunction(
@@ -2361,28 +2525,19 @@ try {
 			wsErr.includes("one path segment"),
 			wsErr,
 		);
-		await page.fill("#pkname", "smoke-new");
+		await page.fill("#pkname", "smoke-mismatch");
+		await page.fill("#pkpass", "aa");
+		await page.fill("#pkpass2", "bb");
 		await page.click("#pkcreate");
 		await page.waitForFunction(
 			() =>
-				(document.getElementById("pklist")?.textContent ?? "").includes(
-					"smoke-new",
+				(document.getElementById("pkerr")?.textContent ?? "").includes(
+					"do not match",
 				),
 			undefined,
-			{ timeout: 30_000 },
+			{ timeout: 10_000 },
 		);
-		const newCmd = (await page.locator("#pkcmd").textContent()) ?? "";
-		const newSteer = (await page.locator("#pksteer").textContent()) ?? "";
-		check(
-			"create scaffolds at the default location",
-			newCmd.includes(path.join(pickNets, "smoke-new")),
-			newCmd,
-		);
-		check(
-			"create steers to WinBox encryption",
-			newSteer.includes("WinBox"),
-			newSteer,
-		);
+		check("password mismatch fails honestly", true);
 		// T93: the template select defaults to minimal and scaffolds
 		// network on request. No new temp roots: both creates land in
 		// the picker's own creation dir.
@@ -2396,25 +2551,104 @@ try {
 		const netNote = (await page.locator("#pkcreatenote").textContent()) ?? "";
 		check(
 			"create note follows the template",
-			netNote.includes("network template"),
+			netNote.includes("network template") &&
+				netNote.includes("created encrypted"),
 			netNote,
 		);
-		await page.fill("#pkname", "smoke-net");
+		await page.selectOption("#pktemplate", "minimal");
+		// T133: create scaffolds encrypted, spawns the workspace
+		// server, and navigates the browser to its lock screen. The
+		// picker server stays up throughout.
+		const pickPort = new URL(page.url()).port;
+		await page.fill("#pkname", "smoke-new");
+		await page.fill("#pkpass", "smoke-new-pw");
+		await page.fill("#pkpass2", "smoke-new-pw");
 		await page.click("#pkcreate");
 		await page.waitForFunction(
+			(port) => new URL(location.href).port !== port,
+			pickPort,
+			{ timeout: 60_000 },
+		);
+		const childUrl = page.url();
+		const childPort = Number(new URL(childUrl).port);
+		check(
+			"create navigates to the child server",
+			childPort !== Number(pickPort),
+			childUrl,
+		);
+		await page.waitForSelector("#lockscreen.open", { timeout: 15_000 });
+		check("child lands on the lock screen", true);
+		await page.screenshot({ path: path.join(OUT, "12b-child-lock.png") });
+		const newBatch = watchAppBatch(page);
+		await page.fill("#lockpw", "smoke-new-pw");
+		await page.click("#lockgo");
+		await page.waitForFunction(
 			() =>
-				(document.getElementById("pklist")?.textContent ?? "").includes(
-					"smoke-net",
+				!document.getElementById("lockscreen")?.classList.contains("open") &&
+				(document.getElementById("set-auth")?.textContent ?? "").startsWith(
+					"unlocked",
 				),
 			undefined,
 			{ timeout: 30_000 },
 		);
-		const netCmd = (await page.locator("#pkcmd").textContent()) ?? "";
+		await newBatch;
+		check("child unlocks with the creation password", true);
+		await page.screenshot({ path: path.join(OUT, "12c-child-unlocked.png") });
+		// Back on the picker first: killing the child while the page
+		// streams to it fills the console with reconnect failures.
+		await page.goto(pickSrv.url, { waitUntil: "load" });
 		check(
-			"network create scaffolds at the default location",
-			netCmd.includes(path.join(pickNets, "smoke-net")),
-			netCmd,
+			"child server cleaned up after the handoff",
+			await killPort(childPort),
 		);
+		const pickerAlive = await page.evaluate(() =>
+			fetch("/api/workspaces")
+				.then((r) => r.json())
+				.then((j) => Array.isArray(j.workspaces)),
+		);
+		check("picker server stays up after the handoff", pickerAlive === true);
+		await page.waitForSelector("#crviewbtn-ws:visible", { timeout: 15_000 });
+		await page.click("#crviewbtn-ws");
+		await page.waitForFunction(
+			() =>
+				(document.getElementById("pklist")?.textContent ?? "").includes(
+					"smoke-new",
+				),
+			undefined,
+			{ timeout: 15_000 },
+		);
+		check("create registers the workspace", true);
+		await page.screenshot({ path: path.join(OUT, "12-picker.png") });
+		// The network template through the same handoff.
+		await page.selectOption("#pktemplate", "network");
+		await page.fill("#pkname", "smoke-net");
+		await page.fill("#pkpass", "smoke-net-pw");
+		await page.fill("#pkpass2", "smoke-net-pw");
+		await page.click("#pkcreate");
+		await page.waitForFunction(
+			(port) => new URL(location.href).port !== port,
+			pickPort,
+			{ timeout: 60_000 },
+		);
+		const netPort = Number(new URL(page.url()).port);
+		await page.waitForSelector("#lockscreen.open", { timeout: 15_000 });
+		const netBatch = watchAppBatch(page);
+		await page.fill("#lockpw", "smoke-net-pw");
+		await page.click("#lockgo");
+		await page.waitForFunction(
+			() =>
+				!document.getElementById("lockscreen")?.classList.contains("open") &&
+				(document.getElementById("set-auth")?.textContent ?? "").startsWith(
+					"unlocked",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		await netBatch;
+		check("network child unlocks with its creation password", true);
+		await page.screenshot({ path: path.join(OUT, "12d-child-network.png") });
+		await page.goto(pickSrv.url, { waitUntil: "load" });
+		check("network child killed after the handoff", await killPort(netPort));
 		const netStart = path.join(pickNets, "smoke-net", "START-HERE.md");
 		check(
 			"network create writes the full starter",
@@ -2434,9 +2668,41 @@ try {
 			"network create keeps the manifest out",
 			!nodeFs.existsSync(path.join(pickNets, "smoke-net", "template.toml")),
 		);
-		await page.screenshot({ path: path.join(OUT, "12b-picker-template.png") });
+		// Both children are encrypted registries on disk. centrs
+		// prints result envelopes to stdout but error envelopes to
+		// stderr — read whichever stream carried the answer.
+		for (const [nm, pw] of [
+			["smoke-new", "smoke-new-pw"],
+			["smoke-net", "smoke-net-pw"],
+		] as const) {
+			const cdb = path.join(pickNets, nm, "device.cdb");
+			const st = childProcess.spawnSync(
+				"centrs",
+				["devices", "list", "--cdb-file", cdb, "--format", "json"],
+				{ encoding: "utf8" },
+			);
+			const env = JSON.parse(st.stdout || st.stderr || "{}") as {
+				ok?: unknown;
+				error?: { code?: unknown };
+			};
+			check(
+				`${nm} CDB is encrypted`,
+				env?.error?.code === "cdb/password-required",
+				String(env?.error?.code),
+			);
+			const okList = childProcess.spawnSync(
+				"centrs",
+				["devices", "list", "--cdb-file", cdb, "--format", "json"],
+				{ encoding: "utf8", env: { ...process.env, CENTRS_CDB_PASSWORD: pw } },
+			);
+			check(
+				`${nm} CDB opens with the creation password`,
+				(JSON.parse(okList.stdout || okList.stderr || "{}") as { ok?: unknown })
+					.ok === true,
+				(okList.stdout || okList.stderr || "").slice(0, 80),
+			);
+		}
 		await pickBatch;
-		await page.screenshot({ path: path.join(OUT, "12-picker.png") });
 	} finally {
 		await pickSrv.stop();
 	}

@@ -12,7 +12,7 @@ import {
 	sha256Hex,
 	verifyJobSignature,
 } from "./renderSig";
-import { have, run } from "./run";
+import { have, redactSecret, run } from "./run";
 import {
 	type CreatedPath,
 	copyTemplateFiles,
@@ -990,13 +990,15 @@ export function validWorkspaceName(name: string): boolean {
 	return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 }
 
-/** WinBox-encryption steering for fresh scaffolds, until C14 ships. */
-export const CDB_ENCRYPT_STEERING =
-	"device.cdb starts open: encrypt it in WinBox before trusting it (one-command centrs encryption is tracked upstream at tikoci/centrs#558).";
-
 export type ScaffoldOpts = {
 	/** Templates-root override (tests isolate here). */
 	templatesRoot?: string | null;
+	/**
+	 * How the scaffolded device.cdb is created (T133, D52):
+	 * encrypted with the password, or explicitly open. Absent
+	 * refuses rather than silently creating an open registry.
+	 */
+	cdb?: ScaffoldCdb;
 	/**
 	 * Test seam (T97): runs after the conflict scan, before any
 	 * write, so a test can land a competing file deterministically.
@@ -1096,33 +1098,90 @@ function resolveTemplate(
 }
 
 /**
- * `centrs devices init` into target; null on success, else the why.
- * A spawn throw (e.g. an un-runnable centrs on PATH) is a plain
- * failure too: it never rejects past the scaffold.
+ * How the scaffolded device.cdb is created (T133, D52): encrypted
+ * by default; an open CDB only behind the explicit escape. Absent
+ * means refusal, never a silent open registry.
+ */
+export type ScaffoldCdb =
+	| { kind: "encrypted"; password: string }
+	| { kind: "open" };
+
+/**
+ * Resolve the child env for `devices init`: the explicit password
+ * rides CENTRS_CDB_PASSWORD, an ambient one never leaks in, and an
+ * open init strips it so the file lands open either way.
+ */
+function initChildEnv(
+	env: Record<string, string>,
+	password: string | null,
+): Record<string, string> {
+	const child: Record<string, string> = {};
+	for (const [k, v] of Object.entries(env)) {
+		if (k !== "CENTRS_CDB_PASSWORD") child[k] = v;
+	}
+	if (password) child["CENTRS_CDB_PASSWORD"] = password;
+	return child;
+}
+
+/**
+ * `centrs devices init` into target (encrypted with --encrypt when
+ * the decision says so); null on success, else the why. A spawn
+ * throw (e.g. an un-runnable centrs on PATH) is a plain failure
+ * too: it never rejects past the scaffold.
  */
 async function runDevicesInit(
 	target: string,
 	env: Record<string, string>,
+	cdb: ScaffoldCdb,
 ): Promise<string | null> {
+	const password = cdb.kind === "encrypted" ? cdb.password : null;
+	const childEnv = initChildEnv(env, password);
 	try {
-		if (!have("centrs", env)) return "centrs not on PATH";
-		const init = await run(
-			[
-				"centrs",
-				"devices",
-				"init",
-				"--cdb-file",
-				path.join(target, "device.cdb"),
-			],
-			{ timeoutMs: 30_000, env },
-		);
+		if (!have("centrs", childEnv)) return "centrs not on PATH";
+		const args = [
+			"centrs",
+			"devices",
+			"init",
+			"--cdb-file",
+			path.join(target, "device.cdb"),
+		];
+		if (password) args.splice(3, 0, "--encrypt");
+		const init = await run(args, { timeoutMs: 30_000, env: childEnv });
 		if (init.ok) return null;
 		const line = `${init.stdout}\n${init.stderr}`.trim().split("\n")[0] ?? "";
-		return `centrs devices init failed${line ? `: ${line.slice(0, 200)}` : ""}`;
+		return redactSecret(
+			`centrs devices init failed${line ? `: ${line.slice(0, 200)}` : ""}`,
+			password,
+		);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		return `centrs devices init failed: ${msg.slice(0, 200)}`;
+		return redactSecret(
+			`centrs devices init failed: ${msg.slice(0, 200)}`,
+			password,
+		);
 	}
+}
+
+/**
+ * Validate the CDB decision before any write: absent or empty means
+ * refusal, never a silent open registry.
+ */
+function resolveScaffoldCdb(
+	cdb: ScaffoldCdb | undefined,
+): { ok: true; cdb: ScaffoldCdb } | { ok: false; why: string } {
+	if (!cdb) {
+		return {
+			ok: false,
+			why: "refusing to create an open device.cdb: pass a CDB password for an encrypted registry, or allow an open one explicitly",
+		};
+	}
+	if (cdb.kind === "encrypted" && !cdb.password) {
+		return {
+			ok: false,
+			why: "refusing to create device.cdb: the CDB password is empty",
+		};
+	}
+	return { ok: true, cdb };
 }
 
 /**
@@ -1215,9 +1274,8 @@ function ensureParentChain(dest: string, created: CreatedPath[]): void {
  * template: minimal): copy the template (template.toml excluded,
  * {{name}} substituted, [template] provenance stamped in the
  * single workspace.toml create), then device.cdb via
- * `centrs devices init` — an open registry with WinBox-encryption
- * steering until C14 (tikoci/centrs#558) ships a centrs-side
- * encryption path. The name is validated before joining, so the
+ * `centrs devices init --encrypt` (or an explicitly open init).
+ * The name is validated before joining, so the
  * target always lands directly under parent; every write is an
  * exclusive, non-following create, and any failure rolls back
  * exactly what this run made so no half-scaffold survives. The
@@ -1240,6 +1298,8 @@ export async function scaffoldWorkspace(
 	}
 	const tpl = resolveTemplate(template, opts);
 	if ("error" in tpl) return { ok: false, why: tpl.error };
+	const decided = resolveScaffoldCdb(opts?.cdb);
+	if (!decided.ok) return { ok: false, why: decided.why };
 	const target = path.join(parent, name);
 	let dest: string;
 	try {
@@ -1313,7 +1373,7 @@ export async function scaffoldWorkspace(
 	}
 	const cdbFull = path.join(dest, "device.cdb");
 	const cdbExisted = lstatExists(cdbFull);
-	const failed = await runDevicesInit(dest, env);
+	const failed = await runDevicesInit(dest, env, decided.cdb);
 	// A cdb that was absent before centrs ran and present after is
 	// assumed to be centrs' own — except a foreign file could land
 	// in that same window, and the two are indistinguishable
@@ -1363,6 +1423,8 @@ export async function scaffoldIntoDir(
 ): Promise<ScaffoldResult> {
 	const tpl = resolveTemplate(template, opts);
 	if ("error" in tpl) return { ok: false, why: tpl.error };
+	const decided = resolveScaffoldCdb(opts?.cdb);
+	if (!decided.ok) return { ok: false, why: decided.why };
 	let dest: string;
 	try {
 		dest = resolveDestOnce(dir);
@@ -1472,7 +1534,7 @@ export async function scaffoldIntoDir(
 	// indistinguishable from centrs' own (accepted).
 	const cdbFull = path.join(dest, "device.cdb");
 	const cdbExisted = lstatExists(cdbFull);
-	const failed = await runDevicesInit(dest, env);
+	const failed = await runDevicesInit(dest, env, decided.cdb);
 	let cdbEntry: CreatedPath | null = null;
 	if (!cdbExisted) {
 		try {

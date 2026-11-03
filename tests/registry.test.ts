@@ -167,11 +167,15 @@ describe("workspace names", () => {
 describe("scaffold", () => {
 	test("bad names + existing targets refuse without touching disk", async () => {
 		const parent = mktmp("t40-scaf-");
-		const bad = await scaffoldWorkspace(parent, "../evil", {});
+		const bad = await scaffoldWorkspace(parent, "../evil", {}, "minimal", {
+			cdb: { kind: "open" },
+		});
 		expect(bad.ok).toBe(false);
 		if (!bad.ok) expect(bad.why).toContain("one path segment");
 		nodeFs.mkdirSync(path.join(parent, "taken"));
-		const taken = await scaffoldWorkspace(parent, "taken", {});
+		const taken = await scaffoldWorkspace(parent, "taken", {}, "minimal", {
+			cdb: { kind: "open" },
+		});
 		expect(taken.ok).toBe(false);
 		if (!taken.ok) expect(taken.why).toContain("already exists");
 		expect(nodeFs.existsSync(path.join(parent, "evil"))).toBe(false);
@@ -183,7 +187,9 @@ describe("scaffold", () => {
 		const shOnly = mktmp("t40-shonly-");
 		if (POSIX) nodeFs.symlinkSync("/bin/sh", path.join(shOnly, "sh"));
 		const env = toolEnv(null, { ...process.env, PATH: POSIX ? shOnly : "" });
-		const res = await scaffoldWorkspace(parent, "noroll", env);
+		const res = await scaffoldWorkspace(parent, "noroll", env, "minimal", {
+			cdb: { kind: "open" },
+		});
 		if (have("centrs", env)) return;
 		expect(res.ok).toBe(false);
 		if (!res.ok) expect(res.why).toBe("centrs not on PATH");
@@ -194,7 +200,13 @@ describe("scaffold", () => {
 		"success writes the minimal runnable workspace",
 		async () => {
 			const parent = mktmp("t40-scaf-");
-			const res = await scaffoldWorkspace(parent, "acme", toolEnv(null));
+			const res = await scaffoldWorkspace(
+				parent,
+				"acme",
+				toolEnv(null),
+				"minimal",
+				{ cdb: { kind: "open" } },
+			);
 			expect(res.ok).toBe(true);
 			if (!res.ok) throw new Error("scaffold failed");
 			expect(res.dir).toBe(path.join(parent, "acme"));
@@ -238,7 +250,10 @@ describe("workspaces routes", () => {
 	): Promise<{ status: number; json: Record<string, unknown> }> {
 		const res = await fetch(url, {
 			method: "POST",
-			headers: { "content-type": "application/json" },
+			headers: {
+				"content-type": "application/json",
+				origin: new URL(url).origin,
+			},
 			body: JSON.stringify(body),
 		});
 		return {
@@ -275,11 +290,17 @@ describe("workspaces routes", () => {
 		}
 	}, 30_000);
 
-	test("prune + open: honest outcomes, open touches + prints restart", async () => {
+	test("prune + open: honest outcomes, open touches + spawns a URL", async () => {
 		const dh = tempDataHome();
 		const live = makeWsDir();
 		registerWorkspace(registryFile(dh), "live", live, "2020-01-01T00:00:00Z");
 		registerWorkspace(registryFile(dh), "dead", path.join(dh, "gone"));
+		// The ready poll needs a locked state; the stub serves it.
+		const stub = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch: () => Response.json({ state: "locked" }),
+		});
 		const srv = await startServer({
 			allowOpenCdb: true,
 			noWorkspace: true,
@@ -288,6 +309,10 @@ describe("workspaces routes", () => {
 			dataHome: dh,
 			configHome: mktmp("t40-reg-cfg-"),
 			defaultWorkspaceDir: path.join(dh, "nets"),
+			launchWorkspaceServer: async () => ({
+				url: `http://127.0.0.1:${stub.port}`,
+				stop: async () => {},
+			}),
 		});
 		try {
 			const pruned = await postJson(`${srv.url}api/workspaces`, {
@@ -300,8 +325,7 @@ describe("workspaces routes", () => {
 			});
 			expect(opened.status).toBe(200);
 			expect(opened.json["ok"]).toBe(true);
-			expect(opened.json["command"] as string).toContain("serve");
-			expect(opened.json["command"] as string).toContain(live);
+			expect(opened.json["url"]).toBe(`http://127.0.0.1:${stub.port}`);
 			const touched = readRegistry(registryFile(dh)).entries.find(
 				(e) => e.name === "live",
 			);
@@ -318,13 +342,20 @@ describe("workspaces routes", () => {
 			expect(junk.status).toBe(400);
 		} finally {
 			await srv.stop();
+			stub.stop();
 		}
 	}, 30_000);
 
 	tcentrs(
-		"create scaffolds, registers, and steers to encryption",
+		"create scaffolds encrypted, registers, and hands off a URL",
 		async () => {
 			const dh = tempDataHome();
+			// The ready poll needs a locked state; the stub serves it.
+			const stub = Bun.serve({
+				hostname: "127.0.0.1",
+				port: 0,
+				fetch: () => Response.json({ state: "locked" }),
+			});
 			const srv = await startServer({
 				allowOpenCdb: true,
 				noWorkspace: true,
@@ -333,25 +364,36 @@ describe("workspaces routes", () => {
 				dataHome: dh,
 				configHome: mktmp("t40-reg-cfg-"),
 				defaultWorkspaceDir: path.join(dh, "nets"),
+				launchWorkspaceServer: async () => ({
+					url: `http://127.0.0.1:${stub.port}`,
+					stop: async () => {},
+				}),
 			});
 			try {
+				const nopw = await postJson(`${srv.url}api/workspaces`, {
+					action: "create",
+					name: "acme",
+				});
+				expect(nopw.status).toBe(400);
 				const bad = await postJson(`${srv.url}api/workspaces`, {
 					action: "create",
 					name: "../evil",
+					password: "pw",
 				});
 				expect(bad.status).toBe(400);
+				expect(bad.json["why"] as string).toContain("one path segment");
 				const made = await postJson(`${srv.url}api/workspaces`, {
 					action: "create",
 					name: "acme",
+					password: "acme-pw",
 				});
 				expect(made.status).toBe(200);
 				expect(made.json["ok"]).toBe(true);
 				const dir = path.join(dh, "nets", "acme");
 				expect((made.json["workspace"] as { path: string }).path).toBe(dir);
-				expect(made.json["command"] as string).toContain("serve");
-				expect(made.json["command"] as string).toContain(dir);
-				expect(made.json["steering"] as string).toContain("WinBox");
-				expect(made.json["steering"] as string).toContain("558");
+				expect(typeof made.json["url"]).toBe("string");
+				expect(made.json).not.toHaveProperty("command");
+				expect(made.json).not.toHaveProperty("steering");
 				expect(nodeFs.existsSync(path.join(dir, "workspace.toml"))).toBe(true);
 				expect(nodeFs.existsSync(path.join(dir, "device.cdb"))).toBe(true);
 				expect(
@@ -360,10 +402,12 @@ describe("workspaces routes", () => {
 				const dup = await postJson(`${srv.url}api/workspaces`, {
 					action: "create",
 					name: "acme",
+					password: "other",
 				});
 				expect(dup.status).toBe(400);
 				expect(dup.json["why"] as string).toContain("already exists");
 			} finally {
+				stub.stop();
 				await srv.stop();
 			}
 		},

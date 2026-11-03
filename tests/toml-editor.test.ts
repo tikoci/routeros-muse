@@ -148,7 +148,10 @@ describe("T84 toml editor fail-closed", () => {
 		try {
 			const r = await fetch(`${srv.url}api/file`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({
 					path: "router.toml",
 					text: CORRUPTING_TOML,
@@ -185,7 +188,10 @@ describe("T84 toml editor fail-closed", () => {
 			expect(before.writable).toBe(true);
 			const r = await fetch(`${srv.url}api/file`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({
 					path: "editable.toml",
 					text: '[app]\nname = "world"\ncount = 3\n',
@@ -213,7 +219,10 @@ describe("T84 toml editor fail-closed", () => {
 		try {
 			const r = await fetch(`${srv.url}api/file`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({ path: "router.toml", text: CORRUPTING_TOML }),
 			});
 			// No editor marker: syntax-valid text saves, as today.
@@ -239,7 +248,10 @@ describe("T84 toml editor fail-closed", () => {
 			const flipped = MULTI_DEVICE_TOML.replace('mode = "true"', "mode = true");
 			const r = await fetch(`${srv.url}api/file`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({
 					path: "router.toml",
 					text: flipped,
@@ -271,7 +283,10 @@ describe("T84 toml editor fail-closed", () => {
 		try {
 			const r = await fetch(`${srv.url}api/file`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: {
+					"content-type": "application/json",
+					origin: new URL(srv.url).origin,
+				},
 				body: JSON.stringify({
 					path: "missing84.toml",
 					text: '[app]\nname = "new"\n',

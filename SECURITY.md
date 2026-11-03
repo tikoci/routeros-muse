@@ -138,8 +138,9 @@ whole-app lock (T39, T64, `docs/internals.md` Unlock):
 - Passwords never go in session config, transcripts, or logs: while
   centrs MCP shipped (T105, until T112) it got only `CENTRS_CDB_FILE`
   in config env, never the password (T111); the UI
-  redacts records to `(target, user)` as a temporary guard pending
-  upstream `tikoci/centrs#551` (T64); typed secrets never echo (T72).
+  redacts records to `(target, user)` as defense-in-depth (T64;
+  upstream `tikoci/centrs#551`, withholding passwords by default,
+  shipped in centrs 0.1.9); typed secrets never echo (T72).
 
 Privacy tiers (D1): low-sensitivity (models, MACs, private IPs,
 software keys) may travel; high-sensitivity (credentials, tokens,

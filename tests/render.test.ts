@@ -323,7 +323,10 @@ describe("render routes", () => {
 				const r = (await (
 					await fetch(`${srv.url}api/render`, {
 						method: "POST",
-						headers: { "content-type": "application/json" },
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
 						body: JSON.stringify({ job: "topology", input: TOPO }),
 					})
 				).json()) as { ok: boolean; dir: string; files: string[] };

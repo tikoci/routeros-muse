@@ -349,7 +349,10 @@ describe("worker spawn carries rosetta", () => {
 				try {
 					const res = await fetch(`${srv.url}api/chat/send`, {
 						method: "POST",
-						headers: { "content-type": "application/json" },
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
 						body: JSON.stringify({ text: "hello trilogy" }),
 					});
 					expect(((await res.json()) as Record<string, unknown>)["ok"]).toBe(
@@ -435,7 +438,10 @@ describe("worker spawn carries rosetta", () => {
 					try {
 						const res = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello denied" }),
 						});
 						expect(((await res.json()) as Record<string, unknown>)["ok"]).toBe(

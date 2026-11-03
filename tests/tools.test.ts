@@ -223,6 +223,9 @@ describe("installed bundle", () => {
 	});
 
 	tbundle("package.json pins the trilogy to the preview channel", () => {
+		// T133 review: centrs rides `next` again now that the tag
+		// resolves to 0.1.9, which ships the encrypted-CDB surface
+		// (init --encrypt, devices encrypt, --password-stdin).
 		const specs = pinnedTools();
 		expect(specs).toEqual({
 			quickchr: "next",

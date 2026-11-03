@@ -73,7 +73,13 @@ describe("parseCli", () => {
 	test("bare is start with defaults", () => {
 		expect(parseCli([])).toEqual({
 			cmd: "start",
-			opts: { noOpen: false, yolo: false, dir: undefined },
+			opts: {
+				noOpen: false,
+				yolo: false,
+				dir: undefined,
+				passwordStdin: false,
+				openCdb: false,
+			},
 		});
 	});
 
@@ -96,7 +102,13 @@ describe("parseCli", () => {
 		}
 		expect(parseCli(["serve", "./ws"])).toEqual({
 			cmd: "start",
-			opts: { noOpen: false, yolo: false, dir: "./ws" },
+			opts: {
+				noOpen: false,
+				yolo: false,
+				dir: "./ws",
+				passwordStdin: false,
+				openCdb: false,
+			},
 		});
 	});
 
@@ -139,13 +151,25 @@ describe("parseCli", () => {
 	});
 
 	test("init defaults and template", () => {
+		// T133: the template default moved out of the parser (a TTY
+		// prompts, off a TTY it defaults to minimal in decideTemplate).
 		expect(parseCli(["init"])).toEqual({
 			cmd: "init",
-			opts: { dir: undefined, template: "minimal" },
+			opts: {
+				dir: undefined,
+				template: undefined,
+				passwordStdin: false,
+				openCdb: false,
+			},
 		});
 		expect(parseCli(["init", "./ws", "--template", "network"])).toEqual({
 			cmd: "init",
-			opts: { dir: "./ws", template: "network" },
+			opts: {
+				dir: "./ws",
+				template: "network",
+				passwordStdin: false,
+				openCdb: false,
+			},
 		});
 	});
 
@@ -359,16 +383,30 @@ function resolveDeps(over: Partial<ResolveDeps> & { answers?: string[] }): {
 	const printed: string[] = [];
 	const answers = [...(over.answers ?? [])];
 	const dh = mktmp("t93-resolve-dh-");
+	// T133: option-1 answers default to an encrypted scaffold with a
+	// scripted password; tests that need the open escape or stdin
+	// override the fields (or answers) explicitly.
+	const secrets = [
+		...((over as { secrets?: (string | null)[] }).secrets ?? [
+			"t93-pw",
+			"t93-pw",
+		]),
+	];
 	return {
 		deps: {
 			isTty: over.isTty ?? false,
 			ask: async () => answers.shift() ?? null,
+			askSecret: async () => secrets.shift() ?? null,
+			readStdinPassword: async () => null,
 			print: (line) => printed.push(line),
 			registryFile: over.registryFile ?? registryFile(dh),
 			env: over.env ?? toolEnv(stubCentrsBin()),
+			passwordStdin: over.passwordStdin ?? false,
+			openCdb: over.openCdb ?? false,
 			...(over.templatesRoot !== undefined
 				? { templatesRoot: over.templatesRoot }
 				: {}),
+			...(over.template !== undefined ? { template: over.template } : {}),
 		},
 		printed,
 	};
@@ -407,7 +445,9 @@ describe("resolveStart", () => {
 
 	tposix("choice 1 inits here and registers", async () => {
 		const dir = mktmp("t93-resolve-init-");
-		const { deps, printed } = resolveDeps({ isTty: true, answers: ["1"] });
+		// T133: option 1 now prompts for template (default) and the
+		// CDB password (typed twice) before scaffolding encrypted.
+		const { deps, printed } = resolveDeps({ isTty: true, answers: ["1", ""] });
 		const res = await resolveStart(dir, deps);
 		expect(res).toEqual({ kind: "serve", dir });
 		expect(nodeFs.existsSync(path.join(dir, "workspace.toml"))).toBe(true);
@@ -468,16 +508,49 @@ describe("resolveStart", () => {
 	});
 });
 
+/** T133 init deps: scripted secrets stand in for the TTY prompt. */
+function initDeps(
+	over: Partial<{
+		print: (line: string) => void;
+		registryFile: string;
+		env: Record<string, string>;
+		secrets: (string | null)[];
+	}>,
+): {
+	print: (line: string) => void;
+	isTty: boolean;
+	ask: (question: string) => Promise<string | null>;
+	askSecret: (question: string) => Promise<string | null>;
+	readStdinPassword: () => Promise<string | null>;
+	registryFile: string;
+	env: Record<string, string>;
+} {
+	const secrets = [...(over.secrets ?? ["t93-pw", "t93-pw"])];
+	return {
+		print: over.print ?? (() => {}),
+		isTty: true,
+		ask: async () => null,
+		askSecret: async () => secrets.shift() ?? null,
+		readStdinPassword: async () => null,
+		registryFile: over.registryFile ?? "",
+		env: over.env ?? {},
+	};
+}
+
 describe("runInit", () => {
 	tposix("inits an empty dir and registers it", async () => {
 		const dir = mktmp("t93-init-ok-");
 		const printed: string[] = [];
 		const dh = mktmp("t93-init-dh-");
-		const res = await runInit(dir, "minimal", {
-			print: (line) => printed.push(line),
-			registryFile: registryFile(dh),
-			env: toolEnv(stubCentrsBin()),
-		});
+		const res = await runInit(
+			dir,
+			{ template: "minimal", passwordStdin: false, openCdb: false },
+			initDeps({
+				print: (line) => printed.push(line),
+				registryFile: registryFile(dh),
+				env: toolEnv(stubCentrsBin()),
+			}),
+		);
 		expect(res).toEqual({ ok: true, dir });
 		expect(nodeFs.existsSync(path.join(dir, "workspace.toml"))).toBe(true);
 		expect(readRegistry(registryFile(dh)).entries.length).toBe(1);
@@ -487,11 +560,14 @@ describe("runInit", () => {
 	tposix("network template inits too", async () => {
 		const dir = mktmp("t93-init-net-");
 		const dh = mktmp("t93-init-netdh-");
-		const res = await runInit(dir, "network", {
-			print: () => {},
-			registryFile: registryFile(dh),
-			env: toolEnv(stubCentrsBin()),
-		});
+		const res = await runInit(
+			dir,
+			{ template: "network", passwordStdin: false, openCdb: false },
+			initDeps({
+				registryFile: registryFile(dh),
+				env: toolEnv(stubCentrsBin()),
+			}),
+		);
 		expect(res).toEqual({ ok: true, dir });
 		expect(nodeFs.existsSync(path.join(dir, "START-HERE.md"))).toBe(true);
 		expect(nodeFs.existsSync(path.join(dir, "template.toml"))).toBe(false);
@@ -502,11 +578,15 @@ describe("runInit", () => {
 		nodeFs.writeFileSync(path.join(dir, "AGENTS.md"), "mine\n");
 		const printed: string[] = [];
 		const dh = mktmp("t93-init-clobberdh-");
-		const res = await runInit(dir, "minimal", {
-			print: (line) => printed.push(line),
-			registryFile: registryFile(dh),
-			env: toolEnv(stubCentrsBin()),
-		});
+		const res = await runInit(
+			dir,
+			{ template: "minimal", passwordStdin: false, openCdb: false },
+			initDeps({
+				print: (line) => printed.push(line),
+				registryFile: registryFile(dh),
+				env: toolEnv(stubCentrsBin()),
+			}),
+		);
 		expect(res.ok).toBe(false);
 		if (!res.ok) expect(res.why).toMatch(/AGENTS\.md/);
 		expect(nodeFs.readdirSync(dir)).toEqual(["AGENTS.md"]);

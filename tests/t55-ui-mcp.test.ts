@@ -54,7 +54,10 @@ type Posted = { status: number; json: Record<string, unknown> };
 async function postJson(url: string, body: unknown): Promise<Posted> {
 	const res = await fetch(url, {
 		method: "POST",
-		headers: { "content-type": "application/json" },
+		headers: {
+			"content-type": "application/json",
+			origin: new URL(url).origin,
+		},
 		body: JSON.stringify(body),
 	});
 	return {
@@ -589,6 +592,7 @@ describe("probe sessions carry no ui tools", () => {
 					try {
 						const recheck = await fetch(`${srv.url}api/auth/oauth-recheck`, {
 							method: "POST",
+							headers: { origin: new URL(srv.url).origin },
 						});
 						expect(recheck.status).toBe(200);
 						const sent = await postJson(`${srv.url}api/chat/send`, {

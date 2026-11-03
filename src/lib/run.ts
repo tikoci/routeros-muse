@@ -68,6 +68,16 @@ export async function run(
 	}
 }
 
+/**
+ * Redact a secret from text meant for logs, errors, or API whys
+ * (T133): the scaffold and auth-mutation paths report centrs output
+ * that must never echo the CDB password. Null/empty passes through.
+ */
+export function redactSecret(text: string, secret: string | null): string {
+	if (!secret) return text;
+	return text.split(secret).join("<redacted>");
+}
+
 /** Run a shell snippet (doctor detects); sh on unix, cmd on windows. */
 export async function runShell(
 	script: string,

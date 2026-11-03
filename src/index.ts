@@ -9,7 +9,7 @@ import { runInit } from "./cli/init";
 import { openBrowser } from "./cli/open";
 import { resolveStart } from "./cli/resolve";
 import { readPackageVersion } from "./cli/version";
-import { ask, isTty } from "./lib/prompt";
+import { ask, askSecret, isTty, readStdinPassword } from "./lib/prompt";
 import { registryFile } from "./lib/registry";
 import { Stop } from "./lib/stop";
 import { toolBinDir, toolEnv } from "./lib/tools";
@@ -37,11 +37,23 @@ async function main(): Promise<void> {
 		const dir = parsed.opts.dir
 			? path.resolve(process.cwd(), parsed.opts.dir)
 			: process.cwd();
-		const res = await runInit(dir, parsed.opts.template, {
-			print: (line) => console.log(line),
-			registryFile: registryFile(),
-			env: toolEnv(toolBinDir()),
-		});
+		const res = await runInit(
+			dir,
+			{
+				template: parsed.opts.template,
+				passwordStdin: parsed.opts.passwordStdin,
+				openCdb: parsed.opts.openCdb,
+			},
+			{
+				print: (line) => console.log(line),
+				isTty: isTty(),
+				ask,
+				askSecret,
+				readStdinPassword,
+				registryFile: registryFile(),
+				env: toolEnv(toolBinDir()),
+			},
+		);
 		process.exit(res.ok ? 0 : 1);
 	}
 
@@ -68,10 +80,15 @@ async function main(): Promise<void> {
 			{
 				isTty: isTty(),
 				ask,
+				askSecret,
+				readStdinPassword,
 				print: (line) => console.log(line),
 				registryFile: registryFile(),
 				env: tools,
 				explicit: s.dir !== undefined,
+				template: s.template,
+				passwordStdin: s.passwordStdin,
+				openCdb: s.openCdb,
 			},
 		);
 		if (resolved.kind === "abort") process.exit(2);
@@ -115,9 +132,13 @@ async function main(): Promise<void> {
 		}
 		console.log("Ctrl-C stops the server.");
 	}
-	process.on("SIGINT", () => {
+	// T133 review P2: both signals end the session — stop() takes
+	// spawned workspace children down with the picker.
+	const shutdown = () => {
 		void srv.stop().then(() => process.exit(0));
-	});
+	};
+	process.on("SIGINT", shutdown);
+	process.on("SIGTERM", shutdown);
 	await new Promise(() => {});
 }
 

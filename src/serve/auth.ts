@@ -4,7 +4,9 @@
 // docs/design/t39-auth-design.md): list-without-password tells open from
 // encrypted, list-with-password verifies a candidate. Passwords travel
 // via CENTRS_CDB_PASSWORD (env), never argv (ps-visible).
-import { have, run } from "../lib/run";
+import * as nodeFs from "node:fs";
+import * as path from "node:path";
+import { have, redactSecret, run } from "../lib/run";
 
 export type CdbScope = "workspace" | "default" | "override";
 export type CdbMode = "encrypted" | "open" | "missing" | "unavailable";
@@ -127,6 +129,168 @@ export async function verifyCdbPassword(
 	return { ok: false, code, why: `centrs: ${code}` };
 }
 
+export type CdbMutationResult =
+	| { ok: true; cdbFile?: string | null }
+	| { ok: false; code: string; why: string };
+
+/**
+ * Child env for a CDB mutation: the explicit password rides
+ * CENTRS_CDB_PASSWORD, an ambient one never leaks in.
+ */
+function mutationEnv(
+	password: string,
+	spawnEnv?: Record<string, string>,
+): Record<string, string> {
+	const child: Record<string, string> = {};
+	for (const [k, v] of Object.entries(spawnEnv ?? process.env)) {
+		if (v !== undefined && k !== "CENTRS_CDB_PASSWORD") child[k] = v;
+	}
+	child["CENTRS_CDB_PASSWORD"] = password;
+	return child;
+}
+
+function mutationFailure(
+	action: string,
+	r: { stdout: string; stderr: string },
+	password: string,
+): CdbMutationResult {
+	const env = parseEnvelope(centrsText(r));
+	if (env) {
+		const code = codeOf(env) ?? "cdb/unreadable";
+		return { ok: false, code, why: redactSecret(`centrs: ${code}`, password) };
+	}
+	const line = centrsText(r).trim().split("\n")[0] ?? "";
+	return {
+		ok: false,
+		code: "cdb/unreadable",
+		why: redactSecret(
+			`centrs ${action} failed${line ? `: ${line.slice(0, 160)}` : ""}`,
+			password,
+		),
+	};
+}
+
+/**
+ * Convert an open CDB to encrypted (T133 encrypt-now): `centrs
+ * devices encrypt --no-backup` with the password in the child env
+ * only. The caller re-checks the mode first — this never converts
+ * anything but an open registry, and failure whys redact the
+ * password.
+ */
+function reportedCdbFile(env: CentrsEnvelope | null): string | null {
+	const data = env?.data;
+	if (data && typeof data === "object") {
+		const f = (data as Record<string, unknown>)["cdbFile"];
+		if (typeof f === "string" && f) return f;
+	}
+	return null;
+}
+
+export async function encryptOpenCdb(
+	file: string | null,
+	password: string,
+	spawnEnv?: Record<string, string>,
+): Promise<CdbMutationResult> {
+	if (!have("centrs", spawnEnv))
+		return { ok: false, code: "cdb/unavailable", why: "centrs not on PATH" };
+	const args = ["devices", "encrypt", "--no-backup", "--format", "json"];
+	if (file) args.push("--cdb-file", file);
+	const r = await run(["centrs", ...args], {
+		timeoutMs: 30_000,
+		env: mutationEnv(password, spawnEnv),
+	});
+	const env = parseEnvelope(centrsText(r));
+	if (env?.ok === true) return { ok: true, cdbFile: reportedCdbFile(env) };
+	return mutationFailure("encrypt", r, password);
+}
+
+/**
+ * Create an encrypted CDB (T133 missing-registry overlay):
+ * `centrs devices init --encrypt` with the password in the child
+ * env only. Refuses an existing file the same way the scaffold
+ * does (no clobber); the caller re-checks the missing mode first.
+ */
+export async function initEncryptedCdb(
+	file: string,
+	password: string,
+	spawnEnv?: Record<string, string>,
+): Promise<CdbMutationResult> {
+	if (!have("centrs", spawnEnv))
+		return { ok: false, code: "cdb/unavailable", why: "centrs not on PATH" };
+	const r = await run(
+		[
+			"centrs",
+			"devices",
+			"init",
+			"--encrypt",
+			"--cdb-file",
+			file,
+			"--format",
+			"json",
+		],
+		{ timeoutMs: 30_000, env: mutationEnv(password, spawnEnv) },
+	);
+	const env = parseEnvelope(centrsText(r));
+	if (env?.ok === true) return { ok: true, cdbFile: reportedCdbFile(env) };
+	return mutationFailure("init --encrypt", r, password);
+}
+
+/**
+ * Plaintext pre-conversion snapshots beside the CDB
+ * (device.cdb.bak.*): the encrypt overlay warns about these —
+ * encryption protects only the active CDB. Basenames, sorted;
+ * unreadable dirs read as none.
+ */
+export function listCdbBackups(file: string): string[] {
+	const prefix = `${path.basename(file)}.bak.`;
+	let names: string[];
+	try {
+		names = nodeFs.readdirSync(path.dirname(file));
+	} catch {
+		return [];
+	}
+	return names.filter((n) => n.startsWith(prefix)).sort();
+}
+
+/**
+ * Where to scan for plaintext pre-conversion backups (T133 review):
+ * the bound path wins; in operator scope (file null) the spawn
+ * env's CENTRS_CDB_FILE binding resolves it, else the mutation
+ * envelope's reported path (centrs data.cdbFile). Null means
+ * enumeration is impossible — return the retained-backups
+ * warning instead of an empty list.
+ */
+export function backupScanDir(
+	file: string | null,
+	spawnEnv: Record<string, string>,
+	reportedFile: string | null,
+): string | null {
+	for (const candidate of [
+		file,
+		spawnEnv["CENTRS_CDB_FILE"] ?? null,
+		reportedFile,
+	]) {
+		if (typeof candidate === "string" && candidate) {
+			try {
+				if (nodeFs.statSync(path.dirname(candidate)).isDirectory())
+					return candidate;
+			} catch {
+				// Unreadable: try the next candidate.
+			}
+		}
+	}
+	return null;
+}
+
+export function retainedBackupsWarning(): string {
+	return (
+		"could not resolve the operator CDB path, so pre-existing " +
+		"plaintext backups were not enumerated: any device.cdb.bak.* " +
+		"beside the operator store is NOT protected by this encryption — " +
+		"find and delete them once the password is safe"
+	);
+}
+
 /**
  * Server-owned unlock context (T64): the bound CDB plus the password
  * that opens it. Bound to a session token at unlock, held in memory
@@ -151,7 +315,12 @@ export function workerEnv(
 	cdbFile: string | null,
 	password: string | null,
 ): Record<string, string> {
-	const env: Record<string, string> = { ...base };
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(base)) {
+		// An inherited CENTRS_CDB_PASSWORD never leaks into a worker:
+		// only the explicitly passed unlock password rides.
+		if (k !== "CENTRS_CDB_PASSWORD") env[k] = v;
+	}
 	if (cdbFile) env["CENTRS_CDB_FILE"] = cdbFile;
 	if (password) env["CENTRS_CDB_PASSWORD"] = password;
 	return env;

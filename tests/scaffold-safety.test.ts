@@ -82,6 +82,7 @@ describe("scaffold write safety", () => {
 				toolEnv(stubCentrsBin()),
 				"minimal",
 				{
+					cdb: { kind: "open" },
 					afterPreflight: () => {
 						nodeFs.writeFileSync(path.join(dir, "workspace.toml"), competing);
 					},
@@ -107,6 +108,7 @@ describe("scaffold write safety", () => {
 				dir,
 				toolEnv(stubCentrsBin()),
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(res.ok).toBe(false);
 			if (!res.ok) expect(res.conflicts).toContain("workspace.toml");
@@ -125,7 +127,12 @@ describe("scaffold write safety", () => {
 		const outside = path.join(outer, "outside");
 		nodeFs.mkdirSync(outside);
 		nodeFs.symlinkSync(outside, path.join(dir, "checks"));
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()), "network");
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			"network",
+			{ cdb: { kind: "open" } },
+		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.readdirSync(outside)).toEqual([]);
 		expect(nodeFs.lstatSync(path.join(dir, "checks")).isSymbolicLink()).toBe(
@@ -136,7 +143,12 @@ describe("scaffold write safety", () => {
 	tposix("checks-file failure leaves nothing; retry succeeds", async () => {
 		const dir = mktmp("t97-checksfile-");
 		nodeFs.writeFileSync(path.join(dir, "checks"), "I am a file, not a dir\n");
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()), "network");
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			"network",
+			{ cdb: { kind: "open" } },
+		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.readdirSync(dir).sort()).toEqual(["checks"]);
 		nodeFs.rmSync(path.join(dir, "checks"));
@@ -144,6 +156,7 @@ describe("scaffold write safety", () => {
 			dir,
 			toolEnv(stubCentrsBin()),
 			"network",
+			{ cdb: { kind: "open" } },
 		);
 		expect(retry.ok).toBe(true);
 	});
@@ -155,6 +168,7 @@ describe("scaffold write safety", () => {
 			dir,
 			toolEnv(failingCentrsBin()),
 			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(false);
 		if (!res.ok) expect(res.why).toMatch(/centrs devices init failed/);
@@ -171,6 +185,7 @@ describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
 			toolEnv(stubCentrsBin()),
 			"minimal",
 			{
+				cdb: { kind: "open" },
 				fs: {
 					writeSync: (fd, buf, offset, length) =>
 						nodeFs.writeSync(fd, buf, offset, Math.min(1, length), null),
@@ -191,6 +206,7 @@ describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
 			toolEnv(stubCentrsBin()),
 			"minimal",
 			{
+				cdb: { kind: "open" },
 				fs: { writeSync: () => 0 },
 			},
 		);
@@ -210,6 +226,7 @@ describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
 				toolEnv(stubCentrsBin()),
 				"minimal",
 				{
+					cdb: { kind: "open" },
 					fs: {
 						closeSync: (fd) => {
 							closes++;
@@ -225,6 +242,7 @@ describe("scaffold write loop and ledger timing (T97 follow-up)", () => {
 				dir,
 				toolEnv(stubCentrsBin()),
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(retry.ok).toBe(true);
 		},
@@ -240,6 +258,7 @@ describe("scaffold rollback ownership (T97 follow-up)", () => {
 				dir,
 				toolEnv(replacingCentrsBin()),
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(res.ok).toBe(false);
 			expect(nodeFs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe(
@@ -257,6 +276,8 @@ describe("scaffold leftover reporting (T97 follow-up)", () => {
 			parent,
 			"doomed",
 			toolEnv(replacingCentrsBin()),
+			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
@@ -279,6 +300,7 @@ describe("scaffold spawn failure (T97 follow-up)", () => {
 				dir,
 				toolEnv(unspawnableCentrsBin()),
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(res.ok).toBe(false);
 			if (!res.ok) expect(res.why).toMatch(/centrs devices init failed/);
@@ -294,6 +316,8 @@ describe("scaffold spawn failure (T97 follow-up)", () => {
 				parent,
 				"doomed",
 				toolEnv(unspawnableCentrsBin()),
+				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(res.ok).toBe(false);
 			if (!res.ok) expect(res.why).toMatch(/centrs devices init failed/);
@@ -316,6 +340,7 @@ describe("scaffold destination policy (T97 follow-up)", () => {
 				named,
 				toolEnv(stubCentrsBin()),
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(res.ok).toBe(true);
 			if (!res.ok) return;
@@ -340,6 +365,7 @@ describe("scaffold destination policy (T97 follow-up)", () => {
 				link,
 				toolEnv(stubCentrsBin()),
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 			expect(res.ok).toBe(true);
 			if (!res.ok) return;
@@ -356,6 +382,7 @@ describe("scaffold destination policy (T97 follow-up)", () => {
 			deep,
 			toolEnv(failingCentrsBin()),
 			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.existsSync(path.join(base, "a"))).toBe(false);
@@ -368,6 +395,8 @@ describe("scaffold destination policy (T97 follow-up)", () => {
 			parent,
 			"ws",
 			toolEnv(failingCentrsBin()),
+			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.existsSync(path.join(base, "p1"))).toBe(false);
@@ -416,6 +445,7 @@ describe("T97 re-review edge cases", () => {
 			toolEnv(stubCentrsBin()),
 			"minimal",
 			{
+				cdb: { kind: "open" },
 				fs: {
 					fstatSync: () => {
 						throw new Error("EIO-fstat");
@@ -439,6 +469,7 @@ describe("T97 re-review edge cases", () => {
 			toolEnv(stubCentrsBin()),
 			"minimal",
 			{
+				cdb: { kind: "open" },
 				fs: {
 					writeSync: () => {
 						throw new Error("primary-write-ENOSPC");
@@ -465,6 +496,7 @@ describe("T97 re-review edge cases", () => {
 				path.join(base, "a", "b", "ws"),
 				env,
 				"minimal",
+				{ cdb: { kind: "open" } },
 			);
 		} finally {
 			process.umask(old);
@@ -480,6 +512,7 @@ describe("T97 re-review edge cases", () => {
 			named,
 			toolEnv(stubCentrsBin()),
 			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(true);
 		if (res.ok) {
