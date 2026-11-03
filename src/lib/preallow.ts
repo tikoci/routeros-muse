@@ -799,10 +799,13 @@ function ensurePreallowReadsLocked(
 		...(args.enabled ? hosts.map((h) => networkEntry(h)) : []),
 		// The ui_* tools ride the same toggle (T55): seeded whenever
 		// preallow is on, in workspace and no-workspace homes alike.
-		// T105: the read-only centrs + rosetta MCP tools ride it too
+		// T105/T112: the read-only rosetta MCP tools ride it too
 		// (tagged tool_action rules, global like the ui ones — the
-		// home itself is per-workspace, D45). Mixed/write tools are
-		// never seeded: per-op scoping is impossible (P7).
+		// home itself is per-workspace, D45). No centrs_* rule is
+		// seeded any more (T112: agents use the centrs CLI this
+		// phase); stale tagged centrs_* rules prune on reseed like
+		// any retired name. Mixed/write tools are never seeded:
+		// per-op scoping is impossible (P7).
 		...(args.enabled
 			? (args.seedTools ?? SEED_TOOL_NAMES).map((t) => toolEntry(t))
 			: []),

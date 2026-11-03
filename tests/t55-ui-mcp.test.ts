@@ -22,11 +22,7 @@ import {
 	policyFile,
 	toolRuleForMcp,
 } from "../src/lib/preallow";
-import {
-	CENTRS_MCP_SERVER,
-	ROSETTA_MCP_SERVER,
-	SEED_TOOL_NAMES,
-} from "../src/mcp/trilogy-tools";
+import { ROSETTA_MCP_SERVER, SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import {
 	mcpToolName,
 	mintMcpToken,
@@ -343,8 +339,9 @@ describe("seeded ui tool rules", () => {
 		const tools = rules.filter(
 			(e) => (e["rule"] as Record<string, unknown>)?.["kind"] === "tool_action",
 		);
-		// T105: the four ui tools first, then the read-only centrs +
-		// rosetta tools — seed order pinned, no mixed/write tools.
+		// T105/T112: the four ui tools first, then the read-only
+		// rosetta tools — seed order pinned, no centrs tools at
+		// all, no mixed/write tools.
 		expect(tools).toEqual(
 			SEED_TOOL_NAMES.map((tool_name) => ({
 				effect: "allow",
@@ -356,6 +353,9 @@ describe("seeded ui tool rules", () => {
 				reason: PREALLOW_TAG,
 			})),
 		);
+		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_explain");
+		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_validate");
+		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_retrieve");
 		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_execute");
 		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_devices");
 		expect(SEED_TOOL_NAMES).not.toContain("mcp__centrs__centrs_discover");
@@ -439,75 +439,62 @@ describe("seeded ui tool rules", () => {
 });
 
 describe("worker spawn negotiation", () => {
-	t55(
-		"every worker spawn sends sessionMcp plus all three mcpServers",
-		async () => {
-			const bin = stubT50Bin();
-			await withT50Env(bin.log, async () => {
-				const srv = await startT50Srv(bin.bin, {
-					mcpToken: "t55-fixed-token",
-				});
-				try {
-					const sent = await postJson(`${srv.url}api/chat/send`, {
-						text: "hello negotiation",
-					});
-					expect(sent.json["ok"]).toBe(true);
-					const log = nodeFs.readFileSync(bin.log, "utf8");
-					const caps = log
-						.split("\n")
-						.find((l) => l.startsWith("CAPS requestedCapabilities="));
-					expect(caps).toBeDefined();
-					expect(
-						JSON.parse(
-							caps?.slice("CAPS requestedCapabilities=".length) ?? "[]",
-						),
-					).toContain("sessionMcp");
-					const cfgLine = log.split("\n").find((l) => l.startsWith("MCPCFG "));
-					expect(cfgLine).toBeDefined();
-					const cfg = JSON.parse(
-						cfgLine?.slice("MCPCFG ".length) ?? "{}",
-					) as Record<string, Record<string, unknown>>;
-					// T105: the ui bridge plus the centrs and rosetta
-					// bundle servers, in config-key order.
-					expect(Object.keys(cfg).sort()).toEqual(
-						[UI_MCP_SERVER, CENTRS_MCP_SERVER, ROSETTA_MCP_SERVER].sort(),
-					);
-					const one = cfg[UI_MCP_SERVER] as Record<string, unknown>;
-					expect(one["transport"]).toBe("stdio");
-					expect(one["command"]).toBe(process.execPath);
-					const args = one["args"] as string[];
-					expect(args.length).toBe(1);
-					expect(args[0]?.endsWith("src/mcp/ui-bridge.ts")).toBe(true);
-					expect(nodeFs.existsSync(args[0] as string)).toBe(true);
-					expect(one["env"]).toEqual({
-						[RELAY_URL_ENV]: expect.stringMatching(
-							/^http:\/\/127\.0\.0\.1:\d+\/$/,
-						),
-						[RELAY_TOKEN_ENV]: "t55-fixed-token",
-					});
-					// The trilogy entries ride absolute bundle paths
-					// (D26); the centrs entry binds the session CDB.
-					for (const key of [CENTRS_MCP_SERVER, ROSETTA_MCP_SERVER]) {
-						const entry = cfg[key] as Record<string, unknown>;
-						expect(entry["transport"]).toBe("stdio");
-						expect(entry["command"]).toBe(process.execPath);
-						const eargs = entry["args"] as string[];
-						expect(path.isAbsolute(eargs[0] as string)).toBe(true);
-						expect(nodeFs.existsSync(eargs[0] as string)).toBe(true);
-					}
-					const centrsEnv = (cfg[CENTRS_MCP_SERVER] as Record<string, unknown>)[
-						"env"
-					] as Record<string, string>;
-					expect(
-						(centrsEnv["CENTRS_CDB_FILE"] as string).endsWith("device.cdb"),
-					).toBe(true);
-					expect("CENTRS_CDB_PASSWORD" in centrsEnv).toBe(false);
-				} finally {
-					await srv.stop();
-				}
+	t55("every worker spawn sends sessionMcp plus both mcpServers", async () => {
+		const bin = stubT50Bin();
+		await withT50Env(bin.log, async () => {
+			const srv = await startT50Srv(bin.bin, {
+				mcpToken: "t55-fixed-token",
 			});
-		},
-	);
+			try {
+				const sent = await postJson(`${srv.url}api/chat/send`, {
+					text: "hello negotiation",
+				});
+				expect(sent.json["ok"]).toBe(true);
+				const log = nodeFs.readFileSync(bin.log, "utf8");
+				const caps = log
+					.split("\n")
+					.find((l) => l.startsWith("CAPS requestedCapabilities="));
+				expect(caps).toBeDefined();
+				expect(
+					JSON.parse(caps?.slice("CAPS requestedCapabilities=".length) ?? "[]"),
+				).toContain("sessionMcp");
+				const cfgLine = log.split("\n").find((l) => l.startsWith("MCPCFG "));
+				expect(cfgLine).toBeDefined();
+				const cfg = JSON.parse(
+					cfgLine?.slice("MCPCFG ".length) ?? "{}",
+				) as Record<string, Record<string, unknown>>;
+				// T105/T112: the ui bridge plus the rosetta bundle
+				// server, in config-key order. No centrs server.
+				expect(Object.keys(cfg).sort()).toEqual(
+					[UI_MCP_SERVER, ROSETTA_MCP_SERVER].sort(),
+				);
+				expect("centrs" in cfg).toBe(false);
+				const one = cfg[UI_MCP_SERVER] as Record<string, unknown>;
+				expect(one["transport"]).toBe("stdio");
+				expect(one["command"]).toBe(process.execPath);
+				const args = one["args"] as string[];
+				expect(args.length).toBe(1);
+				expect(args[0]?.endsWith("src/mcp/ui-bridge.ts")).toBe(true);
+				expect(nodeFs.existsSync(args[0] as string)).toBe(true);
+				expect(one["env"]).toEqual({
+					[RELAY_URL_ENV]: expect.stringMatching(
+						/^http:\/\/127\.0\.0\.1:\d+\/$/,
+					),
+					[RELAY_TOKEN_ENV]: "t55-fixed-token",
+				});
+				// The rosetta entry rides an absolute bundle path
+				// (D26).
+				const entry = cfg[ROSETTA_MCP_SERVER] as Record<string, unknown>;
+				expect(entry["transport"]).toBe("stdio");
+				expect(entry["command"]).toBe(process.execPath);
+				const eargs = entry["args"] as string[];
+				expect(path.isAbsolute(eargs[0] as string)).toBe(true);
+				expect(nodeFs.existsSync(eargs[0] as string)).toBe(true);
+			} finally {
+				await srv.stop();
+			}
+		});
+	});
 
 	t55(
 		"session/start with mcpServers but no sessionMcp is capabilityRequired",

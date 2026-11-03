@@ -78,8 +78,6 @@ import {
 	writeWorkspaceFile,
 } from "../lib/workspace";
 import {
-	CENTRS_MCP_SERVER,
-	centrsEntry,
 	ROSETTA_MCP_SERVER,
 	rosettaEntry,
 	seedToolNames,
@@ -799,18 +797,18 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	const mcpBridge = fileURLToPath(
 		new URL("../mcp/ui-bridge.ts", import.meta.url),
 	);
-	// T105: the trilogy MCP bundle entries resolve once at boot
-	// (absolute paths, D26). A missing entry omits only that server
-	// — the worker still starts — and warns once here, the same
-	// honest-degradation shape toolInfo uses for missing binaries.
+	// T105/T112: the rosetta MCP bundle entry resolves once at
+	// boot (absolute path, D26). A missing entry omits only that
+	// server — the worker still starts — and warns once here, the
+	// same honest-degradation shape toolInfo uses for missing
+	// binaries.
 	const trilogyPkgRoot =
 		opts.packageRoot !== undefined ? opts.packageRoot : packageRoot();
 	const trilogyResolved = {
-		centrs: centrsEntry(trilogyPkgRoot) !== null,
 		rosetta: rosettaEntry(trilogyPkgRoot) !== null,
 	};
+	// T112: centrs via CLI this phase; centrs MCP returns after GitHub (T111 password channel)
 	for (const [name, entry] of [
-		[CENTRS_MCP_SERVER, centrsEntry(trilogyPkgRoot)],
 		[ROSETTA_MCP_SERVER, rosettaEntry(trilogyPkgRoot)],
 	] as const) {
 		if (!entry) {
@@ -829,7 +827,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			bun: process.execPath,
 			url: `http://127.0.0.1:${relay.port}/`,
 			token: mcpToken,
-			cdbFile,
 			pkgRoot: trilogyPkgRoot,
 		}).servers;
 	}
