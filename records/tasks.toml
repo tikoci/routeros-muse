@@ -1014,9 +1014,9 @@ updated = "2026-11-02"
 [[task]]
 id = "T102"
 title = "SECURITY.md from the permission research"
-status = "active"
+status = "done"
 detail = "Write SECURITY.md before GitHub (D34): what each access mode and profile allows, where trust/rules/settings live, what --trust-workspace enables (skills, rules, hooks that run outside the sandbox and approvals), the artifact sandbox (T83) and its residuals, init write-safety threat model (T97), and how to report issues. Boundary statement (developer 2026-11-02): centrs is a helper, not routeros-muse's security layer; it validates and splits read from write (--yes gates writes), but RouterOS reveals RO/RW/policy only at run time, so strict setups (e.g. never reboot) use a restricted RouterOS account for agent sessions. Source: docs/design/permissions.md SECURITY notes plus T83/T97 records. Facts only, each grounded."
-evidence = "permissions research 2026-11-01; developer asked for an eventual SECURITY.md"
+evidence = "SECURITY.md merged 6995243 (branch t3/add-security-doc b7e232b + review fixes 1773d84): 10 sections, claims cited to code/records, Known gaps T63/T98/T111/T47/C15/C19; branch gate GATE_EXIT=0 (621 tests, SMOKE GREEN); orchestrator review corrected C19 status, rosetta seed rules, T111 deferral. Living doc; full audit before GitHub (D34)."
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude)"
 updated = "2026-11-02"
