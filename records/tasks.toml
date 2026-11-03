@@ -1498,9 +1498,9 @@ id = "T148"
 title = "Execute D53: device files versus the CDB; UI renders any TOML from the file tree"
 status = "needed"
 detail = "Developer 2026-11-03: review devices.toml/router.toml with a focus on the CDB in our scheme. Execute the D53 outcome. If the recommendation holds: device list, add, and preallow host seeding read the CDB in both modes (drop the router.toml/cdb split in fleet.ts listDevices), router.toml becomes optional annotations managed by instructions/skills, templates and docs updated together, and the TOML editor opens any TOML file from the T143 tree while the picker keeps the well-known files (workspace.toml, router.toml). Coordinate with T92/T99 (TOML editor stale state and per-tab state)."
-evidence = "agenda #14 (2026-11-03): developer agenda 2026-11-03. See D53 for the current-state inventory."
+evidence = "agenda #14 (2026-11-03): developer agenda 2026-11-03. See D53 for the current-state inventory. D53 decided 2026-11-03 as option (a): CDB-only device list, twins via centrs --quickchr naming, router.toml optional (templates offer starter schemes, the agent owns workspace TOML except that workspace.toml must stay), and skills and docs stop requiring router.toml. TikTOML is not coming (centrs#137 won't-fix). The CDB-only half may land before T143; only open-any-TOML-from-the-tree needs T143."
 acceptance = "Fail-first tests for the chosen device source (workspace with and without router.toml), preallow host seeding, and arbitrary TOML open from the tree; smoke across workspace and no-workspace modes; console clean; make gate and records check pass."
-blocked_by = ["D53", "T143"]
+blocked_by = ["T143"]
 agent = ""
 updated = "2026-11-03"
 
