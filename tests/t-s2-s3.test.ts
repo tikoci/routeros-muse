@@ -250,6 +250,7 @@ describe("stop during start (S2 queue-first, S3 unresolved, run/state)", () => {
 				log,
 				async () => {
 					const srv = await startT50Srv(bin);
+					const sse = await subscribeSse(srv.url);
 					try {
 						const sending = postJson(`${srv.url}api/chat/send`, {
 							text: "HOLD-OPEN s3-timeout",
@@ -264,6 +265,12 @@ describe("stop during start (S2 queue-first, S3 unresolved, run/state)", () => {
 						const hist = await getJson(`${srv.url}api/chat/history`);
 						expect(hist["running"]).toBe(true);
 						expect(hist["turnId"] ?? null).toBeNull();
+						// Round 4 review: every tab is told the run is
+						// unresolved, so Stop/Force stay reachable even
+						// after a completion hid them.
+						const announced = await waitSse(sse.events, "run/state", 5_000);
+						expect(announced.params["running"]).toBe(true);
+						expect(announced.params["reason"]).toBe("unresolved-start");
 						// The only honest stop with an unknown turn id is
 						// worker teardown — never the trivially-stopped
 						// idle lie (forced:true step:interrupt).
@@ -281,6 +288,38 @@ describe("stop during start (S2 queue-first, S3 unresolved, run/state)", () => {
 						// it (a working send after teardown is proven by
 						// the S3 pending leg, whose ack fits the budget).
 						expect(countT71Lines(log, "SPAWN pid=")).toBe(2);
+					} finally {
+						await sse.close();
+						await srv.stop();
+					}
+				},
+				{ FAKE_TURN_ACK_DELAY_MS: "60000" },
+			);
+		},
+		120_000,
+	);
+
+	t(
+		"S3: an ack timeout after the turn already completed is idle, not unresolved",
+		async () => {
+			// Round 4 review (P2): the start's turn/started and turn/completed
+			// arrive normally but the ack misses its 30s budget. The turn is
+			// over, so the run must not stay unresolved (that left New 409ing
+			// with no Stop to press).
+			const { bin, log } = stubT50Bin();
+			await withT50Env(
+				log,
+				async () => {
+					const srv = await startT50Srv(bin);
+					try {
+						const sent = await postJson(`${srv.url}api/chat/send`, {
+							text: "s3-completes-before-timeout",
+						});
+						expect(sent.status).toBe(500);
+						const hist = await getJson(`${srv.url}api/chat/history`);
+						expect(hist["running"]).toBe(false);
+						const created = await postJson(`${srv.url}api/chat/new`, {});
+						expect(created.status).toBe(200);
 					} finally {
 						await srv.stop();
 					}

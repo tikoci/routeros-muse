@@ -204,6 +204,9 @@ export class MspClient {
 	private pending = new Map<number, Pending>();
 	private notifyHandlers = new Set<(ev: ViewEvent) => void>();
 	private closed = false;
+	// Set once the host is gone: exit (code OR signal — a SIGKILL leaves
+	// exitCode null) or stdout EOF. call() fails fast on it.
+	private dead = false;
 
 	private constructor(
 		proc: ReturnType<typeof Bun.spawn>,
@@ -211,6 +214,10 @@ export class MspClient {
 	) {
 		this.proc = proc;
 		this.mcpServers = mcpServers;
+		const markDead = (): void => {
+			this.dead = true;
+		};
+		proc.exited.then(markDead, markDead);
 		void this.readLoop();
 	}
 
@@ -767,7 +774,13 @@ export class MspClient {
 		// Fail fast on a dead worker: without this a call issued
 		// after the exit — but before the server's exit watcher runs
 		// — would hang until its own timeout.
-		if (this.proc.exitCode !== null) throw new Error("muse host exited");
+		if (this.closed) throw new Error("client closed");
+		if (
+			this.dead ||
+			this.proc.exitCode !== null ||
+			this.proc.signalCode !== null
+		)
+			throw new Error("muse host exited");
 		const id = this.nextId++;
 		const line = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
 		return new Promise((resolve, reject) => {
@@ -815,6 +828,7 @@ export class MspClient {
 		} catch {
 			// stream closed under us; pending calls fail below
 		} finally {
+			this.dead = true;
 			reader.releaseLock();
 			// EOF without close(): the host exited, so pending calls
 			// would otherwise hang until their own timeout (30s for

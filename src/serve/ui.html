@@ -2658,9 +2658,10 @@
     if (LOADING_CURRENT || MAIN_STALE === null) return;
     LOADING_CURRENT = true;
     try {
-      const heardGen = MAIN_STALE.gen;
       const j = await afterSwap(undefined, true);
-      if (j && typeof j.generation === "number" && j.generation >= heardGen) {
+      // Compare against the marker as it is NOW: a newer publish heard
+      // while this load was in flight keeps the banner for another click.
+      if (j && typeof j.generation === "number" && MAIN_STALE !== null && j.generation >= MAIN_STALE.gen) {
         clearStaleMain();
       }
       if (!j) showToast("Could not load the current chat — retry.", "alert");
@@ -3329,6 +3330,14 @@
       setRunning(true);
       return;
     }
+    if (m.method === "run/state" && m.params && m.params.running === true) {
+      // The server holds an unresolved run (S3: the start never acked):
+      // Stop/Force must stay reachable even if a completion hid them.
+      noteLiveEvent();
+      LIVE_TURN = null;
+      setRunning(true);
+      return;
+    }
     if (m.method === "run/state" && m.params && m.params.running === false) {
       // The worker is gone (crash, kill, force-stop teardown, lock): clear
       // the running UI everywhere. The dead prompts settle via recovery.
@@ -3461,6 +3470,15 @@
   // applyLiveness is true only at boot and in Load current; every other
   // history render leaves run state to the stream. S1: even then, liveness
   // applies only when the clock hasn't moved since this request started.
+  function applyHistoryLiveness(j) {
+    if (j.running === true) {
+      LIVE_TURN = typeof j.turnId === "string" ? j.turnId : null;
+      setRunning(true);
+    } else {
+      LIVE_TURN = null;
+      setRunning(false);
+    }
+  }
   async function loadHistory(applyLiveness) {
     const seen = UI_LIVE_SEQ;
     try {
@@ -3491,15 +3509,7 @@
         if (el) msgsEl().appendChild(el);
       }
       tail();
-      if (applyLiveness === true && seen === UI_LIVE_SEQ) {
-        if (j.running === true) {
-          if (typeof j.turnId === "string") LIVE_TURN = j.turnId;
-          setRunning(true);
-        } else {
-          LIVE_TURN = null;
-          setRunning(false);
-        }
-      }
+      if (applyLiveness === true && seen === UI_LIVE_SEQ) applyHistoryLiveness(j);
       return j;
     } catch { /* chat starts empty when MSP is unreachable */ }
     return null;
@@ -4488,6 +4498,7 @@
   async function checkMainStale() {
     // Boot owns the first paint: no main adopted yet, nothing to stale.
     if (window.__mainSession === null) return;
+    const seen = UI_LIVE_SEQ;
     let j = null;
     try { j = await getJSON("/api/chat/history"); } catch { return; }
     if (!j || j.ok !== true) return;
@@ -4497,6 +4508,11 @@
     if (j.generation < window.__mainGen) return;
     if (j.sessionId !== window.__mainSession) {
       setStaleMain(j.sessionId, j.generation);
+    } else if (seen === UI_LIVE_SEQ) {
+      // Same main, but events may have been missed in the gap (a turn
+      // started or ended elsewhere): follow the server's liveness, unless
+      // a live event since the request already told us more.
+      applyHistoryLiveness(j);
     }
   }
   function enterApp(st) {

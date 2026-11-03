@@ -1419,6 +1419,18 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// pending only the bookkeeping waits: record this
 					// worker's turn/completed ids so the ack can skip
 					// an already-finished turn.
+					// A completion after the start went unresolved is
+					// that turn ending (any id but the previously tracked
+					// turn's): the run resolves without a teardown.
+					if (
+						unresolvedStart !== null &&
+						unresolvedStart.worker === mspPromise &&
+						ev.method === "turn/completed"
+					) {
+						const doneId = (ev.params as Record<string, unknown>)["turnId"];
+						if (typeof doneId !== "string" || doneId !== lastTurnId)
+							unresolvedStart = null;
+					}
 					if (
 						pendingStart !== null &&
 						pendingStart.worker === mspPromise &&
@@ -2971,11 +2983,26 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									} catch {
 										alive = false;
 									}
-									if (alive && mspPromise === pending.worker) {
+									// A completion for any turn other than the
+									// previously tracked one is this start's
+									// turn finishing (one turn per session):
+									// the run is over, not unresolved.
+									const prevTurn = lastTurnId;
+									const finished =
+										pending.untypedCompleted ||
+										[...pending.completedIds].some((id) => id !== prevTurn);
+									if (alive && !finished && mspPromise === pending.worker) {
 										unresolvedStart = {
 											worker: pending.worker,
 											client,
 										};
+										// Tell every tab: a completion may already
+										// have hidden Stop, and Stop/Force are the
+										// only way out of an unresolved start.
+										emit({
+											method: "run/state",
+											params: { running: true, reason: "unresolved-start" },
+										});
 									}
 								}
 								throw err;

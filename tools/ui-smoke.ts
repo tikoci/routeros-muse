@@ -5211,6 +5211,98 @@ try {
 			await page.screenshot({ path: path.join(OUT, "55-p27-past-race.png") });
 			await page.unroute(`**/api/past/${s1}`);
 
+			// Round 4 review (P2): a same-main SSE gap that missed a turn's
+			// start. B's stream is down while A starts an approval-held turn
+			// on the SAME main; on reconnect B follows the server's liveness
+			// (Stop shown) and raises no stale banner.
+			await page.click(".ctab.main");
+			await pageB.evaluate(() => window.__smoke?.dropStream());
+			await page.fill("#chatinput", "NEED-APPROVAL r4 gap");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			await pageB.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r4 same-main reconnect shows the live turn's Stop",
+				await srOk(
+					pageB.waitForFunction(
+						() => {
+							const b = document.getElementById("stopbtn");
+							return b !== null && b.style.display !== "none";
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"r4 same-main reconnect raises no stale banner",
+				(await pageB.locator("#stalemain:visible").count()) === 0,
+			);
+			await page
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await srIdle(page);
+			await srIdle(pageB);
+
+			// Round 4 review (P2): Load current must not clear a banner for a
+			// NEWER publish heard while its own history was in flight. A moves
+			// to S5 (B banners), B's Load current is held on S5's history, A
+			// moves on to S6, then the S5 answer lands: the banner stays.
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await srIdle(page);
+			await srOk(
+				pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+			);
+			let releaseHist!: () => void;
+			const histGate = new Promise<void>((r) => {
+				releaseHist = r;
+			});
+			let holdHist = true;
+			await pageB.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (holdHist) await histGate;
+				await route.fulfill({ response: res });
+			});
+			await pageB.click("#stalemain-load");
+			await new Promise((r) => setTimeout(r, 300));
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await srIdle(page);
+			await new Promise((r) => setTimeout(r, 750));
+			holdHist = false;
+			releaseHist();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r4 Load current keeps the banner for a newer publish",
+				(await pageB.locator("#stalemain:visible").count()) === 1,
+			);
+			check(
+				"r4 Send stays disabled while still stale",
+				await pageB.locator("#sendbtn").isDisabled(),
+			);
+			await pageB.unroute("**/api/chat/history");
+			if ((await pageB.locator("#stalemain-load:visible").count()) === 1)
+				await pageB.click("#stalemain-load");
+			check(
+				"r4 second Load current clears the banner",
+				await srOk(
+					pageB.waitForSelector("#stalemain", {
+						state: "hidden",
+						timeout: 15_000,
+					}),
+				),
+			);
+
 			// Quiescence before the stop (mirrors the T60 block).
 			await page.evaluate(async () => {
 				await Promise.all(
