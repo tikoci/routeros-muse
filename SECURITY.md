@@ -29,8 +29,9 @@ sessions a restricted RouterOS account. (T102, C19.)
 This is load-bearing, not boilerplate: a seeded `centrs retrieve`
 rule trusts centrs's read/write split, and the fragment-path bug that
 rebooted a disposable CHR without `--yes` is an upstream bug
-([centrs#586](https://github.com/tikoci/centrs/issues/586), C19, still
-open), not a policy failure. Anyone who needs "never reboot" needs
+([centrs#586](https://github.com/tikoci/centrs/issues/586), C19; fixed
+on centrs main, not yet in the bundled 0.1.9-next.24), not a policy
+failure. Anyone who needs "never reboot" needs
 the restricted account.
 
 ## 4. Access modes and permission profiles
@@ -88,10 +89,14 @@ Under the Settings toggle, each workspace's policy seeds (T101,
   only (no cross-workspace union).
 - `tool_action` rules for the four `ui_*` MCP tools (`ui_notify`,
   `ui_open`, `ui_select_device`, `ui_add_device`).
+- `tool_action` rules for rosetta's local-read MCP tools (T105,
+  `src/mcp/trilogy-tools.ts` `ROSETTA_SEED_TOOLS`);
+  `routeros_current_versions` stays unseeded (per-call fetch to the
+  upgrade server). Mixed or write tools are never seeded.
 
 Agent sessions reach centrs through its CLI; rosetta stays as MCP
-(T112, in progress — removes centrs MCP from the session config; T105
-had shipped both). The `quickchr list`/`doctor` housekeeping (stale
+(D46; T112, in progress, removes centrs MCP and its seeded
+`centrs_*` read rules from the session config; T105 had shipped both). The `quickchr list`/`doctor` housekeeping (stale
 local PID/marker cleanup under `~/.config/quickchr`, no device
 contact) is accepted in the read set.
 
@@ -108,8 +113,9 @@ whole-app lock (T39, T64, `docs/internals.md` Unlock):
 - **Lock is worker-stop, not revocation**: it revokes the token,
   stops that session's MSP worker, and drops the context (T64, T81).
   Never imply credentials were revoked from an already-running child.
-- Passwords never go in session config, transcripts, or logs: centrs
-  MCP gets only `CENTRS_CDB_FILE` in config env (T111); the UI
+- Passwords never go in session config, transcripts, or logs: while
+  centrs MCP shipped (T105, until T112) it got only `CENTRS_CDB_FILE`
+  in config env, never the password (T111); the UI
   redacts records to `(target, user)` as a temporary guard pending
   upstream `tikoci/centrs#551` (T64); typed secrets never echo (T72).
 
@@ -154,11 +160,15 @@ mid-copy parent swap (Node has no openat).
 - T98: `/api/file` still resolves by pathname (symlink follow,
   no `device.cdb` denial, `ui_open` swap window) — open.
 - T111: no password channel into centrs MCP for encrypted CDBs
-  (calls fail honestly with `cdb/password-required`) — open,
-  developer decision pending.
+  (calls fail honestly with `cdb/password-required`) — deferred by
+  D46: centrs MCP leaves the session config this phase (T112) and
+  returns after GitHub; upstream half tracked in
+  [centrs#602](https://github.com/tikoci/centrs/issues/602).
 - T47: RO/RW access level not yet shown on device cards — open.
 - T82/C15 ([centrs#581](https://github.com/tikoci/centrs/issues/581)):
   stale-secret protection is an interim modal note until the
   upstream secret-safe revision contract lands.
 - C19 ([centrs#586](https://github.com/tikoci/centrs/issues/586)):
-  fragment-path non-read dispatch — open upstream; see §3.
+  fragment-path non-read dispatch — fixed on centrs main, awaiting a
+  centrs publish and our bump; until then the bundled build still
+  has it. See §3.
