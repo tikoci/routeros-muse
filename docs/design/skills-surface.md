@@ -179,6 +179,11 @@ missing / 3 unexpected / 5 errored (`12-skill-check-bad.txt`).
 
 ## S3. Discovery roots and precedence
 
+> T118 correction (2026-11-02): this survey omitted the managed personal
+> root `$XDG_CONFIG_HOME/muse/skills`. It loads without workspace trust
+> and outranks same-name `$HOME/.agents/skills` copies. See the addendum
+> below; the original captures remain valid for the roots they tested.
+
 **Answer: four roots. Project `<ws>/.agents/skills` (trust-gated),
 user `$HOME/.agents/skills` (always loaded), bundled skills embedded
 in the binary (materialized under `$XDG_DATA_HOME/muse/skills/
@@ -440,3 +445,65 @@ time over a workspace the current `init` actually produces
 Verdict: D39/D40 route correctly on init-ed workspaces; nothing
 to fix. Captures are local-only (`out/t55-live/skills-probe.jsonl`,
 `out/t55-live/skills-turn.jsonl` — never committed).
+
+## T118. Default RouterOS skills delivery (2026-11-02)
+
+Developer scope: default-on RouterOS skills in every routeros-muse
+session, including no-workspace sessions, with one GUI off switch.
+Workspace overrides are a future task (T119); package/template drift
+and refresh remain separate (T120). T100 is the implementation task.
+This research did not change runtime code or dependencies.
+
+Three isolated probes validate the proposed delivery route. Captures
+are local-only under `out/skills-delivery-probe/`; all staging and
+package installs used temporary directories that were removed.
+The worker's real HOME and shared config/skills were never changed.
+No model turn or RouterOS device contact was needed.
+
+1. A temporary package.json with production dependency
+   `routeros-skills: github:tikoci/routeros-skills#37f271ff0195745aeac727daa74482d2c2abb75c`,
+   followed by `bun install --production --ignore-scripts`, exited 0
+   on Bun 1.4.4: one package, all 19 skill directories and 39 reference
+   entries. Its existing private, lint-only package.json is sufficient
+   for this Git dependency. Proof: `bun-install.txt`, `package-proof.json`.
+2. `muse skills install <marker> --json` with temporary
+   `XDG_CONFIG_HOME` and `XDG_DATA_HOME` exited 0 and reported
+   `$CONFIG_DIR/skills/muse-delivery-probe`, plus the managed lockfile
+   `$CONFIG_DIR/skills/.muse/lock.json`. A plain untrusted
+   `muse skills list --workspace <temp> --json` loaded the marker as
+   scope `user`. Proof: `install.json`, `list.json`.
+3. Copying the full 19 directories (including references) directly
+   from the installed dependency into `<private-config>/muse/skills`
+   also worked. Both CLI and MSP `skill/list` loaded 19/19 in a
+   temporary workspace and a plain directory representing no-workspace
+   mode, without `--trust-workspace`. MSP commands used the committed
+   `tools/msp-capture.ts session-probe --provider echo --workspace …
+   --muse-home … --muse-config-home … --dump-skills … --out …` driver.
+   Proof: `workspace-a-*` and `no-workspace-*` CLI JSON, MSP catalogs
+   and JSONL wire logs. Binary: Muse Code 1.4.14 (1.4.14-R7309.1).
+
+The full CLI catalogs locate every RouterOS row under
+`$CONFIG_DIR/skills/<name>/SKILL.md`. They contain 19 diagnostics,
+all `skill-shadowed`: this machine already has same-name
+`$HOME/.agents/skills` symlinks, and the private config copies win.
+Those are collision notices, not broken-skill errors; MSP alone
+would hide the distinction. This corrects S3's incomplete root list.
+It does not prove every possible precedence relationship for the
+managed root, or test a model reading reference files under sandbox.
+
+Recommendation for T100: use a full-SHA production Git dependency
+and Bun lockfile; stage from the installed package into the existing
+private config homes before session creation, including the fixed
+no-workspace home. Add one default-true machine setting and GUI
+checkbox. Reconcile only files that our manifest owns, preserve
+unrelated files, and surface diagnostics. The switch controls our
+automatic delivery; independently installed or workspace copies can
+still load under Muse's own discovery rules. Verify the full catalog
+and the invocable MSP subset, including reference-file access in a
+real sandboxed turn, before declaring implementation done.
+
+This moves GitHub access to dependency installation and removes it
+from session startup. A cold package install still needs GitHub;
+release-time embedding or a published data package could remove that
+last fetch later. No runtime branch polling, remote refresh, workspace
+settings resolution, or shared user-home installation is needed.
