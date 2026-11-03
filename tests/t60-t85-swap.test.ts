@@ -18,7 +18,7 @@ import { have } from "../src/lib/run";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, T50_FAKE_MUSE, withT50Env } from "./t50-fake";
-import { pollT71Log, startT71Srv, stubT71Bin, withT71Env } from "./t71-fake";
+import { pollT71Log } from "./t71-fake";
 
 afterAll(cleanupTmpdirs);
 
@@ -259,33 +259,48 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 	);
 
 	t(
-		"new is refused while a stop-force is in progress",
+		"new and resume are refused while a stop is in flight, with no live turn",
 		async () => {
-			const { bin, log } = stubT71Bin();
-			await withT71Env(log, { mode: "ignoring" }, async () => {
-				const srv = await startT71Srv(bin);
-				try {
-					const sent = await postJson(`${srv.url}api/chat/send`, {
-						text: "T60-FORCE-WINDOW",
-					});
-					expect(sent.json["ok"]).toBe(true);
-					const stopped = await postJson(`${srv.url}api/chat/stop`, {});
-					expect(stopped.json["stopped"]).toBe(true);
-					const gen = stopped.json["generation"];
-					expect(typeof gen).toBe("number");
-					const forcing = postJson(`${srv.url}api/chat/stop-force`, {
-						generation: gen,
-					});
-					await pollT71Log(log, /RECV_INTERRUPT/, 15_000);
-					const denied = await postJson(`${srv.url}api/chat/new`, {});
-					expect(denied.status).toBe(409);
-					expect(typeof denied.json["error"]).toBe("string");
-					const forced = await forcing;
-					expect(forced.json["ok"]).toBe(true);
-				} finally {
-					await srv.stop();
-				}
-			});
+			// A force-stop window cannot isolate stopInFlight (its turn
+			// stays live, so any 409 passes through turn-running — the
+			// old leg's weakness). This scenario hangs only the
+			// interrupt ack while the completion lands promptly: no live
+			// turn, stop in flight, so the stop-in-progress marker must
+			// be the one that fires, on both swap routes.
+			const { bin, log } = stubT50Bin();
+			await withT50Env(
+				log,
+				async () => {
+					const srv = await startT50Srv(bin);
+					try {
+						const sent = await postJson(`${srv.url}api/chat/send`, {
+							text: "HOLD-OPEN stop-window",
+						});
+						expect(sent.json["ok"]).toBe(true);
+						await pollT71Log(log, /RECV_TURN/, 15_000);
+						const stopping = postJson(`${srv.url}api/chat/stop`, {});
+						// The first stop's interrupt owns the live turn
+						// (its ack hangs 8s); later polls miss the run.
+						await pollT71Log(log, /RECV_INTERRUPT/, 15_000);
+						await waitIdle(srv.url);
+						const deniedNew = await postJson(`${srv.url}api/chat/new`, {});
+						expect(deniedNew.status).toBe(409);
+						expect(deniedNew.json["error"]).toBe("stop-in-progress");
+						const deniedResume = await postJson(`${srv.url}api/chat/resume`, {
+							sessionId: sent.json["sessionId"],
+						});
+						expect(deniedResume.status).toBe(409);
+						expect(deniedResume.json["error"]).toBe("stop-in-progress");
+						expect((await stopping).json["stopped"]).toBe(true);
+						// Once the stop settles, swaps work again.
+						const created = await postJson(`${srv.url}api/chat/new`, {});
+						expect(created.json["ok"]).toBe(true);
+					} finally {
+						await srv.stop();
+					}
+				},
+				{ FAKE_INTERRUPT_ACK_DELAY_MS: "8000" },
+			);
 		},
 		60_000,
 	);
