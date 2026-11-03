@@ -888,6 +888,22 @@
     document.getElementById("stalemain").style.display = "";
     refreshSendVisibility();
   }
+  // A tab's own New/Make current publishes main/changed before its POST
+  // answers; while ADOPTING, hold the newest heard publish instead of
+  // bannering, then decide once the own swap settles: only a different,
+  // newer main than the one just adopted is staleness (another tab won).
+  let HELD_MAIN = null;
+  function holdMainChanged(sid, gen) {
+    if (typeof sid !== "string" || !sid) return;
+    const g = typeof gen === "number" ? gen : -Infinity;
+    if (HELD_MAIN === null || g > HELD_MAIN.gen) HELD_MAIN = { sid, gen: g };
+  }
+  function settleHeldMain() {
+    if (ADOPTING > 0 || HELD_MAIN === null) return;
+    const h = HELD_MAIN;
+    HELD_MAIN = null;
+    if (h.sid !== window.__mainSession && h.gen > window.__mainGen) setStaleMain(h.sid, h.gen);
+  }
   function clearStaleMain() {
     if (MAIN_STALE === null) return;
     MAIN_STALE = null;
@@ -2706,6 +2722,7 @@
       showToast("New session failed: " + e.message, "alert");
     } finally {
       ADOPTING -= 1;
+      settleHeldMain();
       refreshSendVisibility();
       go.disabled = false;
     }
@@ -2735,6 +2752,7 @@
       showToast("Make current failed: " + e.message, "alert");
     } finally {
       ADOPTING -= 1;
+      settleHeldMain();
       refreshSendVisibility();
       refreshSwapButtons();
     }
@@ -3331,7 +3349,8 @@
       if (window.__mainSession === null) return;
       const p = m.params || {};
       if (typeof p.sessionId === "string" && p.sessionId !== window.__mainSession) {
-        setStaleMain(p.sessionId, p.generation);
+        if (ADOPTING > 0) holdMainChanged(p.sessionId, p.generation);
+        else setStaleMain(p.sessionId, p.generation);
       }
       return;
     }

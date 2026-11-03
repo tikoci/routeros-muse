@@ -4901,6 +4901,12 @@ try {
 					pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
 				),
 			);
+			// B heard the publish, so A (the initiating tab) heard it too:
+			// its own swap must never banner it, held or after adopt.
+			check(
+				"p25 initiating tab never shows the stale banner while its swap is held",
+				(await page.locator("#stalemain:visible").count()) === 0,
+			);
 			check(
 				"p26 B keeps the old transcript behind the banner",
 				((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
@@ -4979,6 +4985,10 @@ try {
 			check(
 				"sr A shows empty S2 after adopt",
 				(await page.locator("#pane-chat .msg").count()) === 0,
+			);
+			check(
+				"p25 initiating tab shows no stale banner after its own adopt",
+				(await page.locator("#stalemain:visible").count()) === 0,
 			);
 
 			// P2-5(2): a newer live turn keeps its Stop across afterSwap. A
