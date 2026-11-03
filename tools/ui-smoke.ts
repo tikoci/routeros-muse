@@ -4790,6 +4790,31 @@ try {
 					.catch(() => false);
 			const srOk = (p: Promise<unknown>): Promise<boolean> =>
 				p.then(() => true).catch(() => false);
+			// Quiesce the server's turn tracking before swaps. The MSP
+			// client's synchronous line pump can process a turn/completed
+			// from the same stdio chunk as its turn/start ack before the
+			// send route sets lastTurnId, dropping the clear and sticking
+			// a completed turn as live (pre-existing race, reproduced at
+			// a51a102 without these changes: immediate New-after-idle
+			// 409s turn-running). A stop poll settles it the same way the
+			// suite's waitIdle does (missing_run clears the stuck id).
+			const srQuiesce = async (): Promise<void> => {
+				const start = Date.now();
+				for (;;) {
+					const st = (await (
+						await fetch(`${srvS.url}api/chat/stop`, { method: "POST" })
+					).json()) as { stopped?: boolean; why?: string };
+					if (
+						st.stopped === false &&
+						typeof st.why === "string" &&
+						st.why.includes("no live run")
+					)
+						return;
+					if (Date.now() - start > 15_000)
+						throw new Error("sr quiesce never settled");
+					await new Promise((r) => setTimeout(r, 100));
+				}
+			};
 
 			// Demo-data markup (T52): the past-chat pane ships no demo text.
 			const ppcHtml = (await page.locator("#pane-pastchat").innerHTML()) ?? "";
@@ -4819,6 +4844,16 @@ try {
 				undefined,
 				{ timeout: 15_000 },
 			);
+			// B's boot-history render races A's just-completed turn
+			// (pre-existing boot race, red 6/6 at a51a102 with this
+			// prefix): reload onto the settled history instead of
+			// asserting the racy first paint. B still sends nothing.
+			await pageB.reload({ waitUntil: "load" });
+			await pageB.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
 			check("sr B shows S1 without sending", await srAgent(pageB, "P61-FIRST"));
 
 			// Response hold for A's /new (route.fetch lets the server swap;
@@ -4842,6 +4877,7 @@ try {
 			});
 
 			// P2-5(1): adopting hides Send with Stop's visual while /new is held.
+			await srQuiesce();
 			armHold();
 			await page.click("#newsession-btn");
 			await page.waitForSelector("#newsession-confirm:visible", {
@@ -4899,6 +4935,7 @@ try {
 			// P2-5(2): a newer live turn keeps its Stop across afterSwap. A
 			// swaps S2->S3 with the answer held; B's held turn goes live on
 			// S3 meanwhile (B gates on the new main id first).
+			await srQuiesce();
 			armHold();
 			await page.click("#newsession-btn");
 			await page.waitForSelector("#newsession-confirm:visible", {
@@ -4957,6 +4994,7 @@ try {
 			// P2-6(2): a deaf B's stale send 409s with the draft restored. A
 			// moves S3->S4 and marks it; B (stream dropped) still pins S3.
 			await pageB.evaluate(() => window.__smoke?.dropStream());
+			await srQuiesce();
 			await page.click("#newsession-btn");
 			await page.waitForSelector("#newsession-confirm:visible", {
 				timeout: 5_000,
