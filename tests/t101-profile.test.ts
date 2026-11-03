@@ -198,12 +198,17 @@ describe("T101 Part A: explicit profile per session", () => {
 					try {
 						await postJson(`${srv.url}api/chat/send`, { text: "hello" });
 						await postJson(`${srv.url}api/chat/access`, { mode: "allowAll" });
-						// Private home: our policy + our settings + the auth link.
+						// Private home: policy/settings/auth plus the T100 skills.
 						expect(nodeFs.readdirSync(path.join(priv, "muse")).sort()).toEqual([
 							"approval-policy.json",
 							"auth.json",
+							"routeros-muse-skills.json",
 							"settings.json",
+							"skills",
 						]);
+						expect(
+							nodeFs.readdirSync(path.join(priv, "muse", "skills")),
+						).toHaveLength(19);
 						expect(
 							nodeFs
 								.lstatSync(path.join(priv, "muse", "auth.json"))

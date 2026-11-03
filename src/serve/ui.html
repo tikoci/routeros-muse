@@ -670,6 +670,13 @@
           <div class="arow"><span class="k">Session</span><span class="v" id="set-session">…</span></div>
           <div class="setnote">Model changes apply to the main chat after the current turn finishes.</div>
         </div>
+        <div class="rblock" id="routeros-skills-block">
+          <div class="rsect">RouterOS skills</div>
+          <div class="setrow"><label><input type="checkbox" id="routeros-skills-toggle" disabled> Automatically load RouterOS skills</label></div>
+          <div class="setnote">Applies to all chats in the web UI, with or without a workspace. Changes take effect in the next new or resumed chat. Independently installed skills can still load.</div>
+          <div class="setnote" id="routeros-skills-status">Checking bundled skills…</div>
+          <div class="setnote" id="routeros-skills-warn" role="status" style="display:none"></div>
+        </div>
         <div class="rblock" id="preallow-block">
           <div class="rsect">Pre-allowed</div>
           <div class="setrow"><label><input type="checkbox" id="preallow-toggle"> Pre-allow reads and MCP tools for this workspace</label></div>
@@ -3300,6 +3307,7 @@
   function onStream(ev) {
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.method === "routeros-skills/changed") { loadRouterosSkills(); return; }
     stampPromptEvent(m);
     if (m.method === "approval/requested") { onApprovalRequested(m.params); return; }
     if (m.method === "approval/updated") { onApprovalUpdated(m.params); return; }
@@ -3770,6 +3778,7 @@
       // seeded ui tools with empty commands/hosts (T106), so the
       // toggle stays usable there.
       paintPreallow(j.preallow);
+      paintRouterosSkills(j.routerosSkills);
       if (NO_WS) {
         // No-workspace mode is picker-first: reveal the Workspaces tab
         // and land on it (workspace mode keeps it hidden).
@@ -3892,6 +3901,71 @@
     } else {
       w.style.display = "none";
     }
+  }
+
+  let savingRouterosSkills = false;
+  let routerosSkillsVersion = -1;
+  function paintRouterosSkills(report) {
+    const tog = $("routeros-skills-toggle");
+    const status = $("routeros-skills-status");
+    const warn = $("routeros-skills-warn");
+    if (!report) {
+      tog.disabled = true;
+      status.textContent = "Bundled skills status unavailable.";
+      return;
+    }
+    // Status may wait on tool detection while a fresher settings response
+    // arrives. An older snapshot must not undo a saved choice or catalog check.
+    if (typeof report.version === "number") {
+      if (report.version < routerosSkillsVersion) return;
+      routerosSkillsVersion = report.version;
+    }
+    tog.disabled = savingRouterosSkills;
+    if (!savingRouterosSkills) tog.checked = report.enabled === true;
+    const verification = report.verification;
+    const count = (report.staged || []).length;
+    let text = report.error ? "Bundled skills need attention."
+      : report.appliedEnabled === false ? "Automatic loading is off."
+      : verification ? (verification.loaded || []).length + "/" + count + " bundled skills available to this chat."
+      : count + " bundled skills prepared; checked when a chat starts.";
+    if (verification && verification.personalCopiesShadowed)
+      text += " Bundled versions take priority over " + verification.personalCopiesShadowed + " personal copies.";
+    if (report.pending) text += " Saved change applies to the next new or resumed chat.";
+    status.textContent = text;
+    const warnings = [report.error, ...(report.warnings || []), ...((verification && verification.warnings) || [])].filter(Boolean);
+    warn.textContent = warnings.join(" ");
+    warn.style.display = warnings.length ? "" : "none";
+  }
+  async function loadRouterosSkills() {
+    try {
+      const j = await getJSON("/api/settings");
+      if (j.ok) paintRouterosSkills(j.routerosSkills);
+    } catch { /* keep the last confirmed state */ }
+  }
+  function wireRouterosSkills() {
+    $("routeros-skills-toggle").addEventListener("change", async (e) => {
+      const tog = e.target;
+      const on = tog.checked;
+      savingRouterosSkills = true;
+      tog.disabled = true;
+      try {
+        const r = await fetch("/api/settings", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ autoRouterosSkills: on }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.why || "Could not save skills preference");
+        paintRouterosSkills(j.routerosSkills);
+      } catch (err) {
+        tog.checked = !on;
+        const warn = $("routeros-skills-warn");
+        warn.textContent = "Could not save skills preference: " + err.message;
+        warn.style.display = "";
+      } finally {
+        savingRouterosSkills = false;
+        tog.disabled = false;
+      }
+    });
   }
 
   function wirePreallow() {
@@ -4067,6 +4141,7 @@
     try {
       const j = await getJSON("/api/settings");
       if (j.ok && j.defaultAccess) paintDefaultAccess(j.defaultAccess);
+      if (j.ok) paintRouterosSkills(j.routerosSkills);
     } catch { /* the row keeps its placeholder */ }
   }
 
@@ -4527,7 +4602,7 @@
     loadAlerts();
     // No loadTwins(): the Twins tab fetches on first show (T38 on-demand).
     loadPast();
-    loadHistory(true).then(() => { refreshStatpop(); recoverPending(); });
+    loadHistory(true).then(() => { refreshStatpop(); recoverPending(); loadRouterosSkills(); });
     connectStream();
   }
 
@@ -4538,6 +4613,7 @@
   wireControls();
   wireDefaultAccess();
   wirePreallow();
+  wireRouterosSkills();
   wireWorkspaces();
   wireAuth();
   // Twins are on-demand (T38): quickchr is optional, so the tab fetches

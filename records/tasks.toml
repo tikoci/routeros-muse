@@ -856,7 +856,7 @@ id = "T86"
 title = "Prove the full Mode B workflow with a real agent and a twin"
 status = "needed"
 detail = "Run the D16 milestone end to end: shared handoff visible -> real Meta session loads intended skills/context -> selected device reaches agent -> approval/question round trip -> read/proposed change on a disposable twin with readback -> rendered evidence in the app -> stop/lock lifecycle. Include T64 exact acceptance: no ambient CDB password, unlock encrypted fixture, UI read and an actual agent-shell centrs command using the package build and bound CDB. Existing T64 worker shim only records env; it never executes centrs. Wire shapes come from live captures. No bigdude writes. T112 2026-11-02: also prove live that an agent shell in an unlocked encrypted-CDB workspace runs centrs CLI reads (CENTRS_CDB_PASSWORD inherited), the one hop T112 inferred."
-evidence = "T80 audit of tests/serve.test.ts stubMuseBin + unlock-propagation test: real centrs for UI, shell stub for MSP env; no real Meta tool invocation or twin demo established by 164/56 gate. This is a milestone acceptance task, not a demand to redo every unit test. T84 added as dep: the demo must not corrupt router.toml."
+evidence = "T80 audit of tests/serve.test.ts stubMuseBin + unlock-propagation test: real centrs for UI, shell stub for MSP env; no real Meta tool invocation or twin demo established by 164/56 gate. This is a milestone acceptance task, not a demand to redo every unit test. T84 added as dep: the demo must not corrupt router.toml. T100 grounding 2026-11-03: out/t100-live/sandbox-turn.jsonl records completed read_skill and relative-reference read_file under effective :ask-me and a correct foreground answer, but no turn/completed before 60 seconds while reminder children were pending; full milestone turn completion remains to be proved here."
 blocked_by = ["T50", "T55", "T49", "T83", "T71", "T56", "T84"]
 agent = ""
 updated = "2026-11-02"
@@ -999,13 +999,13 @@ updated = "2026-11-01"
 
 [[task]]
 id = "T100"
-title = "Default RouterOS skills in every Muse session, with GUI opt-out"
-status = "needed"
-detail = "Implement D47 as a small session-delivery slice: add routeros-skills as a production GitHub dependency pinned to a full commit SHA in package.json and bun.lock; resolve it relative to the installed routeros-muse package, never workspace cwd. Stage all skill directories including references into the worker's existing private config home at muse/skills before starting sessions, in workspace and no-workspace modes and without requiring workspace trust. One machine preference [agent] auto_routeros_skills defaults true; expose it as a GUI Settings checkbox in both modes. No workspace override, inheritance engine, new globals abstraction, or runtime GitHub fetch/update. Reconcile only package-owned files using name/source/revision/content hashes; preserve unrelated skills and refuse symlink chains; report missing/broken packages and collisions honestly. The off switch disables our automatic set, never deletes independently installed user/workspace skills. Do not silently abort a running turn when toggled; explain when the change takes effect. Validate the actual loaded set using MSP plus CLI diagnostics (MSP omits non-invocable skills); distinguish shadow notices from errors. Upgrade with the installed Muse package, not a moving branch. T119 holds future workspace override; T120 preserves the broader package/template lifecycle scope previously mixed into T100. T15 remains the entry/orientation skill task; do not block default RouterOS skills on it or T27 curation."
-evidence = "D47 developer 2026-11-02; T118 isolated live probes in out/skills-delivery-probe/ (local only): Bun 1.4.4 production install of github:tikoci/routeros-skills#37f271ff0195745aeac727daa74482d2c2abb75c -> 1 package, 19 skills and 39 reference entries. Muse 1.4.14-R7309.1 loads all 19 from private $CONFIG_DIR/skills by CLI and MSP skill/list as user rows, without --trust-workspace, in workspace and plain-directory no-workspace sessions. CLI reports only 19 skill-shadowed notices for pre-existing ~/.agents copies; private config copies win. muse skills install also proves a managed private root and lockfile. Prior docs/design/skills-surface.md S3 omitted this root; addendum corrects it. Implementation and acceptance tests remain pending."
+title = "Default RouterOS skills in every GUI Muse session, with opt-out"
+status = "done"
+detail = "Implement D47 for GUI-managed sessions as a small delivery slice (code/TUI config-home choice is D51/T125): add routeros-skills as a production GitHub dependency pinned to a full commit SHA in package.json and bun.lock; resolve it relative to the installed routeros-muse package, never workspace cwd. Stage all skill directories including references into the worker's existing private config home at muse/skills before starting sessions, in workspace and no-workspace modes and without requiring workspace trust. One machine preference [agent] auto_routeros_skills defaults true; expose it as a GUI Settings checkbox in both modes. No workspace override, inheritance engine, new globals abstraction, or runtime GitHub fetch/update. Reconcile only package-owned files using name/source/revision/content hashes; preserve unrelated skills and refuse symlink chains; report missing/broken packages and collisions honestly. The off switch disables our automatic set, never deletes independently installed user/workspace skills. Developer timing choice 2026-11-03: persist the toggle now and apply it at the next new or resumed chat; do not silently abort a running turn. Validate the actual loaded set using MSP plus CLI diagnostics (MSP omits non-invocable skills); distinguish shadow notices from errors. Upgrade with the installed Muse package, not a moving branch. T119 holds future workspace override; T120 preserves the broader package/template lifecycle scope previously mixed into T100. T15 remains the entry/orientation skill task; do not block default RouterOS skills on it or T27 curation."
+evidence = "Implemented 2026-11-03: full-SHA production routeros-skills dependency and Bun lock; src/lib/routeros-skills.ts resolves the installed package, copies all 19 skills/references offline into private homes, reconciles hash-owned files with symlink/special-file refusal, and preserves local/unowned content. settings.toml/API/GUI carry one default-on machine switch; saving never mutates live files, new/resumed chats apply it. MSP + CLI verify actual catalogs; workspace overrides, personal shadow notices and errors are distinct. Browser smoke caught and now guards stale status overwriting a saved choice and the off-state event refresh; new-session checks await complete UI refresh before teardown. Live out/t100-live/ probes: CLI/MSP 19/19 with/without trust and no workspace; effective :ask-me read_skill plus relative-reference read_file completed with zero approvals. Foreground answer returned but full turn completion exceeded the 60-second probe budget (T86 retains that acceptance). make gate > out/t100-gate.log 2>&1 -> exit 0, Biome/tsc clean, 56 template skills valid, 669 pass/0 fail, SMOKE GREEN, zero pageerrors, only expected browser resource errors, TMPDIR clean. First gate found an obsolete exact private-home file-list assertion; updated it to require skills/manifest while keeping the shared home untouched. Dark/light pending-state, no-workspace off, trusted/untrusted, auth, access and rest of full surface smoke inspected; no new UI errors. Existing host route-handler warning remains T115; connection badge finding filed T126. make -C records check and git diff --check pass. GUI delivery complete; code/TUI scope decision D51 and task T125 remain separate, workspace settings override stays T119."
 blocked_by = []
-agent = ""
-updated = "2026-11-02"
+agent = "codex"
+updated = "2026-11-03"
 
 [[task]]
 id = "T101"
@@ -1163,7 +1163,7 @@ id = "T115"
 title = "Smoke overlap route handler logs Route is already handled"
 status = "needed"
 detail = "During the T114 records/concept-only gate, tools/ui-smoke.ts T56 overlap leg logged an asynchronous Playwright error at line 759 (await route.continue after gateB): continue: Route is already handled! The following overlap-B assertion passed and the smoke continued. Investigate route lifetime/unroute ordering and ensure unexpected handler errors fail the gate instead of only printing. Separate from T108 browser net::ERR_CONNECTION_REFUSED console finding; no product repair in the terminal scope pass."
-evidence = "make gate > /tmp/routeros-muse-t114-gate.log 2>&1 (local) -> exit 0 / SMOKE GREEN: lines 995-1005 show tools/ui-smoke.ts:759 continue: Route is already handled!, followed by PASS t56 overlap B still echoes. Final browser pageerrors 0; the error is in the host route handler. Source/behavior otherwise unchanged by T114. Reproduced during the T118 records/research-only gate: out/skills-delivery-probe/gate.log logs the same host route.continue error in the T56 overlap leg; tracked here, no product change."
+evidence = "make gate > /tmp/routeros-muse-t114-gate.log 2>&1 (local) -> exit 0 / SMOKE GREEN: lines 995-1005 show tools/ui-smoke.ts:759 continue: Route is already handled!, followed by PASS t56 overlap B still echoes. Final browser pageerrors 0; the error is in the host route handler. Source/behavior otherwise unchanged by T114. Reproduced during the T118 records/research-only gate: out/skills-delivery-probe/gate.log logs the same host route.continue error in the T56 overlap leg; tracked here, no product change. T100 implementation browser runs also reproduce this same host route-handler warning in out/t100-smoke.log; new skills interactions have their own settled-response waits and add no failure whitelist entries."
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
@@ -1202,7 +1202,7 @@ updated = "2026-11-02"
 id = "T120"
 title = "Package-owned Muse skills and template skill provenance, drift and refresh"
 status = "needed"
-detail = "Preserve T100's earlier broader lifecycle work separately from default RouterOS domain skills: move harness orientation/rendering/ui_* and workspace-convention skills that belong to Muse out of one template into a package-root skills directory; define which belong in sessions versus trusted workspace copies; record what init installs (name/source/sha256) for package and template skills; doctor reports drift; explicit refresh previews upgrades and never silently overwrites operator edits. T15 owns entry skill content; K30 remains the deeper managed-source design. T100's runtime ownership/revision manifest is not a full template refresh system."
+detail = "Preserve T100's earlier broader lifecycle work separately from default RouterOS domain skills: move harness orientation/rendering/ui_* and workspace-convention skills that belong to Muse out of one template into a package-root skills directory; define which belong in sessions versus trusted workspace copies; record what init installs (name/source/sha256) for package and template skills; doctor reports drift; explicit refresh previews upgrades and never silently overwrites operator edits. T15 owns entry skill content; K30 remains the deeper managed-source design. T100's runtime ownership/revision manifest is not a full template refresh system. Follow-up: transactional delivery/crash recovery can improve on T100's conservative behavior for files left unrecorded by an interrupted copy; today they remain unowned and warn rather than being adopted."
 evidence = "Scope split from pre-2026-11-02 T100 detail after developer prioritized session-wide RouterOS skills and one GUI off switch; prior skills-surface research still informs trusted project copies and verification."
 blocked_by = ["T100"]
 agent = ""
@@ -1244,6 +1244,26 @@ title = "Second tab's first paint can show an agent row without its user row"
 status = "needed"
 detail = "Pre-existing (reproduced on a51a102 and 9da4e4b with real echo): a tab whose boot history snapshot is taken before a turn completes elsewhere drops the live user row and shows only the agent reply. Merge history and stream rows by stable identity, rendering other tabs' user messages while deduplicating local optimistic rows."
 evidence = "codex sol re-review of 9da4e4b 2026-11-02, finding (b), ui.html boot history (~3293/3349 at 9da4e4b)"
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T125"
+title = "Bundled RouterOS skills for code/TUI after config-home decision"
+status = "needed"
+detail = "T100's GUI path already has private config homes; routeros-muse code/--tui launches with the operator's normal Muse config. Resolve D51 before changing it, then reuse the pinned bundle and machine preference while honoring the chosen settings/auth/past-session behavior. Cover startup, --print-only, disabled state and existing passthrough args. No defaults/globals/workspace resolution work."
+evidence = "T100 implementation inspection 2026-11-03: src/steps/launch.ts passes the tools env into muse in the workspace, with no private config override. Scope question sent to the developer; GUI implementation can complete independently."
+blocked_by = ["T100", "D51"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T126"
+title = "Settings connection badge can stay lazy after the worker connects"
+status = "needed"
+detail = "T100 UI sweep observed the Settings connection chip and dot still labeled lazy immediately after a successful New session. /api/status snapshots msp before awaiting toolInfo(), and the UI does not refresh that connection row on every main publish. Make the row reflect the connected worker after startup/swap, without stale status overwriting a later state; use a delayed-status regression. T100 added sequencing for its own skills report only; do not silently broaden that to unrelated controls."
+evidence = "out/ui-smoke/t100-skills-no-workspace-off.png (local) after successful New session: skills correctly off, connection badge lazy. out/t100-ui-debug.ts also observed a delayed initial /api/status after newer settings responses. Core T100 stale skills-response overwrite was reproduced, fixed and covered by smoke."
 blocked_by = []
 agent = ""
 updated = "2026-11-03"

@@ -78,6 +78,11 @@ export function readPreallowReads(dataHome?: string): boolean {
 	return readAgentKey(dataHome, "preallow_reads") !== false;
 }
 
+/** T100: one machine preference; only an explicit false opts out. */
+export function readAutoRouterosSkills(dataHome?: string): boolean {
+	return readAgentKey(dataHome, "auto_routeros_skills") !== false;
+}
+
 const SECTION_RE = /^\s*\[\s*(?:agent|"agent"|'agent')\s*\]\s*(?:#.*)?$/;
 
 /** Bare/double-quoted/single-quoted spellings of an [agent] key. */
@@ -253,4 +258,11 @@ export function writePreallowReads(
 	fs?: SettingsFs,
 ): void {
 	writeAgentKey(dataHome, "preallow_reads", on ? "true" : "false", fs);
+}
+
+export function writeAutoRouterosSkills(
+	dataHome: string | undefined,
+	on: boolean,
+): void {
+	writeAgentKey(dataHome, "auto_routeros_skills", on ? "true" : "false");
 }

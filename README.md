@@ -84,6 +84,13 @@ a named directory that is not a workspace stops with the `init` line. `--yolo` s
 agent session at its most permissive approval mode (`Allow all`).
 The agent worker spawns trusted by default, so the workspace's
 AGENTS.md and `.agents/skills/` load (Settings shows the state).
+GUI sessions also load the packaged RouterOS skills by default,
+including without a workspace or with workspace trust off. In Settings,
+**Automatically load RouterOS skills** changes this for every GUI
+session on the machine. The change applies to the next new or resumed
+chat; it never interrupts a running turn. Independently installed or
+workspace skills can still load. The skill version is pinned with the
+package: startup works from local files, without contacting GitHub.
 `--tui` aliases `code`. Developer flags: `--no-workspace`,
 `--provider NAME`, `--allow-open-cdb` (an open CDB implies no auth),
 `--no-trust-workspace` (spawn the agent untrusted: the workspace's

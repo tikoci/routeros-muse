@@ -142,6 +142,45 @@ artifact that navigates before its own load completes can escape
 the load counter — the first request out can't be prevented
 either, only reacted to.
 
+## Managed RouterOS skills (T100)
+
+`routeros-skills` is a production GitHub dependency pinned to a full
+commit in package.json and bun.lock. `src/lib/routeros-skills.ts`
+resolves it relative to the installed package, including hoisted
+dependencies, and stages its skill directories and references into
+`<private-config-home>/muse/skills/`. This runs at boot and before a
+new/resumed GUI chat, including the fixed no-workspace home, without
+requiring workspace trust or network access. The CLI `code` path
+continues to use the operator's normal Muse config.
+
+`<dataHome>/routeros-muse/settings.toml` stores one default-true
+`[agent] auto_routeros_skills` boolean. `/api/settings` reads/saves it;
+saving never changes the live chat's files. Settings reports the saved
+preference, the applied value, pending changes, and delivery or catalog
+warnings. A response sequence prevents delayed status reads from
+overwriting a newer preference/catalog result in the browser.
+
+`muse/routeros-muse-skills.json` records source/revision and per-file
+SHA-256 ownership. Reconciliation updates/removes unchanged owned
+files only, preserves local edits and unrelated files, and refuses
+symlink/special-file chains. An exclusive PID lock prevents concurrent
+delivery into one private home; dead owners can be recovered. New
+files are created exclusively, replacements and the manifest use
+fully written sibling files. Like init, this assumes no adversarial
+parent-directory swaps. An interrupted delivery can leave unrecorded
+files; those are treated as unowned and reported instead of adopted.
+
+After session start/resume, MSP `skill/list` and `muse skills list
+--json` under the same private config/data homes verify the invocable
+subset, full catalog paths and diagnostics. Same-name personal copies
+shadowed by the bundle are a separate notice; workspace overrides and
+missing/broken skills are surfaced. A catalog-check failure reports
+verification unavailable; a delivery failure refuses the worker/new
+chat while keeping Settings available for recovery.
+
+T119 holds workspace overrides. T120 holds template/package refresh
+and drift tooling; neither is part of the current settings path.
+
 ## Templates (T93)
 
 `templates/<name>/` is the single init source: `template.toml`

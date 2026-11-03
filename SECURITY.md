@@ -69,11 +69,25 @@ holding its own `muse/approval-policy.json` (schema v2), minimal
 `muse/settings.json`, an `auth.json` symlink to the real
 `$XDG_CONFIG_HOME/muse/auth.json`, and a `tikoci` config symlink.
 The shared `~/.config/muse` is never written. No-workspace mode gets
-the fixed `_no-workspace` home with nothing seeded. Every rule we
+the fixed `_no-workspace` home with MCP tool rules and packaged skills,
+but no workspace shell or host rules. Every rule we
 write carries `reason: "routeros-muse:seed"`; untagged rules (the
 owner's own Always-allow choices) are never touched. Fail-closed: a
 symlink at or below `<dataHome>/routeros-muse` skips seeding and no
 worker spawns with that home.
+
+GUI workers load the package-pinned RouterOS skills from their private
+`muse/skills/` directory by default, regardless of workspace trust
+(T100, `src/lib/routeros-skills.ts`). Only skill directories and their
+references are copied, never the upstream repository's hooks. The
+machine-wide Settings switch takes effect at the next new or resumed
+chat. A hash manifest owns copied files; unowned files and local edits
+are preserved with warnings, and symlinks in the affected private tree
+are refused. This switch does not remove independently installed or
+workspace skills. The managed private copies take precedence over
+same-name personal copies; trusted workspace copies can take
+precedence over the bundle, reported in Settings. Loading a skill
+grants no router permissions and does not change the session's profile.
 
 `--trust-workspace` (passed by default, D39; `--no-trust-workspace`
 opts out) enables workspace skills (`.agents/skills/`), rules

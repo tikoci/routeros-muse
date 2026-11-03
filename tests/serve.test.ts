@@ -1536,7 +1536,7 @@ describe("unlock context (T64)", () => {
 		writeShim(
 			bin,
 			"muse",
-			`{\necho "PATH0=$(printf '%s' "$PATH" | cut -d: -f1)"\necho "CDB_FILE=\${CENTRS_CDB_FILE:-}"\necho "CDB_PASSWORD=\${CENTRS_CDB_PASSWORD:-}"\n} > ${out}\nIFS= read -r _l1\nprintf '{"jsonrpc":"2.0","id":1,"result":{}}\\n'\nIFS= read -r _l2\nIFS= read -r _l3\nprintf '{"jsonrpc":"2.0","id":2,"result":{"session":{"sessionId":"stub-s"},"viewCursor":""}}\\n'\nIFS= read -r _l4\nprintf '{"jsonrpc":"2.0","id":3,"result":{"turnId":"stub-t","disposition":"started"}}\\n'\ncat > /dev/null\necho "STDIN_CLOSED" >> ${out}`,
+			`{\necho "PATH0=$(printf '%s' "$PATH" | cut -d: -f1)"\necho "CDB_FILE=\${CENTRS_CDB_FILE:-}"\necho "CDB_PASSWORD=\${CENTRS_CDB_PASSWORD:-}"\n} > ${out}\nIFS= read -r _l1\nprintf '{"jsonrpc":"2.0","id":1,"result":{}}\\n'\nIFS= read -r _l2\nIFS= read -r _l3\nprintf '{"jsonrpc":"2.0","id":2,"result":{"session":{"sessionId":"stub-s"},"viewCursor":""}}\\n'\nIFS= read -r _l4\nprintf '{"jsonrpc":"2.0","id":3,"result":{}}\\n'\nIFS= read -r _l5\nprintf '{"jsonrpc":"2.0","id":4,"result":{"turnId":"stub-t","disposition":"started"}}\\n'\ncat > /dev/null\necho "STDIN_CLOSED" >> ${out}`,
 		);
 		for (const t of ["quickchr", "centrs", "rosetta"]) {
 			nodeFs.symlinkSync(path.join(realBin, t), path.join(bin, t));

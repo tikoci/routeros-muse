@@ -47,6 +47,7 @@ import * as path from "node:path";
 import { chromium, type Page, type Request } from "playwright";
 import { READ_COMMANDS } from "../src/lib/preallow";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
+import { readAutoRouterosSkills } from "../src/lib/settings";
 import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { startServer } from "../src/serve/server";
@@ -302,6 +303,96 @@ try {
 		(await page.locator("#set-trust-note:visible").count()) === 0,
 	);
 	await page.screenshot({ path: path.join(OUT, "38-t49-trust-on.png") });
+	// T100: the real echo host loads the package set, and the GUI saves
+	// one machine preference without modifying the current chat's files.
+	await page.waitForFunction(
+		() =>
+			(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("19/19"),
+		undefined,
+		{ timeout: 20_000 },
+	);
+	check(
+		"t100 automatic skills default on in GUI",
+		await page.locator("#routeros-skills-toggle").isChecked(),
+	);
+	const skillsFile = path.join(
+		SMOKE_CONFIG_HOME,
+		"muse/skills/routeros-fundamentals/SKILL.md",
+	);
+	const skillsInode = nodeFs.statSync(skillsFile).ino;
+	// Hold an older status across the save: startup tool detection used
+	// to deliver that stale snapshot after the newer catalog/settings.
+	const oldSkillsStatus = await fetch(`${srv.url}api/status`).then((r) =>
+		r.json(),
+	);
+	let releaseSkillsStatus!: () => void;
+	let skillsStatusEntered!: () => void;
+	const staleSkillsGate = new Promise<void>((r) => {
+		releaseSkillsStatus = r;
+	});
+	const staleSkillsEntered = new Promise<void>((r) => {
+		skillsStatusEntered = r;
+	});
+	const staleSkillsRoute = async (route: import("playwright").Route) => {
+		skillsStatusEntered();
+		await staleSkillsGate;
+		await route.fulfill({ json: oldSkillsStatus });
+	};
+	await page.route("**/api/status", staleSkillsRoute);
+	const staleSkillsLoad = page.evaluate(() => window.__smoke?.loadStatus());
+	await staleSkillsEntered;
+	await page.uncheck("#routeros-skills-toggle");
+	await page.waitForFunction(() =>
+		(
+			document.getElementById("routeros-skills-status")?.textContent ?? ""
+		).includes("Saved change"),
+	);
+	check(
+		"t100 GUI off persists machine preference",
+		readAutoRouterosSkills(SMOKE_DATA_HOME) === false,
+	);
+	check(
+		"t100 GUI off leaves live chat files alone",
+		nodeFs.statSync(skillsFile).ino === skillsInode,
+	);
+	releaseSkillsStatus();
+	await staleSkillsLoad;
+	await page.unroute("**/api/status", staleSkillsRoute);
+	check(
+		"t100 stale status cannot undo a saved skills choice",
+		!(await page.locator("#routeros-skills-toggle").isChecked()) &&
+			(
+				(await page.locator("#routeros-skills-status").textContent()) ?? ""
+			).includes("Saved change"),
+	);
+	await page.screenshot({
+		path: path.join(OUT, "t100-skills-pending-dark.png"),
+	});
+	await page.click('#themeseg button[data-theme="light"]');
+	await page.locator("#routeros-skills-block").scrollIntoViewIfNeeded();
+	await page.screenshot({
+		path: path.join(OUT, "t100-skills-pending-light.png"),
+	});
+	await page.click('#themeseg button[data-theme="dark"]');
+	await page.locator("#routeros-skills-block").scrollIntoViewIfNeeded();
+	await page.check("#routeros-skills-toggle");
+	await page.waitForFunction(
+		() =>
+			!(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("Saved change") &&
+			(
+				document.getElementById(
+					"routeros-skills-toggle",
+				) as HTMLInputElement | null
+			)?.disabled === false,
+	);
+	check(
+		"t100 GUI on persists machine preference",
+		readAutoRouterosSkills(SMOKE_DATA_HOME),
+	);
 
 	// T52: settings honesty — the settings view holds no static
 	// demo value (Topologies block, Reconnect button, hard-coded
@@ -2037,6 +2128,74 @@ try {
 			nwsPlaceholderAfter ?? "missing",
 		);
 		await page.screenshot({ path: path.join(OUT, "7-no-workspace.png") });
+		if (
+			await page
+				.locator('.rbar button[data-rview="rview-settings"]')
+				.isVisible()
+		)
+			await page.click('.rbar button[data-rview="rview-settings"]');
+		else await page.click('#crail button[data-crview="rview-settings"]');
+		await page.waitForFunction(
+			() =>
+				(
+					document.getElementById("routeros-skills-status")?.textContent ?? ""
+				).includes("19/19"),
+			undefined,
+			{ timeout: 20_000 },
+		);
+		check(
+			"t100 skills load without a workspace",
+			await page.locator("#routeros-skills-toggle").isChecked(),
+		);
+		await page.uncheck("#routeros-skills-toggle");
+		await page.waitForFunction(() =>
+			(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("Saved change"),
+		);
+		await page.click("#newsession-btn");
+		await page.click("#newsession-go");
+		await page.waitForFunction(() =>
+			(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("loading is off"),
+		);
+		await page.waitForFunction(
+			() =>
+				(document.getElementById("newsession-go") as HTMLButtonElement | null)
+					?.disabled === false,
+		);
+		check(
+			"t100 new no-workspace chat applies the opt-out",
+			!nodeFs.existsSync(skillsFile),
+		);
+		await page.screenshot({
+			path: path.join(OUT, "t100-skills-no-workspace-off.png"),
+		});
+		await page.check("#routeros-skills-toggle");
+		await page.waitForFunction(() =>
+			(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("Saved change"),
+		);
+		await page.click("#newsession-btn");
+		await page.click("#newsession-go");
+		await page.waitForFunction(() =>
+			(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("19/19"),
+		);
+		check(
+			"t100 next no-workspace chat re-enables all skills",
+			nodeFs.existsSync(skillsFile),
+		);
+		// The catalog event precedes the swap's history/past/stats/pending
+		// refresh: wait for the complete UI action before stopping its server.
+		await page.waitForFunction(
+			() =>
+				(document.getElementById("newsession-go") as HTMLButtonElement | null)
+					?.disabled === false,
+		);
 	} finally {
 		await nws.stop();
 	}
@@ -2081,6 +2240,15 @@ try {
 		);
 		await page.screenshot({ path: path.join(OUT, "39-t49-trust-off.png") });
 		await untrustedBatch;
+		await page.waitForFunction(() =>
+			(
+				document.getElementById("routeros-skills-status")?.textContent ?? ""
+			).includes("19/19"),
+		);
+		check(
+			"t100 RouterOS skills load while workspace trust is off",
+			await page.locator("#routeros-skills-toggle").isChecked(),
+		);
 	} finally {
 		await untrustedSrv.stop();
 	}

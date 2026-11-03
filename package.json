@@ -25,7 +25,8 @@
 		"@tikoci/centrs": "next",
 		"@tikoci/quickchr": "next",
 		"@tikoci/rosetta": "next",
-		"mermaid": "12.2.0"
+		"mermaid": "12.2.0",
+		"routeros-skills": "github:tikoci/routeros-skills#37f271ff0195745aeac727daa74482d2c2abb75c"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.4",

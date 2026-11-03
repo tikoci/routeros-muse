@@ -38,12 +38,22 @@ import {
 	registryEntryAlive,
 	registryFile,
 } from "../lib/registry";
+import {
+	compareRouterosCatalogs,
+	loadRouterosSkills,
+	type RouterosSkillsReport,
+	type SkillsBundle,
+	type SkillsVerification,
+	stageRouterosSkills,
+} from "../lib/routeros-skills";
 import { have, run } from "../lib/run";
 import {
 	isDefaultAccess,
+	readAutoRouterosSkills,
 	readDefaultAccess,
 	readPreallowReads,
 	SettingsSymlinkError,
+	writeAutoRouterosSkills,
 	writeDefaultAccess,
 	writePreallowReads,
 } from "../lib/settings";
@@ -1131,6 +1141,118 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		stashHomeWarnings(home.warnings);
 	}
 	refreshPreallow(readPreallowReads(opts.dataHome));
+	// T100: the preference is machine-wide; these files belong only to
+	// this private worker home. POST saves it without touching a live chat.
+	let skillsBundle: SkillsBundle | undefined;
+	let skillsReport: RouterosSkillsReport = {
+		enabled: readAutoRouterosSkills(opts.dataHome),
+		revision: null,
+		staged: [],
+		warnings: [],
+		error: null,
+	};
+	let skillsVerification: SkillsVerification | null = null;
+	let skillsStateVersion = 0;
+	function skillsState() {
+		const enabled = readAutoRouterosSkills(opts.dataHome);
+		return {
+			...skillsReport,
+			version: ++skillsStateVersion,
+			enabled,
+			appliedEnabled: skillsReport.enabled,
+			pending: enabled !== skillsReport.enabled,
+			verification: skillsVerification,
+		};
+	}
+	function prepareSkills(): void {
+		const enabled = readAutoRouterosSkills(opts.dataHome);
+		try {
+			ensureHomeOrThrow();
+			if (enabled && !skillsBundle) skillsBundle = loadRouterosSkills();
+			skillsReport = stageRouterosSkills({
+				privateHome: museCfgHome,
+				enabled,
+				bundle: skillsBundle,
+			});
+			skillsVerification = null;
+		} catch (err) {
+			skillsReport = {
+				...skillsReport,
+				enabled,
+				error: err instanceof Error ? err.message : String(err),
+			};
+			throw err;
+		}
+	}
+	// Keep Settings reachable even when delivery needs attention. A worker
+	// spawn/new chat retries and refuses unsafe/incomplete delivery.
+	try {
+		prepareSkills();
+	} catch {
+		/* report carries the actionable error */
+	}
+	async function verifySkills(client: MspClient, sid: string): Promise<void> {
+		if (!skillsReport.enabled || !skillsBundle) {
+			emit({ method: "routeros-skills/changed", params: {} });
+			return;
+		}
+		const snapshot = skillsReport;
+		try {
+			const mspCatalog = (await client.call(
+				"skill/list",
+				{ sessionId: sid },
+				5_000,
+			)) as Parameters<typeof compareRouterosCatalogs>[0]["msp"];
+			if (!Array.isArray(mspCatalog?.skills))
+				throw new Error("Muse did not return a skill catalog");
+			const env = {
+				...tools,
+				XDG_CONFIG_HOME: museCfgHome,
+				...(opts.museHome ? { XDG_DATA_HOME: opts.museHome } : {}),
+			};
+			const res = await run(
+				[
+					"muse",
+					"skills",
+					"list",
+					"--workspace",
+					root,
+					...(trustWorkspace ? ["--trust-workspace"] : []),
+					"--json",
+				],
+				{ env, timeoutMs: 10_000 },
+			);
+			if (!res.ok)
+				throw new Error(
+					"Muse full skill catalog check failed; run muse skills list --json with the private config home",
+				);
+			const cli = JSON.parse(res.stdout) as Parameters<
+				typeof compareRouterosCatalogs
+			>[0]["cli"];
+			if (!Array.isArray(cli.skills) || !Array.isArray(cli.diagnostics))
+				throw new Error("Muse returned an invalid full skill catalog");
+			if (skillsReport === snapshot && msp === client) {
+				skillsVerification = compareRouterosCatalogs({
+					bundle: skillsBundle,
+					staged: snapshot.staged,
+					privateHome: museCfgHome,
+					msp: mspCatalog,
+					cli,
+				});
+			}
+		} catch (err) {
+			if (skillsReport === snapshot)
+				skillsVerification = {
+					loaded: [],
+					workspaceOverrides: [],
+					personalCopiesShadowed: 0,
+					warnings: [
+						`Skill verification unavailable: ${err instanceof Error ? err.message : String(err)}`,
+					],
+				};
+		}
+		emit({ method: "routeros-skills/changed", params: {} });
+	}
 	let sessionStartedAt: number | null = null;
 	const sse = new Set<(line: string) => void>();
 
@@ -1397,10 +1519,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				try {
 					ensureHomeOrThrow();
+					prepareSkills();
 				} catch (err) {
 					mspWhy = err instanceof Error ? err.message : String(err);
 					throw new Error(
-						`refusing to spawn the muse worker: private config home is unsafe (${mspWhy})`,
+						`refusing to spawn the muse worker: private home or bundled skills unavailable (${mspWhy})`,
 					);
 				}
 				const client = await MspClient.spawn({
@@ -1532,6 +1655,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		const permissionProfile = lastProfile ?? profileForAccess(approvalMode);
 		const snapModel = lastModelId;
 		const snapEffort = lastEffort;
+		prepareSkills();
 		const started = await client.sessionStart({
 			workspaceRoot: root,
 			approvalMode,
@@ -1544,6 +1668,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				snapEffort as ReasoningEffort,
 			);
 		}
+		await verifySkills(client, started.session.sessionId);
 		return { ...started, approvalMode, permissionProfile };
 	}
 
@@ -2211,6 +2336,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						mainSession,
 						permissionProfile: lastProfile,
 						preallow: preallowState(),
+						routerosSkills: skillsState(),
 						tools: await toolInfo(),
 						trustWorkspace: noWs ? null : opts.trustWorkspace !== false,
 					});
@@ -3487,6 +3613,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 										`session ${sid} belongs to another workspace`,
 									);
 								}
+								prepareSkills();
 								const resumed = await client.sessionResume(sid);
 								if (
 									resumed.abnormalEnd !== undefined &&
@@ -3498,6 +3625,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 										"that session's last run ended abnormally and cannot be resumed — start a new session instead",
 									);
 								}
+								await verifySkills(client, sid);
 								// P1-2: snapshot the settings once, inside the
 								// lock (the setters below await; nothing may
 								// interleave a re-read between them).
@@ -4028,21 +4156,25 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							ok: true,
 							defaultAccess: defaultAccess(),
 							preallowReads: readPreallowReads(opts.dataHome),
+							autoRouterosSkills: readAutoRouterosSkills(opts.dataHome),
+							routerosSkills: skillsState(),
 						});
 					}
 					if (req.method === "POST") {
 						const body = (await req.json()) as {
 							defaultAccess?: unknown;
 							preallowReads?: unknown;
+							autoRouterosSkills?: unknown;
 						};
 						if (
 							body.defaultAccess === undefined &&
-							body.preallowReads === undefined
+							body.preallowReads === undefined &&
+							body.autoRouterosSkills === undefined
 						) {
 							return json(
 								{
 									ok: false,
-									why: "need {defaultAccess} and/or {preallowReads}",
+									why: "need {defaultAccess}, {preallowReads}, or {autoRouterosSkills}",
 								},
 								400,
 							);
@@ -4068,9 +4200,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								400,
 							);
 						}
+						if (
+							body.autoRouterosSkills !== undefined &&
+							typeof body.autoRouterosSkills !== "boolean"
+						) {
+							return json(
+								{ ok: false, why: "need {autoRouterosSkills} boolean" },
+								400,
+							);
+						}
 						try {
 							if (body.defaultAccess !== undefined) {
 								writeDefaultAccess(opts.dataHome, body.defaultAccess);
+							}
+							if (typeof body.autoRouterosSkills === "boolean") {
+								writeAutoRouterosSkills(opts.dataHome, body.autoRouterosSkills);
 							}
 							if (typeof body.preallowReads === "boolean") {
 								writePreallowReads(opts.dataHome, body.preallowReads);
@@ -4088,6 +4232,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							ok: true,
 							defaultAccess: defaultAccess(),
 							preallowReads: readPreallowReads(opts.dataHome),
+							autoRouterosSkills: readAutoRouterosSkills(opts.dataHome),
+							routerosSkills: skillsState(),
 						});
 					}
 					return json({ ok: false, why: "need GET or POST" }, 405);
