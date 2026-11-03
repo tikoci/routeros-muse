@@ -231,6 +231,8 @@
   .sel:hover { color: var(--text); border-color: var(--border); }
   .sel b { color: var(--text); font-weight: 650; }
   .sel .car { color: var(--faint); font-size: 10px; }
+  .sel:disabled { opacity: .45; cursor: not-allowed; }
+  .nsconfirm { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .statusbar .sp { flex: 1; }
   .ctx { display: flex; align-items: center; gap: 6px; font: 11.5px var(--mono); color: var(--faint); }
 
@@ -511,6 +513,8 @@
         <button class="sel" id="sel-effort-btn">Effort <b id="seleffort">…</b><span class="car">▾</span></button>
         <button class="sel" id="sel-access-btn">Access <b id="selaccess">…</b><span class="car">▾</span></button>
         <div class="selmenu" id="selmenu"></div>
+        <button class="sel" id="newsession-btn" title="Start a new session">+ New session</button>
+        <span id="newsession-confirm" class="nsconfirm" style="display:none"><span>Start a new session? This chat moves to Past chats.</span><button class="minibtn" id="newsession-go">Start new</button><button class="minibtn" id="newsession-cancel">Cancel</button></span>
         <span class="sp"></span>
         <span class="runstat" id="runstat" title="Agent is idle" style="display:none"><span class="rdot"></span><span id="runtime">0:00</span></span>
         <span class="ctx" id="ctxbtn" title="Session stats">
@@ -547,7 +551,7 @@
           <div class="who"><span class="dot"></span><span>muse · then</span></div>
           <div class="body"><p id="ppc-agent">Same signature: tx-power reads 17 against a plan of 20. I can draft the bump and prove it on twin3 first.</p></div>
         </div>
-        <div class="tomlfoot"><button class="btn primary">Make current</button><span class="note">today's main chat moves to Past chats</span></div>
+        <div class="tomlfoot"><button class="btn primary" id="makecurrent-btn" title="Resume this chat as the main chat">Make current</button><span class="note">today's main chat moves to Past chats</span></div>
       </div>
     </div>
 
@@ -804,6 +808,31 @@
     const showSend = !AGENT_RUNNING && META_AUTH !== "absent";
     document.getElementById("sendbtn").style.display = showSend ? "" : "none";
     document.getElementById("stopbtn").style.display = AGENT_RUNNING ? "" : "none";
+    refreshSwapButtons();
+  }
+  // T60/T85: New session + Make current share Stop's signal —
+  // disabled with a tooltip while a turn runs.
+  function refreshSwapButtons() {
+    const running = AGENT_RUNNING;
+    const nb = document.getElementById("newsession-btn");
+    if (nb) {
+      nb.disabled = running;
+      nb.title = running ? "Stop the running turn first" : "Start a new session";
+    }
+    const mc = document.getElementById("makecurrent-btn");
+    if (mc) {
+      mc.disabled = running;
+      mc.title = running ? "Stop the running turn first" : "Resume this chat as the main chat";
+    }
+    if (running) disarmNewSession();
+  }
+  // DOM-only so both script blocks share it (block 2 is an IIFE).
+  function disarmNewSession() {
+    const c = document.getElementById("newsession-confirm");
+    if (c && c.style.display !== "none") {
+      c.style.display = "none";
+      document.getElementById("newsession-btn").style.display = "";
+    }
   }
   let runSecs = 0;
   // T71 stop lifecycle: STOP_PIN is the {turnId, generation, epoch} pinned
@@ -1053,6 +1082,8 @@
     } catch (e) { document.getElementById("doc-body").textContent = "unavailable: " + e.message; }
   }
   async function renderPastChat(id) {
+    // T60: Make current always resumes what this pane rendered.
+    document.getElementById("makecurrent-btn").dataset.session = id;
     document.getElementById("ppc-title").textContent = "loading…";
     try {
       const r = await fetch("/api/past/" + encodeURIComponent(id));
@@ -2472,6 +2503,101 @@
     } catch (e) {
       failSend(saved, optimistic, (e && e.message) || String(e), null);
     }
+  }
+
+  // T60/T85 main-session swap: New session (inline confirm, never a
+  // modal) and Make current (past-chat pane). After either, the main
+  // transcript reloads from the new main and the past list
+  // refreshes. The composer draft — text, staged images, target
+  // pills — is NEVER touched here: it goes to the new or resumed
+  // session on the next send. No SSE re-subscribe: the stream is
+  // server-global and already carries every session.
+  function armNewSession() {
+    document.getElementById("newsession-btn").style.display = "none";
+    document.getElementById("newsession-confirm").style.display = "";
+  }
+  async function afterSwap() {
+    LIVE_TURN = null;
+    streamItem = null;
+    chatScroll = null;
+    setRunning(false);
+    // Drop the old main's pending cards; the new main recovers its
+    // own below. In-flight recoveries are invalidated by seq bump.
+    for (const rec of pendingApprovals.values()) {
+      if (rec.el && rec.el.isConnected) rec.el.remove();
+    }
+    pendingApprovals.clear();
+    for (const rec of pendingQuestions.values()) {
+      if (rec.el && rec.el.isConnected) rec.el.remove();
+    }
+    pendingQuestions.clear();
+    lastEventAt.clear();
+    recoverApplied = ++recoverSeq;
+    updateWaiting();
+    liveCards.clear();
+    msgsEl().innerHTML = "";
+    markUnread(false);
+    await loadHistory();
+    tail();
+    await Promise.all([loadPast(), refreshStatpop(), recoverPending()]);
+  }
+  async function doNewSession() {
+    const go = document.getElementById("newsession-go");
+    go.disabled = true;
+    try {
+      const r = await fetch("/api/chat/new", { method: "POST" });
+      let j = null;
+      try { j = await r.json(); } catch { j = null; }
+      disarmNewSession();
+      if (!r.ok || !j || j.ok !== true) {
+        showToast("New session failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
+        return;
+      }
+      await afterSwap();
+      showToast("New session started — this chat moved to Past chats.", "info");
+    } catch (e) {
+      disarmNewSession();
+      showToast("New session failed: " + e.message, "alert");
+    } finally {
+      go.disabled = false;
+    }
+  }
+  async function doMakeCurrent(sessionId) {
+    document.getElementById("makecurrent-btn").disabled = true;
+    try {
+      const r = await fetch("/api/chat/resume", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      let j = null;
+      try { j = await r.json(); } catch { j = null; }
+      if (!r.ok || !j || j.ok !== true) {
+        showToast("Make current failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
+        return;
+      }
+      await afterSwap();
+      showPane("pane-chat");
+    } catch (e) {
+      showToast("Make current failed: " + e.message, "alert");
+    } finally {
+      refreshSwapButtons();
+    }
+  }
+  function wireSwap() {
+    document.getElementById("newsession-btn").addEventListener("click", () => {
+      if (AGENT_RUNNING) return;
+      armNewSession();
+    });
+    document.getElementById("newsession-go").addEventListener("click", doNewSession);
+    document.getElementById("newsession-cancel").addEventListener("click", disarmNewSession);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") disarmNewSession(); });
+    document.getElementById("makecurrent-btn").addEventListener("click", () => {
+      if (AGENT_RUNNING) return;
+      const sid = document.getElementById("makecurrent-btn").dataset.session;
+      if (!sid) { showToast("Open a past chat first.", "warn"); return; }
+      doMakeCurrent(sid);
+    });
   }
 
   // T50 approval/question surface. Cards render from the
@@ -4127,6 +4253,7 @@
   }
 
   wireComposer();
+  wireSwap();
   wireUpload();
   wireToml();
   wireControls();

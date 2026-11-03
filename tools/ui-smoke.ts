@@ -4475,7 +4475,248 @@ try {
 		`aborts=${sendAbortNoise.length}`,
 	);
 
-	// T89: expected-error exceptions are route-specific. The six
+	// T60/T85: main-session swap on the scriptable fake. New session
+	// (inline confirm, empty transcript, draft + pill survive, send
+	// works on the new main, old main lands in Past chats), Make
+	// current (the past transcript shows in main), and the
+	// while-running contract (both buttons disabled with a Stop
+	// tooltip; the routes 409). Screenshots 48-50.
+	const t60 = stubT50Bin();
+	await withT50Env(t60.log, async () => {
+		const srvS = await startServer({
+			dataHome: mktmp("ui-smoke-t60-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: t60.bin,
+		});
+		try {
+			await page.goto(srvS.url, { waitUntil: "load" });
+			const batchS = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const t60Idle = (): Promise<void> => {
+				return page
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			};
+			const t60Agent = (probe: string): Promise<boolean> =>
+				page
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: 30_000 },
+					)
+					.then(() => true)
+					.catch(() => false);
+			// A first exchange on the starting main, then a pill for
+			// the draft legs (the T49 flow: card → Add → pill).
+			await page.fill("#chatinput", "T60-SMOKE-FIRST");
+			await page.press("#chatinput", "Enter");
+			check(
+				"t60 first exchange lands on the starting main",
+				await t60Agent("T60-SMOKE-FIRST"),
+			);
+			await t60Idle();
+			check(
+				"t60 first exchange gets an agent reply",
+				(
+					(await page.locator("#pane-chat .msg.agent").textContent()) ?? ""
+				).includes("t50 done"),
+			);
+			await page.locator('.dev[data-key="dev-smoke-gw"]').click();
+			await page.waitForSelector("#pdev-add:visible", { timeout: 10_000 });
+			await page.click("#pdev-add");
+			await page.waitForSelector('.tpill[data-dev="smoke-gw"]', {
+				timeout: 5_000,
+			});
+			await page.locator(".ctab.main").click();
+			// New session: inline confirm, cancel path, then start.
+			await page.fill("#chatinput", "T60-UNSENT-DRAFT");
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			check(
+				"t60 new session asks inline with the past-chats note",
+				(
+					(await page.locator("#newsession-confirm").textContent()) ?? ""
+				).includes("Start a new session? This chat moves to Past chats."),
+			);
+			await page.screenshot({
+				path: path.join(OUT, "48-t60-new-confirm.png"),
+			});
+			await page.click("#newsession-cancel");
+			check(
+				"t60 cancel disarms the confirm",
+				(await page.locator("#newsession-confirm:visible").count()) === 0 &&
+					(await page.locator("#newsession-btn:visible").count()) === 1,
+			);
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"t60 new session empties the main transcript",
+				(await page.locator("#pane-chat .msg").count()) === 0,
+			);
+			check(
+				"t60 new session keeps the composer draft",
+				(await page.locator("#chatinput").inputValue()) === "T60-UNSENT-DRAFT",
+			);
+			check(
+				"t60 new session keeps the target pill",
+				(await page.locator('.tpill[data-dev="smoke-gw"]').count()) === 1,
+			);
+			check(
+				"t60 old main lands in Past chats",
+				((await page.locator("#pastlist").textContent()) ?? "").includes(
+					"untitled session",
+				),
+			);
+			// The draft sends clean on the new main.
+			await page.press("#chatinput", "Enter");
+			check(
+				"t60 draft sends on the new main",
+				await t60Agent("T60-UNSENT-DRAFT"),
+			);
+			await t60Idle();
+			check(
+				"t60 draft gets an agent reply on the new main",
+				(await page.locator("#pane-chat .msg.agent").count()) === 1 &&
+					(
+						(await page.locator("#pane-chat .msg.agent").textContent()) ?? ""
+					).includes("t50 done"),
+			);
+			check(
+				"t60 new main carries no old transcript",
+				!((await page.locator("#pane-chat").textContent()) ?? "").includes(
+					"T60-SMOKE-FIRST",
+				),
+			);
+			// Make current: open the past chat, resume it as main.
+			await page
+				.locator(
+					'.rbar button[data-rview="rview-past"]:visible, #crail button[data-crview="rview-past"]:visible',
+				)
+				.first()
+				.click();
+			await page.waitForSelector("#pastlist .minidev:visible", {
+				timeout: 10_000,
+			});
+			await page
+				.locator("#pastlist .minidev", { hasText: "untitled session" })
+				.first()
+				.click();
+			await page.waitForFunction(
+				() =>
+					(document.getElementById("ppc-title")?.textContent ?? "") !==
+						"loading…" &&
+					(document.getElementById("makecurrent-btn")?.dataset?.["session"] ??
+						"") !== "",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.screenshot({
+				path: path.join(OUT, "49-t60-past-tab.png"),
+			});
+			await page.click("#makecurrent-btn");
+			check(
+				"t60 make current shows the past transcript in main",
+				await t60Agent("T60-SMOKE-FIRST"),
+			);
+			check(
+				"t60 make current returns to the main chat tab",
+				(await page.locator(".ctab.main.active").count()) === 1,
+			);
+			check(
+				"t60 make current moves the other session to past",
+				((await page.locator("#pastlist").textContent()) ?? "").includes(
+					"untitled session",
+				),
+			);
+			// While running: both buttons disabled with a Stop
+			// tooltip, and both routes 409 (asserted via direct
+			// fetch — the UI guard correctly blocks the clicks).
+			await page.fill("#chatinput", "NEED-APPROVAL t60 running");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"t60 new session disabled while running",
+				(await page.locator("#newsession-btn:disabled").count()) === 1 &&
+					(
+						(await page.locator("#newsession-btn").getAttribute("title")) ?? ""
+					).includes("Stop"),
+			);
+			check(
+				"t60 make current disabled while running",
+				(await page.locator("#makecurrent-btn:disabled").count()) === 1 &&
+					(
+						(await page.locator("#makecurrent-btn").getAttribute("title")) ?? ""
+					).includes("Stop"),
+			);
+			const new409 = await page.evaluate(async () => {
+				const r = await fetch("/api/chat/new", { method: "POST" });
+				return r.status;
+			});
+			check("t60 new 409s while running", new409 === 409, `got ${new409}`);
+			const resume409 = await page.evaluate(async () => {
+				const r = await fetch("/api/chat/resume", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ sessionId: "t50-past1" }),
+				});
+				return r.status;
+			});
+			check(
+				"t60 resume 409s while running",
+				resume409 === 409,
+				`got ${resume409}`,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "50-t60-swap-running.png"),
+			});
+			await page
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await t60Idle();
+			check(
+				"t60 buttons re-enable after the run",
+				(await page.locator("#newsession-btn:disabled").count()) === 0 &&
+					(await page.locator("#makecurrent-btn:disabled").count()) === 0,
+			);
+			// Quiescence before the stop (mirrors the T50 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchS;
+		} finally {
+			await srvS.stop();
+		}
+	});
+
+	// T89: expected-error exceptions are route-specific. The eight
 	// deliberate failures (each leg asserts its own honest UI above):
 	// - fake-ref open-in-tab: GET /api/chat/output -> 400 (MspError)
 	// - wrong-password unlock: POST /api/auth/unlock -> 401
@@ -4483,9 +4724,13 @@ try {
 	// - raced credential save (T72 leg a): POST credentials -> 409
 	// - failed send (T56 L1): POST /api/chat/send -> 500 with why
 	// - oauth-required send (T56 L5): POST /api/chat/send -> 403
+	// - swap while running (T60 leg): POST /api/chat/new -> 409
+	// - resume while running (T60 leg): POST /api/chat/resume -> 409
 	// Query strings are ignored in the path match (the fake ref carries
 	// query params); match on pathname only.
 	const EXPECTED_FAILED: FailedResponse[] = [
+		{ status: 409, method: "POST", pathname: "/api/chat/new" },
+		{ status: 409, method: "POST", pathname: "/api/chat/resume" },
 		{ status: 400, method: "GET", pathname: "/api/chat/output" },
 		// T109 re-review: the deliberately injected /api/status 500
 		// (route-intercepted) proves failed status publishes nothing.

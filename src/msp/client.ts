@@ -70,6 +70,27 @@ export type SetPermissionProfileResult = {
 	[k: string]: unknown;
 };
 
+/**
+ * T60/T85: session/resume result (cold-resume capture
+ * out/wire-capture-t60/02-resume.jsonl, echo provider). Minimal
+ * params ({commandId, sessionId}) serve the inline history, the
+ * last-turn fold, empty pendingRequests, the loaded session, and
+ * the view head. abnormalEnd is experimental (absent on a clean
+ * prior end); unknown ids fail sessionNotFound (-32020).
+ */
+export type SessionResumeResult = {
+	history: {
+		items: Record<string, unknown>[];
+		mode: string;
+		snapshot: unknown;
+	};
+	lastTurn: { terminal: string; turnId: string } | null;
+	pendingRequests: Record<string, unknown>[];
+	session: MspSession;
+	viewCursor: string;
+	abnormalEnd?: { lastActivityAt?: string; [k: string]: unknown } | null;
+};
+
 export type ViewEvent = {
 	method: string;
 	params: Record<string, unknown>;
@@ -299,6 +320,8 @@ export class MspClient {
 		approvalMode?: ApprovalMode;
 		/** T101/D42: explicit profile per session (stable member). */
 		permissionProfile?: string;
+		/** T60/T85: initial model (a start member, like the profile). */
+		modelId?: string;
 	}): Promise<{ session: MspSession; viewCursor: string }> {
 		return (await this.call("session/start", {
 			commandId: uuid7(),
@@ -308,10 +331,18 @@ export class MspClient {
 			...(opts.permissionProfile
 				? { permissionProfile: opts.permissionProfile }
 				: {}),
+			...(opts.modelId ? { modelId: opts.modelId } : {}),
 			// T55: the ui MCP servers, when the host granted
 			// sessionMcp and there is something to send.
 			...(this.uiTools ? { config: { mcpServers: this.mcpServers } } : {}),
 		})) as { session: MspSession; viewCursor: string };
+	}
+
+	async sessionResume(sessionId: string): Promise<SessionResumeResult> {
+		return (await this.call("session/resume", {
+			commandId: uuid7(),
+			sessionId,
+		})) as SessionResumeResult;
 	}
 
 	async turnStart(opts: {
