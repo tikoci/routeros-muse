@@ -430,8 +430,8 @@
   .setrow:last-child { border-bottom: none; }
   .setrow code { font: 11px var(--mono); color: var(--muted); margin-left: auto; }
   .setrow label { display: flex; gap: 9px; align-items: center; cursor: pointer; }
-  #pkname { background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font: 12.5px var(--sans); padding: 6px 9px; outline: none; width: 100%; box-sizing: border-box; }
-  #pkname:focus { border-color: var(--accent); }
+  #pkname, #pkpass, #pkpass2 { background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font: 12.5px var(--sans); padding: 6px 9px; outline: none; width: 100%; box-sizing: border-box; }
+  #pkname:focus, #pkpass:focus, #pkpass2:focus { border-color: var(--accent); }
   #pktemplate { background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font: 12.5px var(--sans); padding: 6px 9px; outline: none; width: 100%; box-sizing: border-box; }
   #pkcmd { font: 11px var(--mono); color: var(--text); user-select: text; overflow-wrap: anywhere; }
   .wsdead { color: var(--faint); }
@@ -642,15 +642,16 @@
           <div class="rsect">New workspace</div>
           <div class="setrow"><input id="pkname" placeholder="name" aria-label="New workspace name"></div>
           <div class="setrow"><select id="pktemplate" aria-label="Template"></select></div>
+          <div class="setrow"><input id="pkpass" type="password" placeholder="CDB password" aria-label="CDB password" autocomplete="new-password"></div>
+          <div class="setrow"><input id="pkpass2" type="password" placeholder="Repeat CDB password" aria-label="Repeat CDB password" autocomplete="new-password"></div>
           <button class="btn rbtn" id="pkcreate">Create</button>
-          <div class="setnote" id="pkcreatenote">minimal scaffold · device.cdb starts open (encrypt in WinBox)</div>
+          <div class="setnote" id="pkcreatenote">minimal scaffold · device.cdb is created encrypted</div>
           <div class="throttle" id="pkerr" style="display:none"></div>
         </div>
         <div class="rblock" id="pkrestart" style="display:none">
           <div class="rsect">Open in place</div>
           <div class="setnote">serve binds its workspace at boot — restart here:</div>
           <div class="throttle"><span id="pkcmd"></span> <button class="minibtn" id="pkcopy">Copy</button></div>
-          <div class="setnote" id="pksteer" style="display:none"></div>
         </div>
       </div>
       <div class="rview" id="rview-settings">
@@ -751,6 +752,11 @@
     <h1 id="guidetitle">Encryption needed</h1>
     <p class="locksub" id="guidesub"></p>
     <ol class="locksteps" id="guidesteps"></ol>
+    <form id="guideform" style="display:none">
+      <input type="password" id="guidepw" autocomplete="new-password" placeholder="CDB password" aria-label="CDB password">
+      <input type="password" id="guidepw2" autocomplete="new-password" placeholder="Repeat CDB password" aria-label="Repeat CDB password">
+      <div class="lockrow"><button class="btn primary" id="guidego" type="submit">Encrypt now</button></div>
+    </form>
     <p class="lockerr" id="guideerr"></p>
     <div class="lockrow"><button class="btn primary" id="guiderecheck" type="button">Recheck</button></div>
   </div>
@@ -3789,11 +3795,8 @@
     } catch { /* settings keep placeholders */ }
   }
 
-  function showRestart(cmd, steering) {
+  function showRestart(cmd) {
     $("pkcmd").textContent = cmd;
-    const st = $("pksteer");
-    if (steering) { st.textContent = steering; st.style.display = ""; }
-    else st.style.display = "none";
     $("pkrestart").style.display = "";
     $("pkcopy").textContent = "Copy";
   }
@@ -3861,7 +3864,7 @@
       });
       const j = await r.json();
       if (!j.ok) { err.textContent = "not opened: " + j.why; err.style.display = ""; return; }
-      showRestart(j.command, null);
+      showRestart(j.command);
       loadWorkspaces();
     } catch (e) { err.textContent = "not opened: " + e.message; err.style.display = ""; }
   }
@@ -3870,7 +3873,7 @@
   function updateCreateNote() {
     const sel = $("pktemplate");
     const t = (sel.value || "minimal") + " template";
-    $("pkcreatenote").textContent = "in " + pkDefaultDir + " · " + t + " · device.cdb starts open (encrypt in WinBox)";
+    $("pkcreatenote").textContent = "in " + pkDefaultDir + " · " + t + " · device.cdb is created encrypted";
   }
 
   // T101: the pre-seed block mirrors /api/status. The toggle
@@ -3992,18 +3995,28 @@
       err.style.display = "none";
       const name = $("pkname").value.trim();
       const template = $("pktemplate").value || "minimal";
+      // Capture then clear immediately: the typed password lives in
+      // this request body only, never in the DOM past the click.
+      const pw = $("pkpass").value;
+      const pw2 = $("pkpass2").value;
+      $("pkpass").value = "";
+      $("pkpass2").value = "";
+      if (!pw) { err.textContent = "not created: need a CDB password"; err.style.display = ""; return; }
+      if (pw !== pw2) { err.textContent = "not created: passwords do not match"; err.style.display = ""; return; }
       $("pkcreate").disabled = true;
       try {
         const r = await fetch("/api/workspaces", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "create", name, template }),
+          body: JSON.stringify({ action: "create", name, template, password: pw }),
         });
         const j = await r.json();
         if (!j.ok) { err.textContent = "not created: " + j.why; err.style.display = ""; return; }
         $("pkname").value = "";
-        showRestart(j.command, j.steering);
+        err.textContent = "starting — opening the new workspace…";
+        err.style.display = "";
         loadWorkspaces();
+        location.href = j.url;
       } catch (e) { err.textContent = "not created: " + e.message; err.style.display = ""; }
       finally { $("pkcreate").disabled = false; }
     });
@@ -4427,6 +4440,11 @@
     $("lockpw").focus();
   }
 
+  // T133: the endpoint the guidance mutation form POSTs to (null
+  // hides the form — guidance only, e.g. off loopback or foreign
+  // scope). Set by showGuidance per state.
+  let guideEndpoint = null;
+
   function showGuidance(st) {
     const steps = $("guidesteps");
     steps.innerHTML = "";
@@ -4435,18 +4453,33 @@
       li.textContent = t;
       steps.appendChild(li);
     };
+    guideEndpoint = null;
+    $("guideform").style.display = "none";
+    $("guidego").textContent = "Encrypt now";
     if (st.state === "open-needs-encryption") {
       $("guidetitle").textContent = "Encryption needed";
       $("guidesub").textContent = "This server's CDB is not encrypted: " + (st.cdbFile || "the device registry");
-      addStep("Encrypt it in WinBox (the CDB is WinBox's address book), then press Recheck below.");
-      addStep("A one-command centrs encryption is tracked upstream (tikoci/centrs#558).");
+      if (st.loopback === false) {
+        addStep("Re-run with a loopback bind to encrypt from the browser.");
+      } else {
+        addStep("Runs centrs devices encrypt --no-backup on this server's CDB — no plaintext copy is kept.");
+        addStep("The password is set now and asked again at unlock; nothing is stored in the browser.");
+        guideEndpoint = "/api/auth/encrypt";
+        $("guidego").textContent = "Encrypt now";
+        $("guideform").style.display = "";
+      }
     } else if (st.state === "missing") {
       $("guidetitle").textContent = "No device registry yet";
       $("guidesub").textContent = "No CDB at " + (st.cdbFile || "the workspace device.cdb") + " — unlock needs a device registry first.";
       if (st.cdb === "workspace") {
-        addStep("Create one there: centrs devices init --cdb-file " + (st.cdbFile || "device.cdb"));
-        addStep("Encrypt it in WinBox (one-command centrs encryption is tracked upstream at tikoci/centrs#558).");
-        addStep("Press Recheck below.");
+        if (st.loopback === false) {
+          addStep("Re-run with a loopback bind to create the registry from the browser.");
+        } else {
+          addStep("Creates device.cdb encrypted with the password below — the bound path only, never overwritten.");
+          guideEndpoint = "/api/auth/create-cdb";
+          $("guidego").textContent = "Create encrypted registry";
+          $("guideform").style.display = "";
+        }
       } else {
         addStep("Create a workspace at the default location: restart with --allow-open-cdb, open the Workspaces tab, and press Create there.");
         addStep("Then press Recheck below.");
@@ -4457,8 +4490,50 @@
       addStep("Install centrs and make sure it is on PATH, then press Recheck below.");
     }
     $("guideerr").textContent = "";
+    $("guidepw").value = "";
+    $("guidepw2").value = "";
     $("lockscreen").classList.remove("open");
     $("guidescreen").classList.add("open");
+  }
+
+  async function doGuideMutation() {
+    const err = $("guideerr");
+    err.textContent = "";
+    const pw = $("guidepw").value;
+    const pw2 = $("guidepw2").value;
+    $("guidepw").value = "";
+    $("guidepw2").value = "";
+    if (!guideEndpoint) return;
+    if (!pw) { err.textContent = "need a CDB password"; return; }
+    if (pw !== pw2) { err.textContent = "passwords do not match"; return; }
+    $("guidego").disabled = true;
+    try {
+      const r = await fetch(guideEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const j = await r.json();
+      if (!j.ok) { err.textContent = j.why || "mutation failed"; return; }
+      const backs = Array.isArray(j.backups) ? j.backups : [];
+      if (backs.length > 0) {
+        // Stay on the guidance: the operator must see the plaintext
+        // backups warning before continuing to the lock screen.
+        const steps = $("guidesteps");
+        steps.innerHTML = "";
+        const li = document.createElement("li");
+        li.textContent = "Encrypted. Plaintext backups pre-date encryption and are NOT protected: " + backs.join(", ") + " — delete them once the password is safe.";
+        steps.appendChild(li);
+        $("guideform").style.display = "none";
+        guideEndpoint = null;
+        return;
+      }
+      bootAfterAuth();
+    } catch (e) {
+      err.textContent = "cannot reach the server";
+    } finally {
+      $("guidego").disabled = false;
+    }
   }
 
   function hideOverlays() {
@@ -4523,6 +4598,7 @@
 
   function wireAuth() {
     $("lockform").addEventListener("submit", (e) => { e.preventDefault(); doUnlock(); });
+    $("guideform").addEventListener("submit", (e) => { e.preventDefault(); doGuideMutation(); });
     $("guiderecheck").addEventListener("click", () => { $("guideerr").textContent = ""; bootAfterAuth(); });
     $("oauthrecheck").addEventListener("click", () => { recheckOAuth(); });
   }
