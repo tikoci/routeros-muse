@@ -5,7 +5,7 @@
     "": {
       "name": "routeros-muse",
       "dependencies": {
-        "@tikoci/centrs": "0.1.9",
+        "@tikoci/centrs": "next",
         "@tikoci/quickchr": "next",
         "@tikoci/rosetta": "next",
         "mermaid": "12.2.0",
