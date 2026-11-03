@@ -23,11 +23,16 @@ plus `muse` installed and signed in. Then:
 bunx @tikoci/routeros-muse start   # web UI on 127.0.0.1 by default; opens your browser
 ```
 
-From a checkout, `bun install` once, then `bun src/index.ts start`
-does the same. `start` serves the current directory when it is a
-workspace, else walks you through init / pick / browser picker on a
-terminal. `make gate` runs the full check (lint + tests + browser
-smoke).
+From a checkout, `bun install` once, then `bun run start` does the
+same. Creating a workspace asks for a CDB password — the device
+registry (`device.cdb` beside the workspace) is created encrypted,
+and the browser lands on the lock screen where you retype it. On a
+terminal `start` walks you through template + password; off a
+terminal (or in scripts) pipe the password via `--password-stdin`.
+`init` behaves the same for a chosen directory, and the web picker's
+Create button asks in the form. `--open-cdb` creates without
+encryption (dev escape, never the default). `make gate` runs the
+full check (lint + tests + browser smoke).
 
 Other commands: `init` scaffolds a workspace where you are, `code`
 checks the machine then drops you in a `muse` shell in the
@@ -50,7 +55,9 @@ password (see `docs/design/t39-auth-design.md`).
 ## How it uses the three tools
 
 `package.json` pins `@tikoci/quickchr`, `@tikoci/centrs`, and
-`@tikoci/rosetta` (all on `next` during preview). The bootstrap and
+`@tikoci/rosetta` (`centrs` stays on the `0.1.9` release while `next`
+resolves to a prerelease without the encrypted-CDB surface; the
+others track `next` during preview). The bootstrap and
 the server front the package's own `node_modules/.bin` on PATH for
 every spawn — server subprocesses and agent children alike — so all
 sides resolve identical builds:
@@ -67,10 +74,15 @@ sides resolve identical builds:
 ```sh
 routeros-muse [command] [dir] [options]   # bare = start
 routeros-muse start [dir] [--port N] [--host H] [--no-open] [--yolo]
-routeros-muse init [dir] [--template minimal|network]
+routeros-muse init [dir] [--template minimal|network] [--password-stdin] [--open-cdb]
 routeros-muse code [dir] [muse args...] [--yes] [--router H[:port]] [--print-only]
 routeros-muse doctor [dir]
 ```
+
+New workspaces are created encrypted: `init` and `start` option 1
+prompt for the template (`--template` skips) and a CDB password
+(hidden, typed twice) on a TTY, or take it from `--password-stdin`
+off a TTY. `--open-cdb` is the explicit escape to an open registry.
 
 `start` (alias: `serve`; bare means `start`): web UI over
 the workspace — devices left, chat center, render/status right —
@@ -98,8 +110,10 @@ AGENTS.md and skills don't load).
 
 `init`: scaffolds a workspace in the directory (default: here) from
 `minimal` (runnable minimum) or `network` (full starter), never
-overwriting, and registers it. The web picker's create button
-scaffolds into `~/Networks` instead.
+overwriting, with an encrypted `device.cdb`, and registers it.
+After creating, the browser opens on the lock screen: retype the
+password you just set. The web picker's Create button scaffolds
+into `~/Networks` instead, then navigates there itself.
 
 `code`: checks prereqs, the trilogy, and the agent; opens and
 validates the workspace; reconciles `[pins]`; probes twins and LAN

@@ -228,11 +228,13 @@ special cases), and machine-managed network trees stay out of the
 documents clutter. Opening is a restart: serve binds its root at
 boot, so the picker prints the exact `serve` line instead of
 pretending to switch live. Creation scaffolds from the template
-select (minimal default, network full), stamps `[template]`
-provenance, writes `device.cdb` via `centrs devices init`, and
-steers to WinBox encryption until C14. The T64 missing-CDB overlay
-now points at the real setup: the exact init command in workspace
-mode, the creation flow otherwise.
+select (minimal default, network full) with the form password,
+stamps `[template]` provenance, writes `device.cdb` via `centrs
+devices init --encrypt`, then spawns `routeros-muse start <dir>
+--no-open` on a free loopback port and navigates the browser there
+(the lock screen, no auto-login token). The T64 missing-CDB overlay
+now creates the encrypted registry in place; the open-CDB overlay
+encrypts it with `devices encrypt --no-backup`.
 
 ## UI smoke (T43 standing rule)
 
@@ -323,8 +325,7 @@ place (the card's Set credentials is the recovery) and answers
 `ok:false` with the stage and device id. No-workspace mode skips
 `router.toml` and creates the CDB record only. On success the
 modal clears its fields first, closes, reloads the device list,
-and renders the new card. Encrypted-CDB creation may fail until
-upstream `tikoci/centrs#558` — surfaced, not worked around.
+and renders the new card.
 
 ## Gaps (unrun on purpose, pending)
 
