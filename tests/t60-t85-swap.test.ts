@@ -606,6 +606,60 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 	);
 
 	t(
+		"a swap queued behind another never spawns after lock (P1-3)",
+		async () => {
+			const { bin, log } = stubSwapBin();
+			await withT50Env(
+				log,
+				async () => {
+					const srv = await startSwapSrv(bin);
+					try {
+						const cookieA = await unlock(srv.url);
+						const first = await postJson(
+							`${srv.url}api/chat/send`,
+							{ text: "P13-A" },
+							cookieA,
+						);
+						expect(first.json["ok"]).toBe(true);
+						await waitIdle(srv.url, cookieA);
+						// #1 holds the lifecycle lock with its start
+						// delayed; #2 queues behind it, past the gate.
+						const firstNew = postJson(`${srv.url}api/chat/new`, {}, cookieA);
+						await pollT71Log(log, /RECV_START/, 15_000);
+						const queued = postJson(`${srv.url}api/chat/new`, {}, cookieA);
+						// Arrival-to-queued is milliseconds on loopback;
+						// 300ms guarantees #2 waits on the lock (not the
+						// gate) when the lock lands.
+						await new Promise((r) => setTimeout(r, 300));
+						const spawnsBefore = countLines(
+							nodeFs.readFileSync(log, "utf8"),
+							"SPAWN pid=",
+						);
+						const locked = await postJson(
+							`${srv.url}api/auth/lock`,
+							{},
+							cookieA,
+						);
+						expect(locked.json["ok"]).toBe(true);
+						// #1 fails the known stale way (its worker died
+						// mid-start); #2 must refuse without spawning.
+						expect((await firstNew).status).toBe(500);
+						const late = await queued;
+						expect(late.status).toBe(401);
+						expect(
+							countLines(nodeFs.readFileSync(log, "utf8"), "SPAWN pid="),
+						).toBe(spawnsBefore);
+					} finally {
+						await srv.stop();
+					}
+				},
+				{ FAKE_START_DELAY_MS: "1500" },
+			);
+		},
+		60_000,
+	);
+
+	t(
 		"access racing new: the new main matches the published settings (P1-2)",
 		async () => {
 			const { bin, log } = stubT50Bin();

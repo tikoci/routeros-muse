@@ -872,6 +872,53 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			release();
 		}
 	}
+	// P1-3: bumped when a lock tears the worker down, so work queued
+	// on the lifecycle lock can tell its owner is gone deterministically.
+	let ownerGeneration = 0;
+	/** P1-3: the ownership a lock-taker captured before queueing. */
+	type LockEntry = {
+		key: string;
+		token: string | null;
+		authed: boolean;
+		gen: number;
+	};
+	function captureLockEntry(req: Request): LockEntry {
+		const token = cookieToken(req);
+		return {
+			key: workerKey(req),
+			token,
+			authed: sessions.valid(token),
+			gen: ownerGeneration,
+		};
+	}
+	/**
+	 * P1-3: re-validate a queued operation after it acquires the lifecycle
+	 * lock (the auth gate's check, plus the owner generation). A refusal
+	 * returns before any ensureMsp or spawn: 401 when the queued token
+	 * was revoked, 409 when a live owner's worker was torn down under
+	 * it (someone else's lock — retry on a fresh entry).
+	 */
+	function queuedStale(entry: LockEntry): {
+		status: number;
+		error: string;
+		why: string;
+	} | null {
+		if (entry.authed && !sessions.valid(entry.token)) {
+			return {
+				status: 401,
+				error: "revoked",
+				why: "that session was locked while the request queued — unlock again",
+			};
+		}
+		if (entry.gen !== ownerGeneration) {
+			return {
+				status: 409,
+				error: "owner-changed",
+				why: "ownership changed while the request queued — retry",
+			};
+		}
+		return null;
+	}
 	// T60/T85: stops in flight (both routes count). Swaps refuse
 	// while one runs — a swap mid-force-stop would yank the worker
 	// the escalation is converging on.
@@ -1448,8 +1495,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			approvalMode: ApprovalMode;
 			permissionProfile: string;
 		}>,
+		entry?: LockEntry,
 	): Promise<SwapOutcome> {
 		return withLifecycleLock(async () => {
+			// P1-3: a queued swap re-validates its owner after
+			// acquiring the lock — before any ensureMsp or spawn.
+			if (entry) {
+				const stale = queuedStale(entry);
+				if (stale) return { ok: false, ...stale };
+			}
 			const busy = busyRefusal();
 			if (busy) return busy;
 			if (mainPromise && mainOwner === key && !mainSettled) {
@@ -1942,7 +1996,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// running child.
 					const token = cookieToken(req);
 					sessions.revoke(token);
-					if (token && mspOwner === token) await stopWorker();
+					if (token && mspOwner === token) {
+						// P1-3: queued work on the lifecycle lock invalidates
+						// deterministically instead of respawning this owner.
+						ownerGeneration += 1;
+						await stopWorker();
+					}
 					return new Response(JSON.stringify({ ok: true }), {
 						headers: {
 							"content-type": "application/json",
@@ -2606,6 +2665,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json(await listAlerts(root));
 				}
 				if (p === "/api/chat/send" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as {
 						text?: string;
 						images?: { base64Data: string; mediaType: string }[];
@@ -2685,13 +2746,20 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// orphan onto a past session). Validation above
 					// stays outside — and no longer spawns a
 					// session just to refuse an oversized preamble.
-					const key = workerKey(req);
 					// The await is load-bearing: a bare promise
 					// return would skip the outer catch (Bun's
 					// default 500 instead of our JSON envelope).
 					return await withLifecycleLock(async () => {
-						const sid = await ensureMain(key);
-						const client = await ensureMsp(key);
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
+							return json(
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
+							);
+						}
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
 						try {
 							const { turnId } = await client.turnStart({
 								sessionId: sid,
@@ -2944,17 +3012,23 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							preBusy.status,
 						);
 					}
-					const key = workerKey(req);
+					// P1-3: capture the owner before queueing (a lock past
+					// this point invalidates instead of re-keying to bypass).
+					const entry = captureLockEntry(req);
 					let result: SwapOutcome;
 					try {
-						result = await swapMain(key, async (client) => {
-							const started = await startMainSession(client);
-							return {
-								session: started.session,
-								approvalMode: started.approvalMode,
-								permissionProfile: started.permissionProfile,
-							};
-						});
+						result = await swapMain(
+							entry.key,
+							async (client) => {
+								const started = await startMainSession(client);
+								return {
+									session: started.session,
+									approvalMode: started.approvalMode,
+									permissionProfile: started.permissionProfile,
+								};
+							},
+							entry,
+						);
 					} catch (err) {
 						if (err instanceof SwapRefusal) {
 							return json(
@@ -2977,6 +3051,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json({ ok: true, sessionId: result.sessionId });
 				}
 				if (p === "/api/chat/resume" && req.method === "POST") {
+					// P1-3: capture the owner first (validation awaits below).
+					const entry = captureLockEntry(req);
 					// T60: resume a past session as main. The id must be
 					// one this worker's session/list returns — never an
 					// arbitrary id — and the live UI settings are
@@ -2990,7 +3066,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 					}
 					const sid = body.sessionId;
-					const key = workerKey(req);
+					const key = entry.key;
 					// Busy orders over the no-op: resuming the current
 					// main mid-turn is refused, not silently kept.
 					const preBusy = busyRefusal();
@@ -3003,78 +3079,78 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					if (mainSession === sid && mainSettled && mainOwner === key) {
 						return json({ ok: true, sessionId: sid, resumed: false });
 					}
-					const validator = await ensureMsp(key);
-					const list = await validator.sessionList();
-					if (!list.sessions.some((s) => s.sessionId === sid)) {
-						return json(
-							{
-								ok: false,
-								error: "unknown-session",
-								why: `no session ${sid} in this workspace`,
-							},
-							404,
-						);
-					}
 					let result: SwapOutcome;
 					try {
-						result = await swapMain(key, async (client) => {
-							const resumed = await client.sessionResume(sid);
-							if (
-								resumed.abnormalEnd !== undefined &&
-								resumed.abnormalEnd !== null
-							) {
-								throw new SwapRefusal(
-									409,
-									"abnormal-end",
-									"that session's last run ended abnormally and cannot be resumed — start a new session instead",
-								);
-							}
-							// P1-2: snapshot the settings once, inside the
-							// lock (the setters below await; nothing may
-							// interleave a re-read between them).
-							const snapModel = lastModelId;
-							const snapEffort = lastEffort;
-							const snapMode =
-								(lastAccess as ApprovalMode | null) ?? defaultAccess();
-							const snapWant = lastProfile ?? profileForAccess(snapMode);
-							if (snapModel !== null) {
-								await client.sessionSetModel(sid, snapModel);
-							}
-							if (snapEffort !== null) {
-								await client.sessionSetReasoningEffort(
+						result = await swapMain(
+							key,
+							async (client) => {
+								const list = await client.sessionList();
+								if (!list.sessions.some((s) => s.sessionId === sid)) {
+									throw new SwapRefusal(
+										404,
+										"unknown-session",
+										`no session ${sid} in this workspace`,
+									);
+								}
+								const resumed = await client.sessionResume(sid);
+								if (
+									resumed.abnormalEnd !== undefined &&
+									resumed.abnormalEnd !== null
+								) {
+									throw new SwapRefusal(
+										409,
+										"abnormal-end",
+										"that session's last run ended abnormally and cannot be resumed — start a new session instead",
+									);
+								}
+								// P1-2: snapshot the settings once, inside the
+								// lock (the setters below await; nothing may
+								// interleave a re-read between them).
+								const snapModel = lastModelId;
+								const snapEffort = lastEffort;
+								const snapMode =
+									(lastAccess as ApprovalMode | null) ?? defaultAccess();
+								const snapWant = lastProfile ?? profileForAccess(snapMode);
+								if (snapModel !== null) {
+									await client.sessionSetModel(sid, snapModel);
+								}
+								if (snapEffort !== null) {
+									await client.sessionSetReasoningEffort(
+										sid,
+										snapEffort as ReasoningEffort,
+									);
+								}
+								await client.sessionSetApprovalMode(sid, snapMode);
+								const applied = await client.sessionSetPermissionProfile(
 									sid,
-									snapEffort as ReasoningEffort,
+									snapWant,
 								);
-							}
-							await client.sessionSetApprovalMode(sid, snapMode);
-							const applied = await client.sessionSetPermissionProfile(
-								sid,
-								snapWant,
-							);
-							const profile =
-								typeof applied.permissionState?.profileId === "string"
-									? applied.permissionState.profileId
-									: snapWant;
-							// P1-1: publish the state the setters produced,
-							// never the resume snapshot (it predates them —
-							// publishing it cached a stale profile the next
-							// /new inherited). session/read is the durable
-							// post-setter state on the wire.
-							const read = await client.sessionRead(sid);
-							const fresh = read["session"] as MspSession | undefined;
-							if (!fresh || typeof fresh !== "object") {
-								throw new SwapRefusal(
-									400,
-									"msp-error",
-									"session/read after resume carried no session",
-								);
-							}
-							return {
-								session: fresh,
-								approvalMode: snapMode,
-								permissionProfile: profile,
-							};
-						});
+								const profile =
+									typeof applied.permissionState?.profileId === "string"
+										? applied.permissionState.profileId
+										: snapWant;
+								// P1-1: publish the state the setters produced,
+								// never the resume snapshot (it predates them —
+								// publishing it cached a stale profile the next
+								// /new inherited). session/read is the durable
+								// post-setter state on the wire.
+								const read = await client.sessionRead(sid);
+								const fresh = read["session"] as MspSession | undefined;
+								if (!fresh || typeof fresh !== "object") {
+									throw new SwapRefusal(
+										400,
+										"msp-error",
+										"session/read after resume carried no session",
+									);
+								}
+								return {
+									session: fresh,
+									approvalMode: snapMode,
+									permissionProfile: profile,
+								};
+							},
+							entry,
+						);
 					} catch (err) {
 						if (err instanceof SwapRefusal) {
 							return json(
@@ -3195,21 +3271,31 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/chat/model" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as { modelId?: string };
 					if (typeof body.modelId !== "string" || !body.modelId) {
 						return json({ ok: false, why: "need {modelId}" }, 400);
 					}
-					const key = workerKey(req);
+					const modelId = body.modelId;
 					// P1-2: settings mutate under the lifecycle lock, like
 					// send/new/resume — the await is load-bearing (see send).
 					return await withLifecycleLock(async () => {
-						const sid = await ensureMain(key);
-						const client = await ensureMsp(key);
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
+							return json(
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
+							);
+						}
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
 						settingsStamp = { sid, gen: runGeneration };
 						try {
-							await client.sessionSetModel(sid, body.modelId);
-							lastModelId = body.modelId;
-							return json({ ok: true, modelId: body.modelId });
+							await client.sessionSetModel(sid, modelId);
+							lastModelId = modelId;
+							return json({ ok: true, modelId });
 						} catch (err) {
 							if (err instanceof MspError) {
 								return json(
@@ -3222,6 +3308,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/chat/effort" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as { effort?: string };
 					const tiers = [
 						"none",
@@ -3239,20 +3327,28 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							400,
 						);
 					}
-					const key = workerKey(req);
+					const effort = body.effort as string;
 					// P1-2: settings mutate under the lifecycle lock, like
 					// send/new/resume — the await is load-bearing (see send).
 					return await withLifecycleLock(async () => {
-						const sid = await ensureMain(key);
-						const client = await ensureMsp(key);
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
+							return json(
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
+							);
+						}
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
 						settingsStamp = { sid, gen: runGeneration };
 						try {
 							await client.sessionSetReasoningEffort(
 								sid,
-								body.effort as ReasoningEffort,
+								effort as ReasoningEffort,
 							);
-							lastEffort = body.effort;
-							return json({ ok: true, effort: body.effort });
+							lastEffort = effort;
+							return json({ ok: true, effort });
 						} catch (err) {
 							if (err instanceof MspError) {
 								return json(
@@ -3265,6 +3361,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/chat/access" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as { mode?: string };
 					const modes = [
 						"allowAll",
@@ -3278,18 +3376,23 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							400,
 						);
 					}
-					const key = workerKey(req);
+					const mode = body.mode as ApprovalMode;
 					// P1-2: settings mutate under the lifecycle lock, like
 					// send/new/resume — the await is load-bearing (see send).
 					return await withLifecycleLock(async () => {
-						const sid = await ensureMain(key);
-						const client = await ensureMsp(key);
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
+							return json(
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
+							);
+						}
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
 						settingsStamp = { sid, gen: runGeneration };
 						try {
-							await client.sessionSetApprovalMode(
-								sid,
-								body.mode as ApprovalMode,
-							);
+							await client.sessionSetApprovalMode(sid, mode);
 						} catch (err) {
 							if (err instanceof MspError) {
 								return json(
@@ -3299,12 +3402,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							}
 							throw err;
 						}
-						lastAccess = body.mode;
+						lastAccess = mode;
 						// T101: the profile follows the mode on the live
 						// session (verified mid-session method). A profile
 						// failure after a mode change reports both
 						// honestly: the mode moved, the profile did not.
-						const want = profileForAccess(body.mode);
+						const want = profileForAccess(mode);
 						try {
 							const res = await client.sessionSetPermissionProfile(sid, want);
 							lastProfile =
@@ -3317,7 +3420,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									{
 										ok: false,
 										why: `${err.kind}: ${err.message}`,
-										mode: body.mode,
+										mode,
 										profile: lastProfile,
 									},
 									400,
@@ -3325,7 +3428,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							}
 							throw err;
 						}
-						return json({ ok: true, mode: body.mode, profile: lastProfile });
+						return json({ ok: true, mode, profile: lastProfile });
 					});
 				}
 				// T50 approval/question surface: thin relays over the MSP
