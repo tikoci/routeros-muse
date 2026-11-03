@@ -376,3 +376,11 @@ status = "decided"
 detail = "Today routeros-skills reach sessions only if the owner has them under user ~/.agents/skills (orca has symlinks); the minimal template has none, so a box where routeros-muse is the only tikoci thing rolls the dice (T100 note c). routeros-skills is not an npm package (private 0.0.0, lint-only package.json)."
 decided = "2026-11-02"
 outcome = "Developer 2026-11-02: every session always gets the routeros-skills set, loaded from the routeros-muse npm package and current with our release, with a setting to disable. T100 is the vehicle (package-level skills, provenance name/source/sha256, doctor drift). How the content gets into our package (vendored at build from a pinned routeros-skills commit vs a published package) is an implementation choice inside T100. T27 curation and the rest of the skills/templates group are useful but non-critical; T15's entry skill rides T100 as the orientation skill."
+
+[[decision]]
+id = "D48"
+title = "Bring back centrs MCP as a configurable option (trilogy MCP servers on/off)"
+status = "open"
+detail = "D46 removed centrs MCP for this phase. Developer 2026-11-02: tested centrs MCP (pre-T112 build, open CDB) and found it a nicer UI in some ways; may fix centrs MCP upstream so its CDB binding works under muse (muse passes no process env to MCP children, so today the only channels are session config env, which travels the MSP wire, or argv; centrs mcp takes --cdb-file/--cdb-password or CENTRS_CDB_FILE/CENTRS_CDB_PASSWORD). Shape on the table: the centrs CLI and library are always installed; a configuration option enables the centrs MCP server and the rosetta MCP server independently (seeded read rules follow the option); tool-card argument display is configurable (T113). Open questions: default for each server; where the option lives (workspace settings vs serve flag vs UI settings); what centrs MCP needs upstream first (non-wire password channel or per-call CDB override, interface stability vs the CLI). Input pending: the centrs agent's view on MCP interface stability (developer asking 2026-11-02)."
+decided = ""
+outcome = ""
