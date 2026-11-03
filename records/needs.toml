@@ -291,12 +291,12 @@ updated = "2026-11-01"
 id = "C14"
 repo = "centrs"
 title = "CDB encrypted init plus open-to-encrypted conversion"
-status = "needed"
+status = "landed"
 detail = "Supported encrypted-CDB lifecycle: encrypted first-time init (no-clobber, 0600, an existing open CDB must not satisfy encrypted-required) plus one-command open-to-encrypted conversion; explicit backup semantics (converting/rotating never implies old plaintext/ciphertext revoked). Rotation/decryption and any new inspection API stay follow-ups."
-evidence = "tikoci/centrs#558 (filed 2026-10-28; T39 consumer case plus encrypted-init lifecycle comment 2026-11-01); T80 upstream recheck: #558 remains open; T67 permission ruling alone cannot deliver encrypted first-run setup. Keep no-clobber encrypted init and open conversion in the upstream lane; consume through @next, no private CDB writer.; T23 triage 2026-11-02: PR tikoci/centrs#600 open, MERGEABLE/CLEAN, 12 checks green, comment-only reviews; WinBox interop unverified."
+evidence = "tikoci/centrs#558 (filed 2026-10-28; T39 consumer case plus encrypted-init lifecycle comment 2026-11-01); T80 upstream recheck: #558 remains open; T67 permission ruling alone cannot deliver encrypted first-run setup. Keep no-clobber encrypted init and open conversion in the upstream lane; consume through @next, no private CDB writer.; T23 triage 2026-11-02: PR tikoci/centrs#600 open, MERGEABLE/CLEAN, 12 checks green, comment-only reviews; WinBox interop unverified.; 2026-11-03: merged 2d523de, published in @tikoci/centrs 0.1.9; consumed by T133."
 blocked_by = []
 agent = ""
-updated = "2026-11-02"
+updated = "2026-11-03"
 
 [[need]]
 id = "C15"

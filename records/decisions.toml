@@ -409,3 +409,14 @@ status = "decided"
 detail = "T100 now delivers skills to GUI-managed Muse sessions via existing private homes. The code/TUI path currently uses the operator's normal Muse config, settings and data home. A private config home changes settings, policy and skill discovery; past-session storage is separately controlled by the data home, so changing config alone does not establish a history change. Developer was asked 2026-11-03 whether to cover GUI sessions now and track code separately (recommended), or also move code to the private home. Do not silently change that CLI behavior. This is independent of workspace settings inheritance (T119); T125 tracks the code integration after the choice. It does not block the GUI implementation."
 decided = "2026-11-03"
 outcome = "Developer 2026-11-03: GUI sessions now; track code separately. T100's GUI implementation stands. Keep routeros-muse code/--tui on the operator's normal Muse config for now; no private-home migration or bundled-skill integration in this slice. T125 remains a future, separately scoped follow-up. Workspace overrides and settings inheritance remain deferred to T119."
+
+[[decision]]
+id = "D52"
+title = "Encrypted new-workspace flow after centrs#600: handoff, login, conversion backups, CLI prompts"
+status = "decided"
+detail = "centrs 0.1.9 ships #600 (devices init --encrypt, devices encrypt; password via CENTRS_CDB_PASSWORD, never argv). Four calls for the streamlined path from bun run to an authenticated workspace (minimal or network template): browser-picker handoff, post-setup login, plaintext backups on open-to-encrypted conversion, CLI prompting. Orchestrator asked 2026-11-03 with recommendations."
+decided = "2026-11-03"
+outcome = "Developer 2026-11-03: (1) Picker handoff = spawn + redirect: the no-workspace server creates the workspace (encrypted init with the form password), spawns routeros-muse start <dir> --no-open on a free port, waits for ready, then navigates the browser there; the picker server stays up. No live root switch (T93 resolve-before-bind stands). (2) No auto-login token: the browser lands on the normal lock screen and the owner retypes the password they just set, so the password never crosses to the child. (3) Encrypt-now on an existing open CDB runs centrs devices encrypt --no-backup; older plaintext device.cdb.bak.* get a warning only. (4) TTY init (init and start option 1) prompts for template (default minimal; --template skips) and the password (hidden, typed twice); off a TTY use --password-stdin, or an explicit open-CDB dev escape. New workspaces are encrypted by default; open CDBs stay behind the explicit flag (D24 amendment)."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"

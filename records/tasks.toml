@@ -664,12 +664,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T67"
 title = "One-click init-cdb on the missing overlay"
-status = "needed"
+status = "dropped"
 detail = "If D32 allows pre-auth init mutations: add a one-click create/init affordance to the missing-CDB overlay (scaffold-or-init at the bound path, rollback on failure, encryption steering after). Executes the D32 ruling; smoke-gated like every UI slice."
-evidence = "surfaced by T40 implementation 2026-11-01 (child report; text-wired seam exists)"
+evidence = "surfaced by T40 implementation 2026-11-01 (child report; text-wired seam exists); dropped 2026-11-03: absorbed by T133 (D52), which builds the encrypted create on the missing overlay"
 blocked_by = ["T40", "D32"]
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-03"
 
 [[task]]
 id = "T68"
@@ -1325,5 +1325,16 @@ status = "needed"
 detail = "T127 minor notes: restrict name and user-invocable parsing to SKILL.md frontmatter rather than matching body examples; distinguish a broken workspace-owned routeros-* skill from a bundled skill diagnostic; clarify that revision retained after opt-out is provenance rather than evidence of loading. Also attribute personal shadow notices to the actual winning copy (an edited private copy is not a bundled version). No changes to workspace configuration resolution."
 evidence = "Opus review notes; frontmatter/body matching and path-only diagnostic filtering are code findings, not model-turn probes."
 blocked_by = ["T100"]
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T133"
+title = "Encrypted new-workspace flow: bun run to a password-gated workspace (centrs#600)"
+status = "needed"
+detail = "Executes D52 and absorbs T67. Bump @tikoci/centrs to 0.1.9 (#600/#582/#551) and refresh the lock. New workspaces are created encrypted: scaffold runs centrs devices init --encrypt with CENTRS_CDB_PASSWORD in the child env only (never argv, never logged, never in workspace files), keeping no-clobber and the existing rollback. CLI: init and start option 1 prompt on a TTY for template (minimal|network, default minimal, --template skips) and password (hidden, typed twice, non-empty); off a TTY --password-stdin, else an explicit --open-cdb escape; no silent open CDB. Browser picker: Create form gets template choice plus password and confirm; the server initializes encrypted, spawns routeros-muse start <dir> --no-open on a free port (detached from the request, logs bounded), waits for /api/status, returns the URL, and the browser navigates there and lands on the lock screen (no token, password never sent to the child). Existing open CDB overlay: Encrypt now (password plus confirm) runs centrs devices encrypt --no-backup, then shows the lock screen and warns about pre-existing device.cdb.bak.* plaintext copies. Missing-CDB workspace overlay: Create encrypted registry (password plus confirm, D32 scope: loopback, bound path, no clobber). Retire CDB_ENCRYPT_STEERING and the WinBox and tikoci/centrs#558 guidance. README quick start leads with the new flow."
+evidence = "developer agenda 2026-11-03: centrs#600 merged (2d523de), in npm @tikoci/centrs 0.1.9 (gitHead 0319296); repo pins next = 0.1.9-next.24 in bun.lock. Current flow: picker create returns a command to copy (server.ts /api/workspaces create), scaffold makes an open device.cdb, overlay steers to WinBox."
+acceptance = "Fail-first tests: encrypted scaffold (password only in env, 0600, rollback on centrs failure), TTY prompt and --password-stdin paths, picker create spawn plus redirect, encrypt-now with --no-backup, overlays. Hermetic (stub muse, temp dirs, real centrs against temp CDBs). Live sweep: bun run start from a non-workspace, create minimal and network workspaces through both the TTY and the picker, unlock at the lock screen, add a device with credentials, and confirm an agent-shell centrs read sees the encrypted CDB. Console clean, shots eyeballed. make gate and records check pass."
+blocked_by = []
 agent = ""
 updated = "2026-11-03"
