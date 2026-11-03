@@ -145,11 +145,11 @@ updated = "2026-11-01"
 id = "T15"
 title = "Entry skill + capability probe"
 status = "needed"
-detail = "Probe half LANDED in T30 (prereq/trilogy/auth/workspace/probe/handoff steps); entry-skill half (orienting fresh sessions) still open."
+detail = "Probe half LANDED in T30 (prereq/trilogy/auth/workspace/probe/handoff steps); entry-skill half (orienting fresh sessions) still open. D47 2026-11-02: the entry skill ships as a package-level orientation skill via T100."
 evidence = "proto/routeros-muse/ plus notes/t30-proof.md (probe); entry skill unwritten"
 blocked_by = []
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[task]]
 id = "T16"
@@ -224,11 +224,11 @@ updated = "2026-11-02"
 [[task]]
 id = "T23"
 title = "Centrs follow-through wave (post-prerelease)"
-status = "needed"
-detail = "Prerelease condition is now satisfied by the package bundle (centrs 0.1.9-next.24); re-triage the remaining need list against current upstream, verify fixes in the consumer and resume follow-through. No longer blocked on the old prerelease/PR status."
+status = "active"
+detail = "Re-triage the centrs need list against current upstream and the bundled 0.1.9-next.24, verify fixes in the consumer, and resume follow-through. 2026-11-02 developer: centrs is next for upstream work; file one routeros-muse tracking issue with the pressing items (CLI path with an encrypted CDB first, MCP password channel for later per D46)."
 evidence = "T80 2026-11-01: bundle 0.1.9-next.24; #541/#547 merged. T103 issue handoff 2026-11-02: C1=tikoci/centrs#542; C2=#546 closed, consumer L2 verification pending; C7=https://github.com/tikoci/centrs/issues/588; C8=https://github.com/tikoci/centrs/issues/589; C9=https://github.com/tikoci/centrs/issues/590; C10=https://github.com/tikoci/centrs/issues/591; C11=https://github.com/tikoci/centrs/issues/592. C13-C19 existing open issues respectively #551/#558/#581/#582/#583/#587/#586. T22 feature handoff #593/#594/#595. Historical C7-C10 #518 is a coordination reference, not their GitHub issue; #547 fixes C2 only. New historical reports explicitly require current-main reproduction; this task remains needed for consumer verification. Original brief: notes/centrs-followup-prompt.md."
 blocked_by = []
-agent = ""
+agent = "codex gpt-6.1-sol (orch claude)"
 updated = "2026-11-02"
 
 [[task]]
@@ -265,11 +265,11 @@ updated = "2026-10-28"
 id = "T27"
 title = "routeros-skills curation review for our use case"
 status = "needed"
-detail = "Review routeros-skills content for our use case (bloat, generic-vs-playbook fit, quickchr/centrs overlap); curations land upstream as issues/PRs, tracked here like T22."
+detail = "Review routeros-skills content for our use case (bloat, generic-vs-playbook fit, quickchr/centrs overlap); curations land upstream as issues/PRs, tracked here like T22. D47 2026-11-02: useful but non-critical; the priority is shipping the set via T100."
 evidence = "scheme reviewed 2026-10-28; content curation open"
 blocked_by = []
 agent = ""
-updated = "2026-10-29"
+updated = "2026-11-02"
 
 [[task]]
 id = "T28"
@@ -864,12 +864,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T87"
 title = "Validate Mode A on the intended first platform and remaining consent paths"
-status = "blocked"
-detail = "Mac-first per D14: run real bootstrap/install/auth/launch/decline/resume with the packaged trilogy and workspace handoff. Preserve Windows as a later explicit-machine task. Orca/Linux proofs do not establish Mac/Windows support. External: access to an appropriate test machine and setup scenario."
-evidence = "T30 evidence and notes/t30-proof.md explicitly leave other-machine install/auth/exec paths pending; no separate acceptance task existed before T80."
+status = "active"
+detail = "Mac-first per D14: run real bootstrap/install/auth/launch/decline/resume with the packaged trilogy and workspace handoff. Preserve Windows as a later explicit-machine task. Orca/Linux proofs do not establish Mac/Windows support. 2026-11-02: unblocked: developer tests on their Mac (Morpheus, T3 Code); orchestrator clones the local repo to it over ssh from orca (no GitHub remote yet, D34)."
+evidence = "T30 evidence and notes/t30-proof.md leave other-machine paths pending. 2026-11-02: Morpheus key already authorized on orca; ufw allows 22; T3 environment link requested."
 blocked_by = []
-agent = ""
-updated = "2026-11-01"
+agent = "developer (Morpheus) + claude orchestrator"
+updated = "2026-11-02"
 
 [[task]]
 id = "T88"
@@ -943,13 +943,13 @@ updated = "2026-11-01"
 
 [[task]]
 id = "T95"
-title = "Candidate: owner-opened terminal into a quickchr CHR from the UI"
+title = "Candidate: owner-opened terminal into a device (real router or CHR) via centrs"
 status = "needed"
-detail = "Per D36: cheaper than a twin workflow and more useful near term. Candidate only, off the demo critical path; scope after T86."
-evidence = "developer 2026-11-01"
+detail = "Per D36, corrected by the developer 2026-11-02: open the terminal through centrs (its terminal surface over ssh/mac-telnet), so the same path works for a real router or a quickchr CHR; centrs is believed to support this already (verify the exact command when scoped). Note only, no work now. Candidate, off the demo critical path; scope after T86."
+evidence = "developer 2026-11-01; correction 2026-11-02 (via centrs, not quickchr-specific)"
 blocked_by = ["T86"]
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[task]]
 id = "T96"
@@ -995,11 +995,11 @@ updated = "2026-11-01"
 id = "T100"
 title = "Package-level skills outside templates, delivered into .agents/skills"
 status = "needed"
-detail = "Skills that belong to routeros-muse itself (harness orientation, rendering through the UI, ui_* MCP tools, workspace conventions) should not live inside one template. Proposed: a package-root skills/ dir; init copies them into the workspace .agents/skills/ beside the template's (never-overwrite, provenance recorded like [template]); doctor reports drift against the installed package; an explicit refresh updates them. RouterOS domain skills stay in tikoci/routeros-skills (user-level ~/.agents/skills), not duplicated here. Today nothing handles this: the only skills are templates/network/skills. Developer additions 2026-11-01: (a) record what init installed (name, source, sha256) so a later routeros-muse can offer upgrade/update; (b) track template skills the same way; (c) routeros-muse may be the only tikoci thing on a box, so a template without routeros-skills content (minimal has none) rolls the dice: decide which skills every workspace gets; (d) verify on session start via skill/list that the intended skills loaded and nothing unexpected did. Short-term copy is fine; the deeper redesign is K30."
+detail = "Skills that belong to routeros-muse itself (harness orientation, rendering through the UI, ui_* MCP tools, workspace conventions) should not live inside one template. Proposed: a package-root skills/ dir; init copies them into the workspace .agents/skills/ beside the template's (never-overwrite, provenance recorded like [template]); doctor reports drift against the installed package; an explicit refresh updates them. RouterOS domain skills stay in tikoci/routeros-skills (user-level ~/.agents/skills), not duplicated here. Today nothing handles this: the only skills are templates/network/skills. Developer additions 2026-11-01: (a) record what init installed (name, source, sha256) so a later routeros-muse can offer upgrade/update; (b) track template skills the same way; (c) routeros-muse may be the only tikoci thing on a box, so a template without routeros-skills content (minimal has none) rolls the dice: decide which skills every workspace gets; (d) verify on session start via skill/list that the intended skills loaded and nothing unexpected did. Short-term copy is fine; the deeper redesign is K30. D47 (developer 2026-11-02): this is the important one in the skills group: routeros-skills are always loaded into every session from the routeros-muse npm package (current with our release), with a setting to disable; T15's entry/orientation skill rides here."
 evidence = "Developer question 2026-11-01 on D40; capture B1 shows muse reads project .agents/skills plus user ~/.agents/skills (routeros-skills symlinks live there on orca); skills-surface research merged 2026-11-01 (docs/design/skills-surface.md, tools/skill-check.ts): MSP is list-only plus skill/setActivation and skill/import, no install/reload; project > user > bundled precedence; project skills live-reload in-session; plugins install machine-global (no project confinement on 1.4.14); all 55 network skills load cleanly from .agents/skills; broken skills are silently absent from skill/list, so verify needs skill/list plus muse skills list --json diagnostics; project skills have no lockfile, so init must record (name, source, sha256)."
 blocked_by = []
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[task]]
 id = "T101"
@@ -1014,12 +1014,12 @@ updated = "2026-11-02"
 [[task]]
 id = "T102"
 title = "SECURITY.md from the permission research"
-status = "needed"
+status = "active"
 detail = "Write SECURITY.md before GitHub (D34): what each access mode and profile allows, where trust/rules/settings live, what --trust-workspace enables (skills, rules, hooks that run outside the sandbox and approvals), the artifact sandbox (T83) and its residuals, init write-safety threat model (T97), and how to report issues. Boundary statement (developer 2026-11-02): centrs is a helper, not routeros-muse's security layer; it validates and splits read from write (--yes gates writes), but RouterOS reveals RO/RW/policy only at run time, so strict setups (e.g. never reboot) use a restricted RouterOS account for agent sessions. Source: docs/design/permissions.md SECURITY notes plus T83/T97 records. Facts only, each grounded."
 evidence = "permissions research 2026-11-01; developer asked for an eventual SECURITY.md"
 blocked_by = []
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 (orch claude)"
+updated = "2026-11-02"
 
 [[task]]
 id = "T104"
@@ -1104,10 +1104,20 @@ updated = "2026-11-02"
 [[task]]
 id = "T111"
 title = "Password channel into centrs MCP for encrypted CDBs"
-status = "needed"
-detail = "Codex resumed review of T105 (2026-11-02) P1 CONFIRMED: centrs MCP gets only CENTRS_CDB_FILE in config env; the unlock password lives in the muse worker env, and muse does not propagate process env to MCP children (T105 A/B capture), so validate/retrieve/devices against an encrypted CDB return cdb/password-required after unlock. Needs a server-owned channel that never puts the password in session config/state/transcripts: candidate is a wrapper launcher (ui-bridge precedent) whose config env carries only a path to a 0700 password file in the private data home, written at unlock, deleted at lock, read by the wrapper to set CENTRS_CDB_PASSWORD for the centrs child only. Secret-at-rest tradeoff vs session-only memory is a developer decision before building. Open-CDB sessions unaffected; explain/rosetta unaffected."
+status = "blocked"
+detail = "DEFERRED by D46 (2026-11-02): centrs MCP is removed from the session config this phase (T112) and returns after GitHub; this channel is needed only when it does. Original finding: codex resumed review of T105 P1 CONFIRMED: centrs MCP gets only CENTRS_CDB_FILE in config env; the unlock password lives in the muse worker env and muse does not propagate process env to MCP children, so validate/retrieve/devices against an encrypted CDB return cdb/password-required after unlock. Candidate when revived: wrapper launcher whose config env carries only a path to a 0700 password file in the private data home (written at unlock, deleted at lock); secret-at-rest vs session-only is a developer decision first. Upstream half queued in the centrs tracking issue (T23)."
 evidence = "codex gpt-6.1-sol resumed T105 review 2026-11-02 (real centrs stdio probe against encrypted fixture: cdb/password-required); T105 evidence records the honest-failure limitation; related upstream tikoci/centrs#558 (developer-owned, encrypted CDB creation path)"
 blocked_by = []
 agent = ""
 updated = "2026-11-02"
 
+
+[[task]]
+id = "T112"
+title = "centrs via CLI: drop centrs MCP from the session config, steer skills to the CLI"
+status = "active"
+detail = "Per D46: remove the centrs server from session mcpServers and stop seeding centrs_* tool rules (rosetta unchanged, still seeded); steer template skills and orientation text to help-verified centrs CLI forms; leave MCP-subject skills alone; report stale-rule handling and whether the agent shell gets CENTRS_CDB_PASSWORD for an encrypted CDB after unlock (finding only, follow-up task if not)."
+evidence = "brief 2026-11-02; fail-first tests in t105/t55 suites; make gate required"
+blocked_by = []
+agent = "muse-spark-1.3 (orch claude)"
+updated = "2026-11-02"
