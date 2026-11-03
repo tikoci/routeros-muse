@@ -441,6 +441,8 @@ describe("D39: --no-trust-workspace parses", () => {
 			opts: {
 				noOpen: false,
 				yolo: false,
+				passwordStdin: false,
+				openCdb: false,
 				noTrustWorkspace: true,
 				dir: undefined,
 			},
@@ -450,6 +452,8 @@ describe("D39: --no-trust-workspace parses", () => {
 			opts: {
 				noOpen: false,
 				yolo: false,
+				passwordStdin: false,
+				openCdb: false,
 				noTrustWorkspace: true,
 				dir: undefined,
 			},

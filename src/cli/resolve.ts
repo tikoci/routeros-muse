@@ -1,27 +1,36 @@
-// Start workspace resolution (T93): a valid workspace serves; a
-// non-workspace on a TTY offers init-here / registry pick / browser
+// Start workspace resolution (T93, T133): a valid workspace serves;
+// a non-workspace on a TTY offers init-here / pick / browser
 // picker; off a TTY the cwd default falls to no-workspace mode while
 // an explicitly named dir aborts. Init and pick
 // resolve BEFORE the server binds — there is no live root switch.
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { decideCdb, decideTemplate, type SecretAsk } from "../lib/cdbSetup";
 import {
 	readRegistry,
 	registerWorkspace,
 	registryEntryAlive,
 } from "../lib/registry";
-import { CDB_ENCRYPT_STEERING, scaffoldIntoDir } from "../lib/workspace";
+import { scaffoldIntoDir } from "../lib/workspace";
 import { readAndValidate } from "../steps/workspace";
 
 export type ResolveDeps = {
 	isTty: boolean;
 	ask: (question: string) => Promise<string | null>;
+	askSecret: SecretAsk;
+	readStdinPassword: () => Promise<string | null>;
 	print: (line: string) => void;
 	registryFile: string;
 	env: Record<string, string>;
 	templatesRoot?: string | null;
 	/** The dir was named on the command line (not the cwd default). */
 	explicit?: boolean;
+	/** T133: start option 1 scaffold template (undefined prompts). */
+	template?: string;
+	/** T133: option 1 reads the new CDB password from stdin. */
+	passwordStdin: boolean;
+	/** T133: option 1 creates with an open CDB (dev escape). */
+	openCdb: boolean;
 };
 
 export type StartResolution =
@@ -53,21 +62,49 @@ export async function resolveStart(
 		return { kind: "no-workspace" };
 	}
 	deps.print(`Start options for ${dir}:`);
-	if (!hasToml) deps.print("  1) init a workspace here");
+	if (!hasToml) deps.print("  1) init a workspace here (created encrypted)");
 	deps.print("  2) pick a registered workspace");
 	deps.print("  3) open the browser picker (no workspace attached)");
 	const answer = (await deps.ask("Choose [1/2/3]:"))?.trim() ?? "";
 	if (answer === "1" && !hasToml) {
-		const made = await scaffoldIntoDir(dir, deps.env, "minimal", {
+		const tpl = await decideTemplate({
+			given: deps.template,
+			isTty: true,
+			ask: deps.ask,
+			print: deps.print,
 			templatesRoot: deps.templatesRoot,
+		});
+		if (!tpl.ok) {
+			deps.print(tpl.why);
+			return { kind: "abort", why: tpl.why };
+		}
+		const cdb = await decideCdb({
+			passwordStdin: deps.passwordStdin,
+			openCdb: deps.openCdb,
+			isTty: true,
+			askSecret: deps.askSecret,
+			readStdinPassword: deps.readStdinPassword,
+			print: deps.print,
+		});
+		if (cdb.kind === "abort") {
+			deps.print(cdb.why);
+			return { kind: "abort", why: cdb.why };
+		}
+		const made = await scaffoldIntoDir(dir, deps.env, tpl.template, {
+			templatesRoot: deps.templatesRoot,
+			cdb:
+				cdb.kind === "encrypted"
+					? { kind: "encrypted", password: cdb.password }
+					: { kind: "open" },
 		});
 		if (!made.ok) {
 			deps.print(made.why);
 			return { kind: "abort", why: made.why };
 		}
 		registerWorkspace(deps.registryFile, path.basename(made.dir), made.dir);
-		deps.print(`workspace ready: ${made.dir}`);
-		deps.print(CDB_ENCRYPT_STEERING);
+		const cdbNote =
+			cdb.kind === "encrypted" ? "encrypted" : "OPEN (dev escape)";
+		deps.print(`workspace ready: ${made.dir} (device.cdb: ${cdbNote})`);
 		return { kind: "serve", dir: made.dir };
 	}
 	if (answer === "2") {

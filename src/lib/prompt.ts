@@ -29,6 +29,21 @@ export async function confirm(question: string): Promise<boolean | null> {
 }
 
 /**
+ * Read the whole of stdin as a CDB password (--password-stdin):
+ * one trailing newline stripped (the centrs --password-stdin
+ * convention), null when empty or when stdin is a TTY. The caller
+ * decides the abort message; nothing is printed here.
+ */
+export async function readStdinPassword(): Promise<string | null> {
+	if (process.stdin.isTTY) return null;
+	let data = "";
+	process.stdin.setEncoding("utf8");
+	for await (const chunk of process.stdin) data += chunk;
+	const pw = data.replace(/\r?\n$/, "");
+	return pw ? pw : null;
+}
+
+/**
  * Password prompt (T40 CLI unlock): raw-mode read with no echo, null
  * when stdin is not a TTY (the caller falls back to the
  * CENTRS_CDB_PASSWORD passthrough or stops). The prompt goes to

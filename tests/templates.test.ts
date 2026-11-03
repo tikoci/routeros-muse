@@ -158,6 +158,8 @@ describe("scaffoldWorkspace", () => {
 			parent,
 			"my-net",
 			toolEnv(stubCentrsBin()),
+			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res).toEqual({ ok: true, dir: path.join(parent, "my-net") });
 		if (!res.ok) return;
@@ -188,6 +190,7 @@ describe("scaffoldWorkspace", () => {
 			"full-net",
 			toolEnv(stubCentrsBin()),
 			"network",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(true);
 		if (!res.ok) return;
@@ -206,14 +209,20 @@ describe("scaffoldWorkspace", () => {
 	tposix("bad name, existing target, unknown template fail clean", async () => {
 		const parent = mktmp("t93-tpl-bad-");
 		const env = toolEnv(stubCentrsBin());
-		const bad = await scaffoldWorkspace(parent, "../evil", env);
+		const bad = await scaffoldWorkspace(parent, "../evil", env, "minimal", {
+			cdb: { kind: "open" },
+		});
 		expect(bad.ok).toBe(false);
 		if (!bad.ok) expect(bad.why).toMatch(/one path segment/);
 		nodeFs.mkdirSync(path.join(parent, "taken"));
-		const taken = await scaffoldWorkspace(parent, "taken", env);
+		const taken = await scaffoldWorkspace(parent, "taken", env, "minimal", {
+			cdb: { kind: "open" },
+		});
 		expect(taken.ok).toBe(false);
 		if (!taken.ok) expect(taken.why).toMatch(/already exists/);
-		const unknown = await scaffoldWorkspace(parent, "x", env, "nope");
+		const unknown = await scaffoldWorkspace(parent, "x", env, "nope", {
+			cdb: { kind: "open" },
+		});
 		expect(unknown.ok).toBe(false);
 		if (!unknown.ok) expect(unknown.why).toMatch(/unknown template/);
 		expect(nodeFs.existsSync(path.join(parent, "x"))).toBe(false);
@@ -225,6 +234,8 @@ describe("scaffoldWorkspace", () => {
 			parent,
 			"doomed",
 			toolEnv(failingCentrsBin()),
+			"minimal",
+			{ cdb: { kind: "open" } },
 		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.existsSync(path.join(parent, "doomed"))).toBe(false);
@@ -236,7 +247,12 @@ describe("scaffoldIntoDir", () => {
 		const dir = mktmp("t93-tpl-conflict-");
 		nodeFs.writeFileSync(path.join(dir, "router.toml"), "mine\n");
 		nodeFs.writeFileSync(path.join(dir, "notes.txt"), "mine\n");
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()));
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			undefined,
+			{ cdb: { kind: "open" } },
+		);
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
 			expect(res.why).toMatch(/router\.toml/);
@@ -251,7 +267,12 @@ describe("scaffoldIntoDir", () => {
 	tposix("an existing device.cdb is a conflict too", async () => {
 		const dir = mktmp("t93-tpl-cdbconf-");
 		nodeFs.writeFileSync(path.join(dir, "device.cdb"), "mine\n");
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()));
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			undefined,
+			{ cdb: { kind: "open" } },
+		);
 		expect(res.ok).toBe(false);
 		if (!res.ok) expect(res.conflicts).toContain("device.cdb");
 		expect(nodeFs.readFileSync(path.join(dir, "device.cdb"), "utf8")).toBe(
@@ -262,7 +283,12 @@ describe("scaffoldIntoDir", () => {
 	tposix("success into an existing dir names the dir", async () => {
 		const dir = mktmp("t93-tpl-intodir-");
 		nodeFs.writeFileSync(path.join(dir, "notes.txt"), "mine\n");
-		const res = await scaffoldIntoDir(dir, toolEnv(stubCentrsBin()));
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(stubCentrsBin()),
+			undefined,
+			{ cdb: { kind: "open" } },
+		);
 		expect(res).toEqual({ ok: true, dir });
 		if (!res.ok) return;
 		expect(
@@ -276,7 +302,12 @@ describe("scaffoldIntoDir", () => {
 	tposix("failed init removes only what it wrote", async () => {
 		const dir = mktmp("t93-tpl-intoroll-");
 		nodeFs.writeFileSync(path.join(dir, "notes.txt"), "mine\n");
-		const res = await scaffoldIntoDir(dir, toolEnv(failingCentrsBin()));
+		const res = await scaffoldIntoDir(
+			dir,
+			toolEnv(failingCentrsBin()),
+			undefined,
+			{ cdb: { kind: "open" } },
+		);
 		expect(res.ok).toBe(false);
 		expect(nodeFs.readdirSync(dir)).toEqual(["notes.txt"]);
 	});
@@ -346,6 +377,12 @@ describe("picker template routes", () => {
 		const dh = mktmp("t93-tpl-pickdh-");
 		const nets = path.join(dh, "nets");
 		const home = mktmp("t93-tpl-pickhome-");
+		// The ready poll needs a locked state; the stub serves it.
+		const stub = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch: () => Response.json({ state: "locked" }),
+		});
 		const srv = await startServer({
 			noWorkspace: true,
 			allowOpenCdb: true,
@@ -356,6 +393,10 @@ describe("picker template routes", () => {
 			configHome: mktmp("t93-tpl-cfg-"),
 			defaultWorkspaceDir: nets,
 			toolBinDir: stubCentrsBin(),
+			launchWorkspaceServer: async () => ({
+				url: `http://127.0.0.1:${stub.port}`,
+				stop: async () => {},
+			}),
 		});
 		try {
 			const list = (await (await fetch(`${srv.url}api/workspaces`)).json()) as {
@@ -365,16 +406,27 @@ describe("picker template routes", () => {
 			expect(list.templates.map((t) => t.name)).toEqual(["minimal", "network"]);
 			expect(list.defaultDir).toBe(nets);
 
-			// Default create is minimal.
+			// Default create is minimal (and password-gated).
+			const nopw = await fetch(`${srv.url}api/workspaces`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ action: "create", name: "a-one" }),
+			});
+			expect(nopw.status).toBe(400);
 			const dflt = (await (
 				await fetch(`${srv.url}api/workspaces`, {
 					method: "POST",
 					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ action: "create", name: "a-one" }),
+					body: JSON.stringify({
+						action: "create",
+						name: "a-one",
+						password: "pw",
+					}),
 				})
-			).json()) as { ok: boolean; template: string };
+			).json()) as { ok: boolean; template: string; url: unknown };
 			expect(dflt.ok).toBe(true);
 			expect(dflt.template).toBe("minimal");
+			expect(typeof dflt.url).toBe("string");
 			expect(
 				nodeFs.existsSync(path.join(nets, "a-one", "workspace.toml")),
 			).toBe(true);
@@ -390,6 +442,7 @@ describe("picker template routes", () => {
 					action: "create",
 					name: "b-two",
 					template: "network",
+					password: "pw",
 				}),
 			});
 			expect(net.status).toBe(200);
@@ -415,6 +468,7 @@ describe("picker template routes", () => {
 			expect(badBody.why).toMatch(/unknown template/);
 			expect(nodeFs.existsSync(path.join(nets, "c-three"))).toBe(false);
 		} finally {
+			stub.stop();
 			await srv.stop();
 		}
 	});

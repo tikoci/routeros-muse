@@ -17,8 +17,14 @@ export function usage(): string[] {
 		"  doctor [dir]  print-only checks; exit 1 when a required item is missing",
 		"",
 		"  start: --port N, --host H, --no-open, --yolo, --tui (= code)",
-		"  init: --template minimal|network (default: minimal)",
+		"  init: --template minimal|network (default: minimal), --password-stdin, --open-cdb",
 		"  code: --yes, --router H[:port], --print-only; the rest passes to muse (-- ends our flags)",
+		"",
+		"New workspaces are created encrypted: init and start option 1",
+		"prompt for a CDB password on a TTY, or take it from --password-stdin.",
+		"--open-cdb creates without encryption (dev escape, never the default).",
+		"",
+		"Start option 1 also takes --template, --password-stdin, --open-cdb.",
 		"",
 		"Developer flags (start): --no-workspace, --provider NAME, --allow-open-cdb, --no-trust-workspace",
 		"",
@@ -38,9 +44,23 @@ export type StartOpts = {
 	allowOpenCdb?: boolean;
 	/** D39: spawn the worker without --trust-workspace (skills stay unloaded). */
 	noTrustWorkspace?: boolean;
+	/** T133: start option 1 scaffold template (undefined prompts on a TTY). */
+	template?: string;
+	/** T133: read the new CDB password from stdin (else prompt or abort). */
+	passwordStdin: boolean;
+	/** T133: create the new workspace with an open CDB (dev escape). */
+	openCdb: boolean;
 };
 
-export type InitOpts = { dir?: string; template: string };
+export type InitOpts = {
+	dir?: string;
+	/** Flag-given template (undefined prompts on a TTY, defaults off a TTY). */
+	template?: string;
+	/** T133: read the new CDB password from stdin (else prompt or abort). */
+	passwordStdin: boolean;
+	/** T133: create the workspace with an open CDB (dev escape). */
+	openCdb: boolean;
+};
 
 export type CodeOpts = {
 	dir?: string;
@@ -82,8 +102,13 @@ function onlyOneDir(positional: string[], cmd: string): string | undefined {
 	return positional[0];
 }
 
-function parseStartArgs(argv: string[]): StartOpts {
-	const opts: StartOpts = { noOpen: false, yolo: false };
+function parseStartArgs(argv: string[], deps?: ParseDeps): StartOpts {
+	const opts: StartOpts = {
+		noOpen: false,
+		yolo: false,
+		passwordStdin: false,
+		openCdb: false,
+	};
 	const positional: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -100,6 +125,14 @@ function parseStartArgs(argv: string[]): StartOpts {
 			const v = argv[++i];
 			if (!v) throw new Stop(["--provider needs a name.", ...usage()]);
 			opts.provider = v;
+		} else if (a === "--template") {
+			const v = argv[++i];
+			if (!v) throw new Stop(["--template needs a name.", ...usage()]);
+			opts.template = v;
+		} else if (a === "--password-stdin") {
+			opts.passwordStdin = true;
+		} else if (a === "--open-cdb") {
+			opts.openCdb = true;
 		} else if (a === "--no-open") {
 			opts.noOpen = true;
 		} else if (a === "--yolo") {
@@ -120,12 +153,28 @@ function parseStartArgs(argv: string[]): StartOpts {
 	if (opts.noWorkspace && opts.dir !== undefined) {
 		throw new Stop(["--no-workspace takes no directory argument.", ...usage()]);
 	}
+	if (
+		opts.template !== undefined &&
+		!knownTemplateNames(deps).includes(opts.template)
+	) {
+		throw new Stop([
+			`Unknown template: ${opts.template} (have: ${knownTemplateNames(deps).join(", ") || "none"}).`,
+			...usage(),
+		]);
+	}
+	if (opts.passwordStdin && opts.openCdb) {
+		throw new Stop([
+			"cannot combine --password-stdin with --open-cdb.",
+			...usage(),
+		]);
+	}
 	return opts;
 }
 
 function parseInitArgs(argv: string[], deps?: ParseDeps): InitOpts {
 	const known = knownTemplateNames(deps);
-	let template = "minimal";
+	let template: string | undefined;
+	const opts: InitOpts = { passwordStdin: false, openCdb: false };
 	const positional: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -136,19 +185,29 @@ function parseInitArgs(argv: string[], deps?: ParseDeps): InitOpts {
 			const v = argv[++i];
 			if (!v) throw new Stop(["--template needs a name.", ...usage()]);
 			template = v;
+		} else if (a === "--password-stdin") {
+			opts.passwordStdin = true;
+		} else if (a === "--open-cdb") {
+			opts.openCdb = true;
 		} else if (a.startsWith("-")) {
 			throw new Stop([`Unknown init flag: ${a}`, ...usage()]);
 		} else {
 			positional.push(a);
 		}
 	}
-	if (!known.includes(template)) {
+	if (template !== undefined && !known.includes(template)) {
 		throw new Stop([
 			`Unknown template: ${template} (have: ${known.join(", ") || "none"}).`,
 			...usage(),
 		]);
 	}
-	return { dir: onlyOneDir(positional, "init"), template };
+	if (opts.passwordStdin && opts.openCdb) {
+		throw new Stop([
+			"cannot combine --password-stdin with --open-cdb.",
+			...usage(),
+		]);
+	}
+	return { dir: onlyOneDir(positional, "init"), template, ...opts };
 }
 
 /** Thrown for --help so callers (and tests) see it without an exit. */
@@ -239,7 +298,7 @@ export function parseCli(argv: string[], deps?: ParseDeps): Parsed {
 				opts: parseCodeArgs(rest.filter((a) => a !== "--tui")),
 			};
 		}
-		return { cmd: "start", opts: parseStartArgs(rest) };
+		return { cmd: "start", opts: parseStartArgs(rest, deps) };
 	}
 	if (first === "init") {
 		return { cmd: "init", opts: parseInitArgs(rest, deps) };
@@ -257,5 +316,5 @@ export function parseCli(argv: string[], deps?: ParseDeps): Parsed {
 			opts: parseCodeArgs(argv.filter((a) => a !== "--tui")),
 		};
 	}
-	return { cmd: "start", opts: parseStartArgs(argv) };
+	return { cmd: "start", opts: parseStartArgs(argv, deps) };
 }
