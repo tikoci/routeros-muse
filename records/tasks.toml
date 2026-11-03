@@ -1250,10 +1250,10 @@ updated = "2026-11-03"
 
 [[task]]
 id = "T125"
-title = "Bundled RouterOS skills for code/TUI after config-home decision"
+title = "Future: bundled RouterOS skills for code/TUI"
 status = "needed"
-detail = "T100's GUI path already has private config homes; routeros-muse code/--tui launches with the operator's normal Muse config. Resolve D51 before changing it, then reuse the pinned bundle and machine preference while honoring the chosen settings/auth/past-session behavior. Cover startup, --print-only, disabled state and existing passthrough args. No defaults/globals/workspace resolution work."
-evidence = "T100 implementation inspection 2026-11-03: src/steps/launch.ts passes the tools env into muse in the workspace, with no private config override. Scope question sent to the developer; GUI implementation can complete independently."
+detail = "D51 decided 2026-11-03: ship GUI sessions now and track code separately. Keep routeros-muse code/--tui on the operator's normal Muse config in the current release. This future task needs its own scope for skill delivery and any config-home changes, preserving the intended settings/auth/data-home behavior. Reuse the pinned bundle and machine preference where appropriate; cover startup, --print-only, disabled state and passthrough args. Do not add defaults/globals/workspace settings resolution."
+evidence = "Developer explicitly selected GUI sessions now; track code separately on 2026-11-03 (D51). T100 GUI implementation committed as 5877d6c with make gate green (669 pass, SMOKE GREEN). src/steps/launch.ts still passes the tools env into muse in the workspace with no private config override. No CLI implementation authorized by the scope choice."
 blocked_by = ["T100", "D51"]
 agent = ""
 updated = "2026-11-03"
