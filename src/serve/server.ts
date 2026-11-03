@@ -1457,6 +1457,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		runGeneration += 1;
 		settingsStamp = { sid, gen: runGeneration };
 		mainSettled = true;
+		// P2-6: one event per publish, existing channel + envelope.
+		// Every tab reloads off it (the swapping tab included).
+		emit({
+			method: "main/changed",
+			params: { sessionId: sid, generation: runGeneration },
+		});
 	}
 
 	type SwapRefusalOutcome = {
@@ -2692,6 +2698,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						text?: string;
 						images?: { base64Data: string; mediaType: string }[];
 						targets?: unknown;
+						expectedSessionId?: unknown;
 					};
 					if (typeof body.text !== "string" || !body.text.trim()) {
 						return json({ ok: false, why: "need {text}" }, 400);
@@ -2780,6 +2787,26 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							);
 						}
 						const sid = await ensureMain(entry.key);
+						// P2-6: a tab pinned to an older main must reload, never
+						// land on the wrong session. Unpinned sends (tests, curl)
+						// skip the check. The current id rides along so the UI
+						// can adopt it in the same round trip.
+						if (
+							typeof body.expectedSessionId === "string" &&
+							body.expectedSessionId !== "" &&
+							body.expectedSessionId !== sid
+						) {
+							return json(
+								{
+									ok: false,
+									error: "main-changed",
+									why: "the main session changed — your draft was kept and the chat reloaded; send again",
+									sessionId: sid,
+									generation: runGeneration,
+								},
+								409,
+							);
+						}
 						const client = await ensureMsp(entry.key);
 						try {
 							const { turnId } = await client.turnStart({
@@ -3069,7 +3096,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							result.status,
 						);
 					}
-					return json({ ok: true, sessionId: result.sessionId });
+					return json({
+						ok: true,
+						sessionId: result.sessionId,
+						generation: runGeneration,
+					});
 				}
 				if (p === "/api/chat/resume" && req.method === "POST") {
 					// P1-3: capture the owner first (validation awaits below).
@@ -3098,7 +3129,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 					}
 					if (mainSession === sid && mainSettled && mainOwner === key) {
-						return json({ ok: true, sessionId: sid, resumed: false });
+						return json({
+							ok: true,
+							sessionId: sid,
+							resumed: false,
+							generation: runGeneration,
+						});
 					}
 					let result: SwapOutcome;
 					try {
@@ -3199,7 +3235,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							result.status,
 						);
 					}
-					return json({ ok: true, sessionId: result.sessionId, resumed: true });
+					return json({
+						ok: true,
+						sessionId: result.sessionId,
+						resumed: true,
+						generation: runGeneration,
+					});
 				}
 				if (p === "/api/chat/history") {
 					const key = workerKey(req);

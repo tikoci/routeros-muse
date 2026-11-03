@@ -621,6 +621,112 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 	);
 
 	t(
+		"main/changed event on publish; stale sends 409 main-changed (P2-6)",
+		async () => {
+			const { bin, log } = stubT50Bin();
+			await withT50Env(log, async () => {
+				const srv = await startT50Srv(bin);
+				try {
+					// Subscribe before the swap; collect data frames.
+					const events: Record<string, unknown>[] = [];
+					const stream = await fetch(`${srv.url}api/chat/events`);
+					if (!stream.body) throw new Error("no SSE body");
+					const reader = stream.body.getReader();
+					const decoder = new TextDecoder();
+					let buf = "";
+					let open = true;
+					const pump = (async () => {
+						while (open) {
+							const { done, value } = await reader.read();
+							if (done) return;
+							buf += decoder.decode(value, { stream: true });
+							for (;;) {
+								const idx = buf.indexOf("\n\n");
+								if (idx < 0) break;
+								const frame = buf.slice(0, idx);
+								buf = buf.slice(idx + 2);
+								for (const line of frame.split("\n")) {
+									if (!line.startsWith("data: ")) continue;
+									try {
+										const evt = JSON.parse(
+											line.slice("data: ".length),
+										) as Record<string, unknown>;
+										events.push(evt);
+									} catch {
+										// ignore partial frames
+									}
+								}
+							}
+						}
+					})();
+					try {
+						const first = await postJson(`${srv.url}api/chat/send`, {
+							text: "P26-S1",
+						});
+						const s1 = first.json["sessionId"] as string;
+						await waitIdle(srv.url);
+						const created = await postJson(`${srv.url}api/chat/new`, {});
+						expect(created.json["ok"]).toBe(true);
+						const s2 = created.json["sessionId"] as string;
+						expect(typeof created.json["generation"]).toBe("number");
+						// The publish announced itself on the live stream.
+						const start = Date.now();
+						for (;;) {
+							const hit = events.find(
+								(e) =>
+									e["method"] === "main/changed" &&
+									(e["params"] as Record<string, unknown>)["sessionId"] === s2,
+							);
+							if (hit) {
+								const params = hit["params"] as Record<string, unknown>;
+								expect(typeof params["generation"]).toBe("number");
+								break;
+							}
+							if (Date.now() - start > 15_000) {
+								throw new Error(
+									`no main/changed for ${s2} in ${JSON.stringify(events.map((e) => e["method"]))}`,
+								);
+							}
+							await new Promise((r) => setTimeout(r, 25));
+						}
+						// A send pinned to the old main is refused with the
+						// current id; unpinned and current sends land.
+						const stale = await postJson(`${srv.url}api/chat/send`, {
+							text: "P26-STALE",
+							expectedSessionId: s1,
+						});
+						expect(stale.status).toBe(409);
+						expect(stale.json["error"]).toBe("main-changed");
+						expect(stale.json["sessionId"]).toBe(s2);
+						expect(typeof stale.json["generation"]).toBe("number");
+						const current = await postJson(`${srv.url}api/chat/send`, {
+							text: "P26-CURRENT",
+							expectedSessionId: s2,
+						});
+						expect(current.json["ok"]).toBe(true);
+						expect(current.json["sessionId"]).toBe(s2);
+						const unpinned = await postJson(`${srv.url}api/chat/send`, {
+							text: "P26-UNPINNED",
+						});
+						expect(unpinned.json["ok"]).toBe(true);
+					} finally {
+						open = false;
+						try {
+							await reader.cancel();
+						} catch {
+							// already closed
+						}
+						await pump;
+					}
+				} finally {
+					await srv.stop();
+				}
+			});
+		},
+		60_000,
+	);
+
+	t(
 		"foreign-workspace sessions never show and never resume (P2-4)",
 		async () => {
 			const { bin, log } = stubT50Bin();
