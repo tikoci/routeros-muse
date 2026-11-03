@@ -363,3 +363,47 @@ evidence = "sol review of t3/private-muse-config-home 63c5bed, 2026-11-02; upstr
 blocked_by = []
 agent = "developer"
 updated = "2026-11-02"
+
+[[need]]
+id = "C20"
+repo = "centrs"
+title = "CDB password channel for hosts that pass no env (password command/file, re-read per load)"
+status = "needed"
+detail = "Gate for D48. centrs agent 2026-11-02 recommends CENTRS_CDB_PASSWORD_COMMAND (helper runs per CDB load, asks the unlocked muse worker over local IPC, fails when locked, so lock is next-call effective) with CENTRS_CDB_PASSWORD_FILE as fallback (re-read per load; delete = lock); both for CLI and MCP; MCP-origin password-required remediation must not name CLI flags (agents would ask for the password in chat). Rejected: per-call CDB/password args (agent picks its allowlist; secret in transcript), fd/stdin (stdin is the MCP stream). Today the MCP server keeps the password in memory for its lifetime, so host lock is only effective by killing the process."
+evidence = "https://github.com/tikoci/centrs/issues/603; assessment https://github.com/tikoci/centrs/issues/602#issuecomment-6593049668 (main 629b01c, real stdio client vs encrypted and open fixtures)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[need]]
+id = "C21"
+repo = "centrs"
+title = "MCP double CDB read: deleted record falls back to plain-host with default/env credentials"
+status = "needed"
+detail = "MCP reads the CDB per call (UI edits show next call) but twice: allowlist check then connect. A record removed between the two reads makes the connect fall back to plain-host resolution with default or env credentials. Matters for D48 alongside C15 (#581, which also covers centrs_devices)."
+evidence = "https://github.com/tikoci/centrs/issues/604 (centrs agent 2026-11-02, code read on main 629b01c)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[need]]
+id = "C22"
+repo = "centrs"
+title = "MCP results: isError on ok:false, structuredContent/outputSchema, size cap"
+status = "needed"
+detail = "Gate for D48 and input to T113. Every MCP result is one JSON text block; isError is never set, so a failed call (ok:false) reads as success to the host; no structuredContent/outputSchema; no default size cap. Until then a host card parses the text envelope {ok, data|error, warnings, tips, meta} and renders error.code/remediation/detailsUrl plus meta.target/via/validation.stages."
+evidence = "https://github.com/tikoci/centrs/issues/605 (centrs agent 2026-11-02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"
+
+[[need]]
+id = "C23"
+repo = "centrs"
+title = "MCP contract test plus CLI/MCP parity table"
+status = "needed"
+detail = "Parity today rests only on MCP tools calling the same core as the CLI; no test pins tool schemas or annotations, no schema version beyond the package. Docs drift: README promises a listAttributes input that does not exist; example 1 shows data.args where the tool returns attributes/queries. Gaps: centrs_validate is MCP-only (proposed CLI execute --dry-run); explain shapes differ until #223; CLI-only debt transfer (#593), retrieve --list-attributes/--max-results; CLI-only by design terminal, btest, settings, api, ad-hoc host/password, --cmr, devices edit, streaming retrieve. Moving: explain output (#223), execute output (#360), result transport (#605), error granularity (#528)."
+evidence = "https://github.com/tikoci/centrs/issues/606 (centrs agent 2026-11-02)"
+blocked_by = []
+agent = ""
+updated = "2026-11-02"

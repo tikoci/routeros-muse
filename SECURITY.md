@@ -34,6 +34,13 @@ on centrs main, not yet in the bundled 0.1.9-next.24), not a policy
 failure. Anyone who needs "never reboot" needs
 the restricted account.
 
+Read-only is not the same as safe to show. A seeded read runs without
+an approval, and its output lands in the transcript. If the agent's
+RouterOS account has the `sensitive` policy, `centrs retrieve` can
+pull PPP secrets, script sources, or Wi-Fi keys into the chat
+([centrs#542](https://github.com/tikoci/centrs/issues/542), C1). Give
+agent sessions an account without `sensitive`.
+
 ## 4. Access modes and permission profiles
 
 Two modes in the UI and `--yolo` flag (D38, D42,
@@ -173,3 +180,14 @@ mid-copy parent swap (Node has no openat).
   fragment-path non-read dispatch — fixed on centrs main, awaiting a
   centrs publish and our bump; until then the bundled build still
   has it. See §3.
+- C1 ([centrs#542](https://github.com/tikoci/centrs/issues/542)):
+  secret-bearing values reach the transcript through seeded reads
+  when the account has the `sensitive` policy. Mitigation is the
+  account, see §3.
+- D48 (open): if centrs MCP returns as an option, it is gated on a
+  password channel that keeps the secret off the MSP wire (C20,
+  [centrs#603](https://github.com/tikoci/centrs/issues/603)), failed
+  calls marked `isError` (C22,
+  [centrs#605](https://github.com/tikoci/centrs/issues/605)), and
+  `centrs_devices` refusing record passwords as tool arguments
+  ([centrs#582](https://github.com/tikoci/centrs/issues/582)).
