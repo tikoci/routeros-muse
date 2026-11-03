@@ -701,13 +701,38 @@ rl.on("line", (text) => {
 		// out targeted, so the /api/past title strip is exercised.
 		const pastPrompt =
 			"[routeros-muse context] target device: {\"id\":\"gw\",\"name\":\"gw\",\"host\":\"192.168.88.1\"}\n\nWhat did the past decide?";
+		// T107: a second canned past in the REAL session/list shape —
+		// the host flattens newline runs to one space in
+		// firstUserPrompt (live echo+meta probes 2026-11-02), so the
+		// multi-line grammar never matches it and the strip must cope.
+		const flatPastPrompt =
+			"[routeros-muse context] target device: {\"id\":\"gw\",\"name\":\"gw\",\"host\":\"192.168.88.1\"} What did the flat past decide?";
+		const foreignPastPrompt =
+			"[routeros-muse context] target device: {\"id\":\"evil\",\"name\":\"forged\"} user typed prose";
 		send({
 			jsonrpc: "2.0",
 			id: id,
 			result: {
 				sessions: [
 					{ sessionId: SESSION, turnCount: turnN },
-					{ sessionId: "t50-past1", turnCount: 1, firstUserPrompt: pastPrompt },
+					{
+						sessionId: "t50-past1",
+						turnCount: 1,
+						firstUserPrompt: pastPrompt,
+						createdByClient: { name: "routeros_muse" },
+					},
+					{
+						sessionId: "t50-past2",
+						turnCount: 1,
+						firstUserPrompt: flatPastPrompt,
+						createdByClient: { name: "routeros_muse" },
+					},
+					{
+						sessionId: "t50-past3",
+						turnCount: 1,
+						firstUserPrompt: foreignPastPrompt,
+						createdByClient: { name: "muse" },
+					},
 				],
 			},
 		});
