@@ -63,6 +63,7 @@ type SmokeHook = {
 	dropStream: () => void;
 	reconnectStream: () => void;
 	loadStatus: () => Promise<void>;
+	loadHistory: () => Promise<void>;
 };
 
 declare global {
@@ -5276,11 +5277,13 @@ try {
 			});
 			let heldFirst = false;
 			await pageR.route("**/api/chat/history", async (route) => {
-				const res = await route.fetch();
+				// Gate before fetching: the released response must reflect
+				// the live turn (round 3 follows the server's running flag).
 				if (!heldFirst) {
 					heldFirst = true;
 					await histGate;
 				}
+				const res = await route.fetch();
 				await route.fulfill({ response: res });
 			});
 			await pageR.evaluate(() => window.__smoke?.reconnectStream());
@@ -5550,6 +5553,302 @@ try {
 		} finally {
 			await pageR.close();
 			await srvR.stop();
+		}
+	});
+
+	// Round 3 (P1-A/P1-B): a deferred adoption follows the server, and an
+	// accepted history advances the generation atomically.
+	// P1-A: B defers S2 while a turn runs, drops again, misses the
+	// completion; the next reconnect adopts AND clears the pending Send
+	// lock (base: adopts but Send stays hidden forever).
+	// P1-B: S2's history held, S3's history loaded while deaf, S2's
+	// released — the tab stays on S3 with only S3's markers (base: the
+	// stale S2 appends and steals the id). Screenshots 61-63.
+	const r3 = stubT50Bin();
+	await withT50Env(r3.log, async () => {
+		const srv3 = await startServer({
+			dataHome: mktmp("ui-smoke-r3-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: r3.bin,
+		});
+		const page3 = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		page3.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		page3.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		page3.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srv3.url, { waitUntil: "load" });
+			const batch3 = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const sIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const sAgent = (pg: Page, probe: string, ms = 30_000): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const sOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			const sMainOf = (pg: Page): Promise<unknown> =>
+				pg.evaluate(
+					() => (window as unknown as Record<string, unknown>)["__mainSession"],
+				);
+
+			// A marks S1; B loads onto S1.
+			await page.fill("#chatinput", "R3-S1-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r3 first exchange lands", await sAgent(page, "R3-S1-MARKER"));
+			await sIdle(page);
+			await page3.goto(srv3.url, { waitUntil: "load" });
+			await page3.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page3.reload({ waitUntil: "load" });
+			await page3.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"r3 B shows S1 without sending",
+				await sAgent(page3, "R3-S1-MARKER"),
+			);
+
+			// P1-A: B deaf, A swaps S1->S2 and marks it, B reconnects with
+			// its reconcile history held until S2's live turn/started
+			// reaches the fresh stream — the adoption must defer.
+			await page3.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R3-S2-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r3 S2 marker lands", await sAgent(page, "R3-S2-MARKER"));
+			await sIdle(page);
+			let releaseR3!: () => void;
+			const r3Gate = new Promise<void>((r) => {
+				releaseR3 = r;
+			});
+			let heldR3 = false;
+			await page3.route("**/api/chat/history", async (route) => {
+				// Gate before fetching: the released response must reflect
+				// the live turn (round 3 follows the server's running flag).
+				if (!heldR3) {
+					heldR3 = true;
+					await r3Gate;
+				}
+				const res = await route.fetch();
+				await route.fulfill({ response: res });
+			});
+			await page3.evaluate(() => window.__smoke?.reconnectStream());
+			await page.fill("#chatinput", "NEED-APPROVAL r3 live");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"r3 reconnecting tab sees the live turn",
+				await sOk(
+					page3.waitForFunction(
+						() => {
+							const b = document.getElementById(
+								"stopbtn",
+							) as HTMLButtonElement | null;
+							return b !== null && b.style.display !== "none";
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			releaseR3();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r3 pending keeps the old transcript mid-stream",
+				((await page3.locator("#pane-chat").textContent()) ?? "").includes(
+					"R3-S1-MARKER",
+				),
+			);
+			await page3.unroute("**/api/chat/history");
+			await page3.screenshot({ path: path.join(OUT, "61-r3-pending.png") });
+
+			// P1-A: B drops again while still pending, misses the
+			// completion, reconnects. The server is idle: B adopts S2
+			// AND Send comes back (base: Send stays hidden forever).
+			await page3.evaluate(() => window.__smoke?.dropStream());
+			await page
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await sIdle(page);
+			await page3.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r3 second reconnect adopts the current main id",
+				await sOk(
+					page3.waitForFunction(
+						() =>
+							(window as unknown as Record<string, unknown>)[
+								"__mainSession"
+							] === "t50-s2",
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"r3 second reconnect shows the new transcript",
+				await sAgent(page3, "R3-S2-MARKER", 10_000),
+			);
+			check(
+				"r3 second reconnect brings Send back",
+				await sOk(
+					page3.waitForSelector("#sendbtn:visible", { timeout: 10_000 }),
+				),
+			);
+			await page3.fill("#chatinput", "R3-NEXT-ON-S2");
+			await page3.press("#chatinput", "Enter");
+			check(
+				"r3 next send dispatches on the adopted main",
+				await sAgent(page3, "R3-NEXT-ON-S2"),
+			);
+			// Non-fatal quiescence: on the pre-fix client Send never comes
+			// back, and P1-B below must still run (it reloads B fresh).
+			await sOk(sIdle(page3));
+			check("r3 adopted main id is S2", (await sMainOf(page3)) === "t50-s2");
+			await page3.screenshot({ path: path.join(OUT, "62-r3-readopted.png") });
+
+			// P1-B (reviewer's repro): hold S2's initial history, load S3's
+			// history while SSE is down, release S2's — B stays on S3
+			// with only S3's markers. SSE stays aborted from boot so no
+			// reconcile adoption can mask the loadHistory generation
+			// gate; the S3 load goes through the seam (no adopt, no
+			// reload, so the held S2 still lands afterwards).
+			// Deafen by hanging the stream request: no response, no error,
+			// no open — the tab stays deaf with a clean console.
+			await page3.route("**/api/chat/events", async () => {
+				await new Promise(() => {});
+			});
+			let releaseOld!: () => void;
+			const oldGate = new Promise<void>((r) => {
+				releaseOld = r;
+			});
+			let heldOld = false;
+			let hitOld = false;
+			await page3.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldOld) {
+					heldOld = true;
+					hitOld = true;
+					await oldGate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page3.reload({ waitUntil: "load" });
+			await page3.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			{
+				const start = Date.now();
+				while (!hitOld) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r3 S2 history never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R3B-S3-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r3 S3 marker lands", await sAgent(page, "R3B-S3-MARKER"));
+			await sIdle(page);
+			await page3.evaluate(() => window.__smoke?.loadHistory());
+			check(
+				"r3 S3 history renders while deaf",
+				await sAgent(page3, "R3B-S3-MARKER", 10_000),
+			);
+			releaseOld();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r3 late history keeps the current main id",
+				(await sMainOf(page3)) === "t50-s3",
+			);
+			{
+				const text = (await page3.locator("#pane-chat").textContent()) ?? "";
+				check(
+					"r3 late history keeps only the current transcript",
+					text.includes("R3B-S3-MARKER") && !text.includes("R3-S2-MARKER"),
+				);
+			}
+			await page3.screenshot({
+				path: path.join(OUT, "63-r3-late-history.png"),
+			});
+			await page3.unroute("**/api/chat/events");
+			await page3.unroute("**/api/chat/history");
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batch3;
+		} finally {
+			await page3.close();
+			await srv3.stop();
 		}
 	});
 

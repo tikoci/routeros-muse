@@ -857,23 +857,39 @@
   // each other's visual). While nonzero Send is disabled with the
   // running visual and send() refuses to dispatch.
   let ADOPTING = 0;
-  // SSE-reconnect round: a newer main adopted while a turn streams.
-  // The pair waits here (transcript untouched) until the turn
-  // completes; Send refuses meanwhile with the adopting visual.
+  // A newer main that arrived while the server reports a turn running.
+  // The pair waits here (transcript untouched) until a re-reconcile
+  // finds the server idle; Send refuses meanwhile with the adopting
+  // visual. Liveness comes from the server's history running flag,
+  // never from local stream continuity (removed: STREAM_GEN/TURN_GEN
+  // stranded Send when a completion was missed in a deaf gap).
   let PENDING_MAIN = null;
-  // Stream continuity: every SSE (re)open bumps STREAM_GEN, and every
-  // run start stamps TURN_GEN. A run is provably live only on the
-  // current continuity — anything older may have completed in a deaf
-  // gap, and a newer main then adopts immediately instead of
-  // stranding on a completion that will never arrive.
-  let STREAM_GEN = 0;
-  let TURN_GEN = -1;
-  function isTurnLive() { return AGENT_RUNNING && TURN_GEN === STREAM_GEN; }
+  // PENDING_MAIN invariant: it is set only while the server reports a
+  // turn running, and every setter pairs with a clearer — a later
+  // adoption at or above its generation, a lock/unlock, or a
+  // re-reconcile on the turn's completion event or the next SSE open,
+  // whichever comes first. No path sets it without one of those.
   // P2-6: the main this tab believes in, learned from loadHistory and
   // main/changed (window-scoped like __pasts, so scripted checks can
   // gate on it). Sends pin it; a 409 adopts the server's newer pair.
   window.__mainSession = null;
   window.__mainGen = -1;
+  // Round 3: the one adoption — session id and generation advance
+  // together, atomically. Any successful adoption at or above the
+  // pending generation clears the pending Send lock (a newer main
+  // supersedes an older wait). Stale pairs (below the adopted
+  // generation) lose without touching anything.
+  function adoptMain(sid, gen) {
+    if (typeof sid !== "string" || !sid || typeof gen !== "number") return false;
+    if (gen < window.__mainGen) return false;
+    window.__mainSession = sid;
+    window.__mainGen = Math.max(window.__mainGen, gen);
+    if (PENDING_MAIN !== null && gen >= PENDING_MAIN.gen) {
+      PENDING_MAIN = null;
+      refreshSendVisibility();
+    }
+    return true;
+  }
   const STOP_HTML = '<span class="sq"></span>Stop';
   function stopNote(text, isErr) {
     const n = document.getElementById("stopnote");
@@ -922,8 +938,8 @@
   }
   function setRunning(on) {
     AGENT_RUNNING = on;
-    if (on) { runSecs = 0; TURN_GEN = STREAM_GEN; }
-    else { TURN_GEN = -1; stopReset(); }
+    if (on) { runSecs = 0; }
+    else { stopReset(); }
     document.getElementById("runstat").style.display = on ? "" : "none";
     document.getElementById("runstat").title = on ? "Agent is running" : "Agent is idle";
     refreshSendVisibility();
@@ -2547,11 +2563,11 @@
       try { j = await r.json(); } catch { j = null; }
       if (!r.ok || !j || j.ok !== true) {
         failSend(saved, optimistic, (j && typeof j.why === "string" && j.why) || ("HTTP " + r.status), j && j.code);
-        // P2-6: our main id went stale mid-flight — adopt the current
-        // one through the one adopt path (idle tabs reload the
-        // transcript; a live turn defers to a pending refresh).
+        // P2-6: our main id went stale mid-flight — follow the 409's
+        // own server running state (idle adopts now, running defers to
+        // a pending refresh re-reconciled on completion or SSE open).
         if (r.status === 409 && j && j.error === "main-changed") {
-          await applyMainChanged(j.sessionId, j.generation);
+          await applyStaleMain(j.sessionId, j.generation, j.running);
         }
         return;
       }
@@ -2574,42 +2590,54 @@
     document.getElementById("newsession-btn").style.display = "none";
     document.getElementById("newsession-confirm").style.display = "";
   }
-  // P2-6: the one main-adopt path — the swapping tab calls it off its
-  // POST response and every tab calls it off main/changed. The (id,
-  // generation) pair applies once, whichever arrives first; malformed
-  // pairs still reload (today's behavior) without adopting.
+  // Round 3: hold a newer main for a pending refresh (the transcript
+  // stays untouched; past list and meter catch up now). A newer wait
+  // supersedes an older one, never the reverse.
+  async function deferMain(sid, gen) {
+    if (PENDING_MAIN === null || gen >= PENDING_MAIN.gen) {
+      PENDING_MAIN = { sid, gen };
+      refreshSendVisibility();
+    }
+    await Promise.all([loadPast(), refreshStatpop()]);
+  }
+  // P2-6: the swapping tab adopts off its own POST response — immediate
+  // (it just published this main; a turn that went live since streams
+  // onto the fresh transcript). Stale answers lose via adoptMain.
+  // Malformed pairs still reload (today's behavior) without adopting.
   async function applyMainChanged(sid, gen, stamp) {
     if (typeof sid !== "string" || !sid || typeof gen !== "number") {
       await afterSwap(stamp);
       return;
     }
     if (sid === window.__mainSession && gen === window.__mainGen) return;
-    // One monotonic generation (the main/changed counter): events or
-    // responses older than the adopted one lose, whichever arrives
-    // first. A late swap answer never regresses a newer main.
-    if (gen < window.__mainGen) return;
-    if (isTurnLive()) {
-      // Don't replace the transcript mid-stream: hold the pair for a
-      // pending refresh (the turn's end consumes it) and refuse Send
-      // meanwhile. The shown id stays the old one until the adoption
-      // lands; past list and meter catch up now.
-      PENDING_MAIN = { sid, gen };
-      refreshSendVisibility();
-      await Promise.all([loadPast(), refreshStatpop()]);
-      return;
-    }
-    window.__mainSession = sid;
-    window.__mainGen = gen;
+    if (!adoptMain(sid, gen)) return;
     await afterSwap(stamp);
   }
+  // Round 3: the stale-send 409 path follows the 409's own server running
+  // state — idle adopts now, running defers to a pending refresh (no
+  // extra fetch; the refusal already round-tripped the server).
+  async function applyStaleMain(sid, gen, running) {
+    if (typeof sid !== "string" || !sid || typeof gen !== "number") {
+      await afterSwap();
+      return;
+    }
+    if (sid === window.__mainSession && gen === window.__mainGen) return;
+    if (gen < window.__mainGen) return;
+    if (running === true) {
+      await deferMain(sid, gen);
+      return;
+    }
+    if (!adoptMain(sid, gen)) return;
+    await afterSwap();
+  }
   // A deferred adoption waits out its turn here; idling (turn/completed
-  // settle, force-stop ok) runs the full adoption now.
+  // settle, force-stop ok) re-reconciles against the server — whichever
+  // of the completion or the next SSE open arrives first clears the
+  // wait. The pending pair itself is never adopted blind: the server may
+  // have published a newer main since it was held.
   function consumePendingMain() {
     if (PENDING_MAIN === null) return;
-    const p = PENDING_MAIN;
-    PENDING_MAIN = null;
-    refreshSendVisibility();
-    applyMainChanged(p.sid, p.gen);
+    reconcileMain();
   }
   async function afterSwap(stamp) {
     // P2-5: only pre-swap run state clears — a newer turn that went
@@ -3267,7 +3295,7 @@
       setRunning(true);
       return;
     }
-    if (m.method === "main/changed") { const pp = m.params || {}; applyMainChanged(pp.sessionId, pp.generation); return; }
+    if (m.method === "main/changed") { reconcileMain(); return; }
     if (m.method === "meta/authChanged") { applyMeta(m.params && m.params.meta); return; }
     if (m.method === "ui/notify") { const p = m.params || {}; if (typeof p.text === "string" && p.text) showToast(p.text, p.level); return; }
     if (m.method === "ui/open") { onUiOpen(m.params || {}); return; }
@@ -3376,13 +3404,19 @@
     try {
       const j = await getJSON("/api/chat/history");
       if (!j.ok) return;
-      // Same generation gate as applyMainChanged: a history response
-      // older than the adopted main is a stale snapshot — applying it
-      // would regress the id and append the wrong transcript.
+      // Same generation gate as adoption: a history response older
+      // than the adopted main is a stale snapshot — applying it would
+      // regress the id and append the wrong transcript.
       if (typeof j.generation === "number" && j.generation < window.__mainGen) return;
-      // P2-6: record which main this transcript belongs to (the boot
-      // read seeds it; swaps adopt via applyMainChanged).
-      if (typeof j.sessionId === "string") window.__mainSession = j.sessionId;
+      // Round 3 (P1-B): an accepted history advances the id and the
+      // generation together, atomically, through the one adopt
+      // function — a rendering snapshot must also move the gate its
+      // successors check, or a stale sibling lands after it.
+      if (typeof j.sessionId === "string" && typeof j.generation === "number") {
+        adoptMain(j.sessionId, j.generation);
+      } else if (typeof j.sessionId === "string") {
+        window.__mainSession = j.sessionId;
+      }
       const rows = Array.isArray(j.items)
         ? j.items
         : (j.messages || []).map((m) => ({
@@ -4098,8 +4132,10 @@
         stopTickerStart(pin);
       } else if (AGENT_RUNNING) {
         // The server has no live run but the UI does (a completion we
-        // never saw, or a send still in flight): offer Force stop too.
-        // A racing turn/started drops the pin back to plain running.
+        // never saw, a send still in flight, or a queued stop): offer
+        // Force stop too. A racing turn/started drops the pin back to
+        // plain running.
+        if (j.queued === true) stopNote("Stop queued — interrupting as soon as the turn starts.", false);
         stopForceable(pin);
       }
     });
@@ -4224,6 +4260,14 @@
   });
 
   function showLock(st) {
+    // Round 3: a lock drops every pending adoption — the worker is gone
+    // and unlock reloads onto the current main, so a stuck Send lock
+    // must not survive behind the overlay. (ADOPTING is a try/finally
+    // counter, not a flag: in-flight swaps settle it themselves, and
+    // resetting it here would drive it negative when their finally
+    // runs. Unlock clears by reloading.)
+    PENDING_MAIN = null;
+    refreshSendVisibility();
     $("locksub").textContent = "CDB password for " + (st.cdbFile || "the device registry");
     $("lockerr").textContent = "";
     $("lockpw").value = "";
@@ -4363,25 +4407,49 @@
     es.onerror = () => { $("ssestate").style.display = ""; };
     es.onopen = () => {
       $("ssestate").style.display = "none";
-      STREAM_GEN += 1;
       reconcileMain();
       recoverPending();
     };
   }
-  // Every SSE (re)open re-reads the current main: a tab that missed
-  // main/changed while deaf adopts it here instead of sitting on the
-  // old session. Session identity decides — the generation advances
-  // on every turn, so the pair differs after any turn even on the
-  // same main (comparing it would spuriously re-adopt on every
-  // reconnect). The pair flows through the one adopt path (pending
-  // refresh included); the transcript payload is discarded — the
-  // adoption refetches when it actually swaps.
+  // Round 3: every reconcile (SSE open, main/changed, pending re-check)
+  // follows the server. A tab that missed main/changed while deaf adopts
+  // the current main here; a tab that missed the completion idles here.
+  // Session identity decides the swap — the generation advances on every
+  // turn, so comparing it would spuriously re-adopt on every reconnect —
+  // while the server's running flag decides defer-vs-adopt. The
+  // transcript payload is discarded; the adoption refetches when it
+  // actually swaps.
   async function reconcileMain() {
     let j = null;
     try { j = await getJSON("/api/chat/history"); } catch { return; }
     if (!j || j.ok !== true) return;
-    if (typeof j.sessionId !== "string" || j.sessionId === window.__mainSession) return;
-    applyMainChanged(j.sessionId, j.generation);
+    if (typeof j.sessionId !== "string" || typeof j.generation !== "number") return;
+    // Stale snapshots lose, like every other adoption input.
+    if (j.generation < window.__mainGen) return;
+    if (j.sessionId === window.__mainSession) {
+      // Same main: advance the generation (a resume-back carries a
+      // newer one) without touching the transcript; a pending wait at
+      // or below it clears. Idle here also settles a run whose
+      // completion we missed in a deaf gap.
+      adoptMain(j.sessionId, j.generation);
+      if (j.running !== true && AGENT_RUNNING) {
+        setRunning(false);
+        streamItem = null;
+        clearChips();
+        refreshStatpop();
+      }
+      return;
+    }
+    if (j.running === true) {
+      // The server has a live turn: hold the pair for a pending
+      // refresh, re-reconciled on the turn's completion event or the
+      // next SSE open, whichever comes first.
+      await deferMain(j.sessionId, j.generation);
+      return;
+    }
+    // Idle: adopt now, clearing any pending wait at or below this pair.
+    if (!adoptMain(j.sessionId, j.generation)) return;
+    await afterSwap();
   }
   function enterApp(st) {
     hideOverlays();
@@ -4435,7 +4503,11 @@
     dropStream: () => { try { if (sseSource) sseSource.close(); } catch { /* already down */ } },
     // SSE-reconnect simulation: open a fresh stream after dropStream
     // (a closed EventSource never reconnects on its own). Smoke-only.
-    reconnectStream: () => { connectStream(); } };
+    reconnectStream: () => { connectStream(); },
+    // Round-3 P1-B repro: load the current main's history on demand
+    // (no adopt, no reload) so a held stale history can land after it.
+    // Smoke-only.
+    loadHistory: () => loadHistory() };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the
   // post-save refresh across, same window-property idiom as __devices.
