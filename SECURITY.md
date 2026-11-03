@@ -95,8 +95,9 @@ Under the Settings toggle, each workspace's policy seeds (T101,
   upgrade server). Mixed or write tools are never seeded.
 
 Agent sessions reach centrs through its CLI; rosetta stays as MCP
-(D46; T112, in progress, removes centrs MCP and its seeded
-`centrs_*` read rules from the session config; T105 had shipped both). The `quickchr list`/`doctor` housekeeping (stale
+(D46; T112 removed centrs MCP and its seeded `centrs_*` read rules
+from the session config, and stale tagged `centrs_*` rules prune on
+reseed; T105 had shipped both). The `quickchr list`/`doctor` housekeeping (stale
 local PID/marker cleanup under `~/.config/quickchr`, no device
 contact) is accepted in the read set.
 
