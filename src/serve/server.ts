@@ -99,6 +99,7 @@ import {
 	type McpServerConfig,
 	MspClient,
 	MspError,
+	type MspSession,
 	type PermissionState,
 	type ReasoningEffort,
 	type TurnInput,
@@ -695,6 +696,27 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// No-workspace mode still needs a root for the MSP session: the
 	// server's cwd, honestly labeled. Workspace file routes refuse.
 	const root = noWs ? process.cwd() : path.resolve(opts.workspace as string);
+	// P2-4: the workspaceRoot every session/start carries, realpath-
+	// canonical. A session belongs to this server only when its own
+	// workspaceRoot canonicalizes to the same value (same muse data
+	// home, another workspace root is a foreign session).
+	let canonicalRoot: string;
+	try {
+		canonicalRoot = nodeFs.realpathSync(root);
+	} catch {
+		canonicalRoot = root;
+	}
+	function sessionIsOurs(s: MspSession): boolean {
+		const ws = s.workspaceRoot;
+		if (typeof ws !== "string" || !ws) return false;
+		let canon: string;
+		try {
+			canon = nodeFs.realpathSync(ws);
+		} catch {
+			return false;
+		}
+		return canon === canonicalRoot;
+	}
 	if (!noWs && !nodeFs.existsSync(path.join(root, "workspace.toml"))) {
 		throw new Error(`not a workspace (no workspace.toml): ${root}`);
 	}
@@ -846,13 +868,134 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	let msp: MspClient | null = null;
 	let mainSession: string | null = null;
 	// T71 stop lifecycle: the live run on the main session. runGeneration
-	// starts 0 and bumps on every turnStart send, worker spawn/takeover,
+	// starts at the boot time in ms (restart-monotonic: open tabs gate
+	// late responses on it, so a counter reset to 0 would strand them;
+	// the old server could only outrank it with more bumps than ms of
+	// uptime) and bumps on every turnStart send, worker spawn/takeover,
 	// stopWorker/lock, and effective force-stop; lastTurnId tracks the
 	// live turn (cleared on its turn/completed). Stop pins its interrupt
 	// to the live turn; force-stop pins itself to the generation the UI
 	// saw when Stop was pressed.
-	let runGeneration = 0;
+	// Accepted residual: Date.now() is restart-monotonic unless the wall clock steps backwards.
+	let runGeneration = Date.now();
 	let lastTurnId: string | null = null;
+	// Round 3: the send whose turnStart is in flight (sends serialize on
+	// the lifecycle lock, so at most one). Notifications always forward
+	// to SSE immediately, in wire order — never held. Only the run-state
+	// bookkeeping waits: turn/completed ids seen while pending, so the
+	// ack skips installing an already-finished turn (the bd957eb
+	// stuck-turn guarantee without the buffer). stopQueued records a
+	// Stop that landed mid-start; done resolves when the start settles
+	// so Force can wait instead of claiming a ghost.
+	type PendingStart = {
+		worker: Promise<MspClient> | null;
+		client: MspClient;
+		completedIds: Set<string>;
+		untypedCompleted: boolean;
+		stopQueued: boolean;
+		done: Promise<void>;
+		resolveDone: () => void;
+	};
+	let pendingStart: PendingStart | null = null;
+	// S3: a turn/start whose ack never answered (timeout, not a host
+	// refusal) while its worker stayed alive. The turn may be live on
+	// the worker, so the run is unresolved — history reports running
+	// until a force-stop teardown resolves it — and Stop/Force route
+	// through teardown instead of the (unknown) turn id.
+	type UnresolvedStart = {
+		worker: Promise<MspClient> | null;
+		client: MspClient;
+	};
+	let unresolvedStart: UnresolvedStart | null = null;
+	/** The live-run state /api/chat/stop uses, for history + swap answers. */
+	function liveRun(): { running: boolean; turnId: string | null } {
+		const pending = pendingStart !== null && pendingStart.worker === mspPromise;
+		const unresolved =
+			unresolvedStart !== null && unresolvedStart.worker === mspPromise;
+		// While unresolved the tracked id is the previous turn's (the
+		// live turn, if any, never acked an id) — report unknown.
+		return {
+			running: lastTurnId !== null || pending || unresolved,
+			turnId: unresolved ? null : lastTurnId,
+		};
+	}
+	// T60/T85 lifecycle lock: send holds it from main-resolve to
+	// turn-start ack; a main swap (new/resume) holds it from the busy
+	// check through publish. One promise chain, released in finally;
+	// it never rejects (fn's own errors propagate to its caller).
+	let lifecycleTail: Promise<void> = Promise.resolve();
+	async function withLifecycleLock<T>(fn: () => Promise<T>): Promise<T> {
+		const prev = lifecycleTail;
+		let release!: () => void;
+		lifecycleTail = new Promise<void>((r) => {
+			release = r;
+		});
+		await prev;
+		try {
+			return await fn();
+		} finally {
+			release();
+		}
+	}
+	// P1-3: bumped when a lock tears the worker down, so work queued
+	// on the lifecycle lock can tell its owner is gone deterministically.
+	let ownerGeneration = 0;
+	/** P1-3: the ownership a lock-taker captured before queueing. */
+	type LockEntry = {
+		key: string;
+		token: string | null;
+		authed: boolean;
+		gen: number;
+	};
+	function captureLockEntry(req: Request): LockEntry {
+		const token = cookieToken(req);
+		return {
+			key: workerKey(req),
+			token,
+			authed: sessions.valid(token),
+			gen: ownerGeneration,
+		};
+	}
+	/**
+	 * P1-3: re-validate a queued operation after it acquires the lifecycle
+	 * lock (the auth gate's check, plus the owner generation). A refusal
+	 * returns before any ensureMsp or spawn: 401 when the queued token
+	 * was revoked, 409 when a live owner's worker was torn down under
+	 * it (someone else's lock — retry on a fresh entry).
+	 */
+	function queuedStale(entry: LockEntry): {
+		status: number;
+		error: string;
+		why: string;
+	} | null {
+		if (entry.authed && !sessions.valid(entry.token)) {
+			return {
+				status: 401,
+				error: "revoked",
+				why: "that session was locked while the request queued — unlock again",
+			};
+		}
+		if (entry.gen !== ownerGeneration) {
+			return {
+				status: 409,
+				error: "owner-changed",
+				why: "ownership changed while the request queued — retry",
+			};
+		}
+		return null;
+	}
+	// T60/T85: stops in flight (both routes count). Swaps refuse
+	// while one runs — a swap mid-force-stop would yank the worker
+	// the escalation is converging on.
+	let stopInFlight = 0;
+	async function withStopInFlight<T>(fn: () => Promise<T>): Promise<T> {
+		stopInFlight += 1;
+		try {
+			return await fn();
+		} finally {
+			stopInFlight -= 1;
+		}
+	}
 	let mspWhy: string | null = null;
 	let contextPct: number | null = null;
 	let contextPressure: string | null = null;
@@ -875,6 +1018,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// Tracks session/start + setPermissionProfile responses and the
 	// permissionProfileChanged fold — never null, like lastAccess.
 	let lastProfile: string | null = profileForAccess(defaultAccess());
+	// P1-2: which session+generation the cached settings were last
+	// written for. Every settings mutation (and every publish) stamps
+	// it; the settings-change notification folds below only apply
+	// when the event's session and the live generation both match —
+	// a stale echo never writes over the current main's state.
+	let settingsStamp: { sid: string; gen: number } | null = null;
+	function settingsCurrent(sid: unknown): boolean {
+		return (
+			settingsStamp !== null &&
+			typeof sid === "string" &&
+			sid === settingsStamp.sid &&
+			sid === mainSession &&
+			runGeneration === settingsStamp.gen
+		);
+	}
 	// T101/D43: pre-seed report for /api/status. Workspace mode
 	// fills this at boot; no-workspace mode stays null.
 	type PreallowReport = {
@@ -1039,7 +1197,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	 * child left. Past chats survive in the muse session store and
 	 * resume from there (T60 seam).
 	 */
-	async function stopWorker(): Promise<void> {
+	async function stopWorker(
+		reason = "worker-stopped",
+		broadcast = true,
+	): Promise<void> {
 		const prev = mspPromise;
 		mspPromise = null;
 		mspOwner = null;
@@ -1047,6 +1208,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T71: the run dies with the worker (covers lock, which funnels here).
 		runGeneration += 1;
 		lastTurnId = null;
+		// Round 3: a torn-down worker settles any pending start (its
+		// turnStart is about to fail; Force waiters must not hang on it).
+		if (pendingStart !== null) {
+			const p = pendingStart;
+			pendingStart = null;
+			p.resolveDone();
+		}
+		// S3: an unresolved start dies with the worker it was captured on.
+		unresolvedStart = null;
 		// T81: only a published session dies with its worker. An
 		// in-flight reservation (mainSettled false) survives the
 		// stop, so its guard adopts the live generation instead of
@@ -1071,14 +1241,36 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T101: same for the profile.
 		lastAccess = defaultAccess();
 		lastProfile = profileForAccess(defaultAccess());
+		settingsStamp = null;
 		sessionStartedAt = null;
 		if (prev) {
+			// run/state: every tab clears its running UI on this (Stop
+			// hidden, Send back unless its main went stale). Only when a
+			// worker actually went away — first-spawn calls with nothing
+			// cached stay silent — and never on server shutdown (the
+			// listener is already down; tabs must not chase the broadcast
+			// with stats/pending fetches against it).
+			if (broadcast)
+				emit({ method: "run/state", params: { running: false, reason } });
 			try {
 				await (await prev).close();
 			} catch {
 				// already gone; the verdict stands
 			}
 		}
+	}
+
+	/**
+	 * The worker exited on its own (crash, kill, EOF): invalidate the
+	 * cached worker/main exactly like an intentional stop, so the next
+	 * history/send spawns fresh instead of timing out on the corpse,
+	 * and broadcast run/state so tabs clear their running UI. The
+	 * mspPromise guard keeps exactly one emit: an intentional stopWorker
+	 * nulls first, so a trailing exit lands here as a no-op.
+	 */
+	function handleWorkerExit(worker: Promise<MspClient>, reason: string): void {
+		if (mspPromise !== worker) return;
+		void stopWorker(reason);
 	}
 
 	/**
@@ -1104,12 +1296,91 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		);
 	}
 
+	/**
+	 * Fold one worker notification: live-turn tracking, meter folds,
+	 * settings folds, and the SSE fan-out. Every notification forwards
+	 * immediately, in wire order — never held. While a send's turnStart
+	 * is in flight the listener additionally records turn/completed ids
+	 * so the ack skips an already-finished turn; the fold itself still
+	 * runs now (a pre-install completion for the new turn matches
+	 * nothing, so the tracking stays correct).
+	 */
+	function handleMspNotification(ev: ViewEvent): void {
+		if (ev.method === "turn/completed") {
+			// T71: settle the live-turn tracking. Echo (verified by
+			// wire probe) always carries the turnId; hosts that do
+			// not fall back to clearing on any completion since
+			// the main session runs one turn at a time. A
+			// completion for an older turn never clears a newer one.
+			const doneId = (ev.params as Record<string, unknown>)["turnId"];
+			if (typeof doneId === "string") {
+				if (doneId === lastTurnId) lastTurnId = null;
+			} else {
+				lastTurnId = null;
+			}
+			// T39 passive OAuth flip: only authRequired is evidence.
+			const perr = (ev.params as Record<string, unknown>)["error"] as
+				| Record<string, unknown>
+				| undefined;
+			if (perr?.["kind"] === "authRequired") setMeta("absent");
+		}
+		if (ev.method === "session/contextUsage") {
+			// The wire sends used/window tokens, never a percent: compute it,
+			// and show tokens-only when the basis has no limit.
+			const p = ev.params as Record<string, unknown>;
+			contextPct = contextPercent(p["usedTokens"], p["windowTokens"]);
+			contextPressure =
+				typeof p["pressure"] === "string" ? p["pressure"] : null;
+		}
+		if (ev.method === "session/tokenUsage") {
+			const p = ev.params as Record<string, unknown>;
+			const cum = p["cumulative"] as Record<string, unknown> | undefined;
+			const total = cum?.["totalTokens"] ?? p["totalTokens"];
+			if (typeof total === "number") totalTokens = total;
+			if (typeof p["modelId"] === "string") lastModelId = p["modelId"];
+		}
+		if (ev.method === "session/approvalModeChanged") {
+			// T50: the host is the truth for the live mode (it
+			// echoes every session/start + setApprovalMode) —
+			// P1-2: scoped to the stamped session+generation.
+			const p = ev.params as Record<string, unknown>;
+			if (typeof p["mode"] === "string" && settingsCurrent(p["sessionId"]))
+				lastAccess = p["mode"];
+		}
+		if (ev.method === "session/permissionProfileChanged") {
+			// T101: same fold for the profile (every
+			// accepted setPermissionProfile commit) —
+			// P1-2: scoped to the stamped session+generation.
+			const p = ev.params as Record<string, unknown>;
+			if (typeof p["profileId"] === "string" && settingsCurrent(p["sessionId"]))
+				lastProfile = p["profileId"];
+		}
+		if (
+			(ev.method === "item/started" ||
+				ev.method === "item/updated" ||
+				ev.method === "item/completed") &&
+			(ev.params as Record<string, unknown>)["item"]
+		) {
+			// Live rows ride the same mapper as history: one shape, no drift.
+			// Textless messages map to nothing (streaming bubble keys off the raw item).
+			const rows = transcriptItems([
+				{ method: "item/completed", params: ev.params },
+			]);
+			emit({
+				method: ev.method,
+				params: { ...ev.params, row: rows[0] ?? null },
+			});
+			return;
+		}
+		emit({ method: ev.method, params: ev.params });
+	}
+
 	function ensureMsp(key: string): Promise<MspClient> {
 		if (mspPromise && mspOwner === key) return mspPromise;
 		// New owner (or first spawn): stop any previous worker, then
 		// spawn under the new owner's unlock context. stopWorker's
 		// sync prefix runs now (captures + nulls); the spawn waits it.
-		const stopping = stopWorker();
+		const stopping = stopWorker("takeover");
 		mspOwner = key;
 		// T71: every spawn/takeover starts a new run generation (the
 		// stopWorker above already bumped for the teardown; this bump is
@@ -1142,80 +1413,341 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
 				});
 				client.onNotification((ev) => {
-					if (ev.method === "turn/completed") {
-						// T71: settle the live-turn tracking. Echo (verified by
-						// wire probe) always carries the turnId; hosts that do
-						// not fall back to clearing on any completion since
-						// the main session runs one turn at a time. A
-						// completion for an older turn never clears a newer one.
+					// Round 3 (P2-C): every notification forwards
+					// immediately, in wire order — never held
+					// (approvals included). While a turnStart is
+					// pending only the bookkeeping waits: record this
+					// worker's turn/completed ids so the ack can skip
+					// an already-finished turn.
+					// A completion after the start went unresolved is
+					// that turn ending (any id but the previously tracked
+					// turn's): the run resolves without a teardown.
+					if (
+						unresolvedStart !== null &&
+						unresolvedStart.worker === mspPromise &&
+						ev.method === "turn/completed"
+					) {
 						const doneId = (ev.params as Record<string, unknown>)["turnId"];
-						if (typeof doneId === "string") {
-							if (doneId === lastTurnId) lastTurnId = null;
-						} else {
-							lastTurnId = null;
-						}
-						// T39 passive OAuth flip: only authRequired is evidence.
-						const perr = (ev.params as Record<string, unknown>)["error"] as
-							| Record<string, unknown>
-							| undefined;
-						if (perr?.["kind"] === "authRequired") setMeta("absent");
-					}
-					if (ev.method === "session/contextUsage") {
-						// The wire sends used/window tokens, never a percent: compute it,
-						// and show tokens-only when the basis has no limit.
-						const p = ev.params as Record<string, unknown>;
-						contextPct = contextPercent(p["usedTokens"], p["windowTokens"]);
-						contextPressure =
-							typeof p["pressure"] === "string" ? p["pressure"] : null;
-					}
-					if (ev.method === "session/tokenUsage") {
-						const p = ev.params as Record<string, unknown>;
-						const cum = p["cumulative"] as Record<string, unknown> | undefined;
-						const total = cum?.["totalTokens"] ?? p["totalTokens"];
-						if (typeof total === "number") totalTokens = total;
-						if (typeof p["modelId"] === "string") lastModelId = p["modelId"];
-					}
-					if (ev.method === "session/approvalModeChanged") {
-						// T50: the host is the truth for the live mode (it
-						// echoes every session/start + setApprovalMode).
-						const p = ev.params as Record<string, unknown>;
-						if (typeof p["mode"] === "string") lastAccess = p["mode"];
-					}
-					if (ev.method === "session/permissionProfileChanged") {
-						// T101: same fold for the profile (every
-						// accepted setPermissionProfile commit).
-						const p = ev.params as Record<string, unknown>;
-						if (typeof p["profileId"] === "string")
-							lastProfile = p["profileId"];
+						if (typeof doneId !== "string" || doneId !== lastTurnId)
+							unresolvedStart = null;
 					}
 					if (
-						(ev.method === "item/started" ||
-							ev.method === "item/updated" ||
-							ev.method === "item/completed") &&
-						(ev.params as Record<string, unknown>)["item"]
+						pendingStart !== null &&
+						pendingStart.worker === mspPromise &&
+						ev.method === "turn/completed"
 					) {
-						// Live rows ride the same mapper as history: one shape, no drift.
-						// Textless messages map to nothing (streaming bubble keys off the raw item).
-						const rows = transcriptItems([
-							{ method: "item/completed", params: ev.params },
-						]);
-						emit({
-							method: ev.method,
-							params: { ...ev.params, row: rows[0] ?? null },
-						});
-						return;
+						const doneId = (ev.params as Record<string, unknown>)["turnId"];
+						if (typeof doneId === "string")
+							pendingStart.completedIds.add(doneId);
+						else pendingStart.untypedCompleted = true;
 					}
-					emit({ method: ev.method, params: ev.params });
+					handleMspNotification(ev);
 				});
 				msp = client;
 				return client;
 			})();
 			mspPromise = spawned;
+			// A worker that dies on its own invalidates + broadcasts
+			// (run/state) instead of lingering as a corpse that times
+			// out later view/page calls.
+			spawned.then(
+				(client) =>
+					client.onExit(() => handleWorkerExit(spawned, "worker-exited")),
+				() => {},
+			);
 			spawned.catch(() => {
 				if (mspPromise === spawned) mspPromise = null;
 			});
 		}
 		return mspPromise;
+	}
+
+	/**
+	 * T60/T85: an honest swap refusal — the route maps it to its
+	 * status, never a 500. Thrown from inside the swap body so the
+	 * reservation restores the previous main on the way out.
+	 */
+	class SwapRefusal extends Error {
+		status: number;
+		error: string;
+		why: string;
+
+		constructor(status: number, error: string, why: string) {
+			super(why);
+			this.name = "SwapRefusal";
+			this.status = status;
+			this.error = error;
+			this.why = why;
+		}
+	}
+
+	/** T60/T85: map a swap-path MSP failure to an honest refusal. */
+	function mspRefusal(err: MspError): {
+		status: number;
+		error: string;
+		why: string;
+	} {
+		if (err.kind === "sessionNotFound" || err.kind === "notFound") {
+			return {
+				status: 404,
+				error: "unknown-session",
+				why: `that session is gone from this workspace (${err.message})`,
+			};
+		}
+		if (err.kind === "sessionInUse") {
+			return {
+				status: 409,
+				error: "session-in-use",
+				why: "that session is held by another connection — close it there first",
+			};
+		}
+		return {
+			status: 400,
+			error: "msp-error",
+			why: `${err.kind}: ${err.message}`,
+		};
+	}
+
+	/**
+	 * T60/T85: the one session/start path. ensureMain (first session)
+	 * and /api/chat/new (fresh session) both start here, so a new
+	 * session always carries the settings currently in effect: the
+	 * live approval mode + permission profile, the live model when
+	 * one was chosen (a start member), the live effort via the
+	 * setter (no start member exists), and the worker's MCP config
+	 * (attached by the client itself). For ensureMain this is
+	 * behavior-preserving: whenever it starts, live == default
+	 * (stopWorker resets both together, and boot sets both).
+	 */
+	async function startMainSession(client: MspClient): Promise<{
+		session: MspSession;
+		viewCursor: string;
+		approvalMode: ApprovalMode;
+		permissionProfile: string;
+	}> {
+		// P1-2: snapshot the settings once, before the first await
+		// (this runs inside the lifecycle lock; the settings routes
+		// hold the same lock, so the snapshot cannot mix generations).
+		const approvalMode = (lastAccess as ApprovalMode | null) ?? defaultAccess();
+		const permissionProfile = lastProfile ?? profileForAccess(approvalMode);
+		const snapModel = lastModelId;
+		const snapEffort = lastEffort;
+		const started = await client.sessionStart({
+			workspaceRoot: root,
+			approvalMode,
+			permissionProfile,
+			...(snapModel ? { modelId: snapModel } : {}),
+		});
+		if (snapEffort !== null) {
+			await client.sessionSetReasoningEffort(
+				started.session.sessionId,
+				snapEffort as ReasoningEffort,
+			);
+		}
+		return { ...started, approvalMode, permissionProfile };
+	}
+
+	/**
+	 * T60/T85: publish a session id as main. Shared by ensureMain
+	 * and the swap: the mode/profile truth, a reset meter and age,
+	 * and a run bump that retires every pre-swap stop-force pin.
+	 * lastTurnId is untouched: it is null at every swap entry, and
+	 * a send that landed mid-swap owns it now. lastModelId and
+	 * lastEffort are untouched too — the new main carries them.
+	 */
+	function publishMain(
+		sid: string,
+		session: MspSession,
+		requested: { approvalMode: ApprovalMode; permissionProfile: string },
+	): void {
+		mainSession = sid;
+		// The session runs at this mode now; the host's
+		// permissionState is the truth for the live profile, with
+		// the requested one as the older-host fallback.
+		lastAccess = requested.approvalMode;
+		const live = session["permissionState"] as PermissionState | undefined;
+		lastProfile =
+			typeof live?.profileId === "string"
+				? live.profileId
+				: requested.permissionProfile;
+		sessionStartedAt = Date.now();
+		contextPct = null;
+		contextPressure = null;
+		totalTokens = null;
+		runGeneration += 1;
+		settingsStamp = { sid, gen: runGeneration };
+		mainSettled = true;
+		// P2-6: one event per publish, existing channel + envelope.
+		// Every tab reloads off it (the swapping tab included).
+		emit({
+			method: "main/changed",
+			params: { sessionId: sid, generation: runGeneration },
+		});
+	}
+
+	type SwapRefusalOutcome = {
+		ok: false;
+		status: number;
+		error: string;
+		why: string;
+	};
+	type SwapOutcome = { ok: true; sessionId: string } | SwapRefusalOutcome;
+
+	/**
+	 * T60/T85: the swap busy check. The routes pre-check it (fast
+	 * 409, and the no-op orders under it — a resume of the current
+	 * main while running is refused, not no-op'd) and swapMain
+	 * re-checks it inside the lock (authoritative: a turn may have
+	 * started between the pre-check and the acquisition).
+	 */
+	function busyRefusal(): SwapRefusalOutcome | null {
+		if (lastTurnId !== null) {
+			return {
+				ok: false,
+				status: 409,
+				error: "turn-running",
+				why: "a turn is still running — press Stop first, then switch sessions",
+			};
+		}
+		// S3: an unresolved start may hold a live turn on the worker —
+		// swapping under it would orphan the turn onto a past session.
+		if (unresolvedStart !== null && unresolvedStart.worker === mspPromise) {
+			return {
+				ok: false,
+				status: 409,
+				error: "turn-running",
+				why: "a turn start never answered — press Stop first, then switch sessions",
+			};
+		}
+		if (stopInFlight > 0) {
+			return {
+				ok: false,
+				status: 409,
+				error: "stop-in-progress",
+				why: "a stop is still in progress — wait for Stop to settle, then switch sessions",
+			};
+		}
+		return null;
+	}
+
+	/**
+	 * T60/T85: atomically swap which session is main. The body holds
+	 * the lifecycle lock from the busy check through publish, so a
+	 * send's turnStart can never slip onto the old main mid-swap —
+	 * sends arriving mid-swap await the reservation and land on the
+	 * new main instead. Queued swaps serialize (each sees the
+	 * previous one's settled main); only a swap racing an
+	 * in-flight ensureMain is refused (409 session-starting).
+	 *
+	 * On failure the previous main is restored and mid-swap waiters
+	 * resolve to it, while the route reports the refusal. A stale
+	 * continuation (owner/worker moved on — the lock/takeover race)
+	 * clears its own claim and throws: it never adopts anything,
+	 * and never restores a dead generation's main.
+	 */
+	async function swapMain(
+		key: string,
+		work: (client: MspClient) => Promise<{
+			session: MspSession;
+			approvalMode: ApprovalMode;
+			permissionProfile: string;
+		}>,
+		entry?: LockEntry,
+	): Promise<SwapOutcome> {
+		return withLifecycleLock(async () => {
+			// P1-3: a queued swap re-validates its owner after
+			// acquiring the lock — before any ensureMsp or spawn.
+			if (entry) {
+				const stale = queuedStale(entry);
+				if (stale) return { ok: false, ...stale };
+			}
+			const busy = busyRefusal();
+			if (busy) return busy;
+			if (mainPromise && mainOwner === key && !mainSettled) {
+				return {
+					ok: false,
+					status: 409,
+					error: "session-starting",
+					why: "the main session is still starting — retry in a moment",
+				};
+			}
+			// The restore target: only a settled main of this owner
+			// can come back (a stale generation never restores).
+			const prevPromise =
+				mainPromise && mainOwner === key && mainSettled ? mainPromise : null;
+			let outcome: SwapOutcome | null = null;
+			const starting = (async (): Promise<string> => {
+				const isMine = (): boolean => mainPromise === starting;
+				const guardOk = (): boolean =>
+					isMine() && mainOwner === key && mspOwner === key;
+				const failStale = (): never => {
+					if (isMine()) {
+						mainPromise = null;
+						mainOwner = null;
+					}
+					throw new Error("main session changed during switch");
+				};
+				try {
+					const client = await ensureMsp(key);
+					if (!guardOk()) failStale();
+					const produced = await work(client);
+					if (!guardOk()) failStale();
+					publishMain(produced.session.sessionId, produced.session, {
+						approvalMode: produced.approvalMode,
+						permissionProfile: produced.permissionProfile,
+					});
+					return produced.session.sessionId;
+				} catch (err) {
+					if (!guardOk()) {
+						// Stale (or torn down mid-work): clear the
+						// own claim and fail cleanly — never adopt,
+						// never restore the dead generation.
+						if (isMine()) {
+							mainPromise = null;
+							mainOwner = null;
+						}
+						throw err;
+					}
+					if (
+						(err instanceof SwapRefusal || err instanceof MspError) &&
+						prevPromise
+					) {
+						// Honest failure with a live previous main:
+						// restore it, resolve mid-swap waiters onto
+						// it, and hand the route the refusal.
+						mainPromise = prevPromise;
+						mainOwner = key;
+						mainSettled = true;
+						outcome =
+							err instanceof SwapRefusal
+								? {
+										ok: false,
+										status: err.status,
+										error: err.error,
+										why: err.why,
+									}
+								: { ok: false, ...mspRefusal(err) };
+						return prevPromise;
+					}
+					if (isMine()) {
+						mainPromise = null;
+						mainOwner = null;
+					}
+					throw err;
+				}
+			})();
+			mainPromise = starting;
+			mainOwner = key;
+			mainSettled = false;
+			starting.catch(() => {
+				if (mainPromise === starting) {
+					mainPromise = null;
+					mainOwner = null;
+				}
+			});
+			const sid = await starting;
+			return outcome ?? { ok: true, sessionId: sid };
+		});
 	}
 
 	/**
@@ -1250,13 +1782,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				return ensureMain(key);
 			}
-			const approvalMode = defaultAccess();
-			const permissionProfile = profileForAccess(approvalMode);
-			const { session } = await client.sessionStart({
-				workspaceRoot: root,
-				approvalMode,
-				permissionProfile,
-			});
+			const started = await startMainSession(client);
 			if (!isMine() || mainOwner !== key || mspOwner !== key) {
 				const cur = mainPromise;
 				if (cur && !isMine()) return cur;
@@ -1266,21 +1792,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				return ensureMain(key);
 			}
-			mainSession = session.sessionId;
-			// The session runs at this mode now; stopWorker cleared
-			// lastAccess on the way up, so restore the truth here.
-			// T101: the host's permissionState is the truth for the
-			// live profile; fall back to what we asked for when an
-			// older host reports none.
-			lastAccess = approvalMode;
-			const live = session["permissionState"] as PermissionState | undefined;
-			lastProfile =
-				typeof live?.profileId === "string"
-					? live.profileId
-					: permissionProfile;
-			sessionStartedAt = Date.now();
-			mainSettled = true;
-			return mainSession;
+			publishMain(started.session.sessionId, started.session, {
+				approvalMode: started.approvalMode,
+				permissionProfile: started.permissionProfile,
+			});
+			return started.session.sessionId;
 		})();
 		mainPromise = starting;
 		mainOwner = key;
@@ -1637,7 +2153,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// running child.
 					const token = cookieToken(req);
 					sessions.revoke(token);
-					if (token && mspOwner === token) await stopWorker();
+					if (token && mspOwner === token) {
+						// P1-3: queued work on the lifecycle lock invalidates
+						// deterministically instead of respawning this owner.
+						ownerGeneration += 1;
+						await stopWorker("locked");
+					}
 					return new Response(JSON.stringify({ ok: true }), {
 						headers: {
 							"content-type": "application/json",
@@ -2301,10 +2822,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json(await listAlerts(root));
 				}
 				if (p === "/api/chat/send" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as {
 						text?: string;
 						images?: { base64Data: string; mediaType: string }[];
 						targets?: unknown;
+						expectedSessionId?: unknown;
 					};
 					if (typeof body.text !== "string" || !body.text.trim()) {
 						return json({ ok: false, why: "need {text}" }, 400);
@@ -2319,9 +2843,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							403,
 						);
 					}
-					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
 					// T49: validate pill targets against the same
 					// inventory the device list shows (router.toml in
 					// workspace mode, the CDB without one) and prepend
@@ -2376,29 +2897,200 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							mediaType: img.mediaType,
 						});
 					}
-					try {
-						const { turnId } = await client.turnStart({
-							sessionId: sid,
-							input,
-						});
-						// T71: every started turn is a new run generation.
-						runGeneration += 1;
-						lastTurnId = turnId;
-						return json({ ok: true, turnId, sessionId: sid });
-					} catch (err) {
-						if (err instanceof MspError) {
+					// T60/T85: the MSP section holds the lifecycle
+					// lock from main-resolve to turn-start ack, so a
+					// main swap can never slip between the two (a
+					// turn starting on the old main mid-swap would
+					// orphan onto a past session). Validation above
+					// stays outside — and no longer spawns a
+					// session just to refuse an oversized preamble.
+					// The await is load-bearing: a bare promise
+					// return would skip the outer catch (Bun's
+					// default 500 instead of our JSON envelope).
+					return await withLifecycleLock(async () => {
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
 							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
 							);
 						}
-						throw err;
-					}
+						const sid = await ensureMain(entry.key);
+						// P2-6: a tab pinned to an older main must reload, never
+						// land on the wrong session. Unpinned sends (tests, curl)
+						// skip the check. The current id rides along so the UI
+						// can adopt it in the same round trip.
+						if (
+							typeof body.expectedSessionId === "string" &&
+							body.expectedSessionId !== "" &&
+							body.expectedSessionId !== sid
+						) {
+							const run = liveRun();
+							return json(
+								{
+									ok: false,
+									error: "main-changed",
+									why: "the main session changed — your draft was kept; load the current chat, then send again",
+									sessionId: sid,
+									generation: runGeneration,
+									running: run.running,
+									turnId: run.turnId,
+								},
+								409,
+							);
+						}
+						const client = await ensureMsp(entry.key);
+						try {
+							// Round 3 (P2-C/P2-D): track the in-flight
+							// turnStart — its turn/completed ids (a
+							// same-chunk completion would otherwise
+							// install as live: the stuck turn) and a Stop
+							// that lands mid-start. Notifications forward
+							// immediately throughout.
+							let resolveDone!: () => void;
+							const done = new Promise<void>((r) => {
+								resolveDone = r;
+							});
+							const pending: PendingStart = {
+								worker: mspPromise,
+								client,
+								completedIds: new Set(),
+								untypedCompleted: false,
+								stopQueued: false,
+								done,
+								resolveDone,
+							};
+							pendingStart = pending;
+							let turnId: string;
+							try {
+								({ turnId } = await client.turnStart({
+									sessionId: sid,
+									input,
+								}));
+							} catch (err) {
+								if (pendingStart === pending) pendingStart = null;
+								resolveDone();
+								if (!(err instanceof MspError)) {
+									// S3: an ambiguous ack failure (timeout) on
+									// a live worker — the turn may have
+									// started. Keep the run unresolved instead
+									// of clearing to idle; a dead worker needs
+									// no marker (the exit watcher answers).
+									let alive = false;
+									try {
+										alive = !(await client.waitForExit(0));
+									} catch {
+										alive = false;
+									}
+									// A completion for any turn other than the
+									// previously tracked one is this start's
+									// turn finishing (one turn per session):
+									// the run is over, not unresolved.
+									const prevTurn = lastTurnId;
+									const finished =
+										pending.untypedCompleted ||
+										[...pending.completedIds].some((id) => id !== prevTurn);
+									if (alive && !finished && mspPromise === pending.worker) {
+										unresolvedStart = {
+											worker: pending.worker,
+											client,
+										};
+										// Tell every tab: a completion may already
+										// have hidden Stop, and Stop/Force are the
+										// only way out of an unresolved start.
+										emit({
+											method: "run/state",
+											params: { running: true, reason: "unresolved-start" },
+										});
+									}
+								}
+								throw err;
+							}
+							// Reconcile before installing: a completion
+							// already seen for this turn means it
+							// finished fast — never install it as running.
+							// An untyped completion counts (the fold
+							// clears on any completion without a turnId).
+							// Either way the install replaces the previous
+							// tracking (a steered-over orphan clears).
+							const completed =
+								pending.untypedCompleted || pending.completedIds.has(turnId);
+							// T71: every started turn is a new run generation.
+							runGeneration += 1;
+							lastTurnId = completed ? null : turnId;
+							const queued = pending.stopQueued;
+							if (pendingStart === pending) pendingStart = null;
+							resolveDone();
+							// Round 3 (P2-D): a Stop that landed mid-start
+							// interrupts now, through the normal T71 path
+							// (bounded; missing_run syncs like Stop).
+							if (queued && !completed && lastTurnId === turnId) {
+								try {
+									await withStopInFlight(() =>
+										withTimeout(
+											client.turnInterrupt({ sessionId: sid, turnId }),
+											10_000,
+											() => new Error("interrupt timed out"),
+										),
+									);
+								} catch (err) {
+									if (err instanceof MspError && err.reason === "missing_run") {
+										if (lastTurnId === turnId) lastTurnId = null;
+									}
+									// A timed-out queued interrupt leaves the turn
+									// live: its completion (or a re-Stop onto the
+									// fresh generation) settles it.
+								}
+							}
+							return json({ ok: true, turnId, sessionId: sid });
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
+						}
+					});
 				}
 				if (p === "/api/chat/stop" && req.method === "POST") {
 					// T71 graceful stop: pinned interrupt, capped at 10s. Every
 					// answer carries the correlation IDs (turnId + generation)
 					// so the UI can pin a later Force stop to this moment.
+					// S2: a pending start wins over any tracked turn — the
+					// tracked id is the previous turn's, and interrupting
+					// it would miss the turn that is actually starting.
+					const pending = pendingStart;
+					if (pending !== null && pending.worker === mspPromise) {
+						// Round 3 (P2-D): a turnStart is in flight — record
+						// the stop; the send interrupts on ack through the
+						// T71 path above.
+						pending.stopQueued = true;
+						return json({
+							ok: true,
+							stopped: false,
+							queued: true,
+							turnId: null,
+							generation: runGeneration,
+						});
+					}
+					// S3: the start never answered and its turn id is
+					// unknown — nothing to interrupt; the UI offers Force
+					// (worker teardown) off this answer.
+					if (
+						unresolvedStart !== null &&
+						unresolvedStart.worker === mspPromise
+					) {
+						return json({
+							ok: true,
+							stopped: false,
+							turnId: null,
+							generation: runGeneration,
+							why: "the turn start never answered — Force stop tears the worker down",
+						});
+					}
 					const client = msp;
 					const sid = mainSession;
 					const turnId = lastTurnId;
@@ -2412,11 +3104,19 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						});
 					}
 					try {
-						await withTimeout(
-							client.turnInterrupt({ sessionId: sid, turnId }),
-							10_000,
-							() => new Error("interrupt timed out"),
-						);
+						// T60/T85: swaps refuse while this interrupt
+						// is in flight (the only await below; the
+						// rest of the route is sync and atomic).
+						stopInFlight += 1;
+						try {
+							await withTimeout(
+								client.turnInterrupt({ sessionId: sid, turnId }),
+								10_000,
+								() => new Error("interrupt timed out"),
+							);
+						} finally {
+							stopInFlight -= 1;
+						}
 						return json({
 							ok: true,
 							stopped: true,
@@ -2452,60 +3152,156 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					}
 				}
 				if (p === "/api/chat/stop-force" && req.method === "POST") {
-					// T71 run-pinned force stop. Refuses stale pins without
-					// touching the worker; otherwise bounded escalation:
-					// interrupt + ≤5s completion-or-exit, stdin EOF + ≤5s,
-					// SIGTERM + ≤5s, SIGKILL + ≤5s. Worst case ~20s + overhead,
-					// never a hang. ok:false outcomes stay 200 (honest
-					// operational answers the UI handles, console-clean).
-					const body = (await req.json()) as { generation?: unknown };
-					if (typeof body.generation !== "number") {
-						return json({ ok: false, why: "need {generation}" }, 400);
-					}
-					if (body.generation !== runGeneration) {
-						return json({
-							ok: false,
-							code: "stale-generation",
-							why: "run changed since Stop was pressed",
-							turnId: lastTurnId,
-							generation: runGeneration,
-						});
-					}
-					const client = msp;
-					const sid = mainSession;
-					const turnId = lastTurnId;
-					const myWorker = mspPromise;
-					const stillMine = (): boolean => mspPromise === myWorker;
-					if (!client || !sid || !turnId) {
-						// Nothing live (the turn settled between Stop and
-						// Force): trivially stopped, worker untouched.
-						return json({
-							ok: true,
-							forced: true,
-							step: "interrupt",
-							turnId,
-							generation: runGeneration,
-						});
-					}
-					// A newer turn started mid-force (or a takeover brought
-					// one): our outcome is stale, say so instead of claiming
-					// a stop — the UI keeps its running state and the user
-					// re-stops onto a fresh pin. No bump: the pin stays
-					// retryable only when the run did NOT change, and here
-					// the send/takeover already bumped.
-					const changedMidForce = (): boolean =>
-						lastTurnId !== null && lastTurnId !== turnId;
-					const changedAnswer = (): Response =>
-						json({
-							ok: false,
-							why: "run changed during force stop",
-							turnId: lastTurnId,
-							generation: runGeneration,
-						});
-					// Stage 1: fire the pinned interrupt (never awaited past
-					// the shared budget) and wait ≤5s for turn/completed-or-exit.
-					const stage1 = await new Promise<"completed" | "exited" | "timeout">(
-						(resolve) => {
+					// T60/T85: swaps refuse while a force stop runs.
+					// The await is load-bearing (see the send route).
+					return await withStopInFlight(async () => {
+						// T71 run-pinned force stop. Refuses stale pins without
+						// touching the worker; otherwise bounded escalation:
+						// interrupt + ≤5s completion-or-exit, stdin EOF + ≤5s,
+						// SIGTERM + ≤5s, SIGKILL + ≤5s. Worst case ~20s + overhead,
+						// never a hang. ok:false outcomes stay 200 (honest
+						// operational answers the UI handles, console-clean).
+						const body = (await req.json()) as { generation?: unknown };
+						if (typeof body.generation !== "number") {
+							return json({ ok: false, why: "need {generation}" }, 400);
+						}
+						if (body.generation !== runGeneration) {
+							return json({
+								ok: false,
+								code: "stale-generation",
+								why: "run changed since Stop was pressed",
+								turnId: lastTurnId,
+								generation: runGeneration,
+							});
+						}
+						// EOF→TERM→KILL teardown shared by the interrupt-stage
+						// fallback below and the unknown-turn-id paths (S3):
+						// each stage waits ≤5s for the exit. Returns the
+						// killing step, or null when the worker survived
+						// SIGKILL.
+						const escalateTeardown = async (
+							target: MspClient,
+						): Promise<"exit" | "term" | "kill" | null> => {
+							target.stdinEof();
+							if (await target.waitForExit(5000)) return "exit";
+							target.kill("SIGTERM");
+							if (await target.waitForExit(5000)) return "term";
+							target.kill("SIGKILL");
+							if (await target.waitForExit(5000)) return "kill";
+							return null;
+						};
+						// S3: the turn id is unknown (a start that never
+						// acked) — the only honest stop is tearing the
+						// captured worker down. Reaps + retires the pin on
+						// success like every other effective force stop.
+						const teardownUnknownTurn = async (target: {
+							worker: Promise<MspClient> | null;
+							client: MspClient;
+						}): Promise<Response> => {
+							const mine = mspPromise;
+							const step = await escalateTeardown(target.client);
+							if (step === null) {
+								return json({
+									ok: false,
+									why: "worker survived SIGKILL",
+									turnId: lastTurnId,
+									generation: runGeneration,
+								});
+							}
+							if (mspPromise === mine) await stopWorker("force-stop");
+							if (mspPromise === mine) runGeneration += 1;
+							return json({
+								ok: true,
+								forced: true,
+								step,
+								turnId: lastTurnId,
+								generation: runGeneration,
+							});
+						};
+						const pending = pendingStart;
+						if (pending !== null && pending.worker === mspPromise) {
+							// Round 3 (P2-D): a turnStart is in flight — wait
+							// for it (bounded by the T71 interrupt cap)
+							// instead of claiming the pre-start worker as
+							// stopped. The pin re-checks after: the send's
+							// bump retires it to stale-generation (the UI
+							// re-Stops onto a fresh pin, already handled).
+							try {
+								await withTimeout(
+									pending.done,
+									10_000,
+									() => new Error("start timed out"),
+								);
+							} catch {
+								// S3: still starting after 10s — the turn id
+								// is unknown and may stay unknown (the ack
+								// can time out at 30s). Tear the captured
+								// worker down; a retry loop would just wait
+								// out the timeout and then lie idle.
+								if (body.generation !== runGeneration) {
+									return json({
+										ok: false,
+										code: "stale-generation",
+										why: "run changed since Stop was pressed",
+										turnId: lastTurnId,
+										generation: runGeneration,
+									});
+								}
+								return await teardownUnknownTurn(pending);
+							}
+							if (body.generation !== runGeneration) {
+								return json({
+									ok: false,
+									code: "stale-generation",
+									why: "run changed since Stop was pressed",
+									turnId: lastTurnId,
+									generation: runGeneration,
+								});
+							}
+						}
+						const stuck = unresolvedStart;
+						if (stuck !== null && stuck.worker === mspPromise) {
+							// S3: the start never answered — there is no
+							// interrupt to send. History stays running until
+							// this teardown resolves.
+							return await teardownUnknownTurn(stuck);
+						}
+						const client = msp;
+						const sid = mainSession;
+						const turnId = lastTurnId;
+						const myWorker = mspPromise;
+						const stillMine = (): boolean => mspPromise === myWorker;
+						if (!client || !sid || !turnId) {
+							// Nothing live (the turn settled between Stop and
+							// Force): trivially stopped, worker untouched.
+							return json({
+								ok: true,
+								forced: true,
+								step: "interrupt",
+								turnId,
+								generation: runGeneration,
+							});
+						}
+						// A newer turn started mid-force (or a takeover brought
+						// one): our outcome is stale, say so instead of claiming
+						// a stop — the UI keeps its running state and the user
+						// re-stops onto a fresh pin. No bump: the pin stays
+						// retryable only when the run did NOT change, and here
+						// the send/takeover already bumped.
+						const changedMidForce = (): boolean =>
+							lastTurnId !== null && lastTurnId !== turnId;
+						const changedAnswer = (): Response =>
+							json({
+								ok: false,
+								why: "run changed during force stop",
+								turnId: lastTurnId,
+								generation: runGeneration,
+							});
+						// Stage 1: fire the pinned interrupt (never awaited past
+						// the shared budget) and wait ≤5s for turn/completed-or-exit.
+						const stage1 = await new Promise<
+							"completed" | "exited" | "timeout"
+						>((resolve) => {
 							let settled = false;
 							const finish = (v: "completed" | "exited" | "timeout"): void => {
 								if (settled) return;
@@ -2528,85 +3324,272 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							client.turnInterrupt({ sessionId: sid, turnId }).catch(() => {
 								// A refused/hung interrupt falls through to teardown.
 							});
-						},
-					);
-					if (stage1 === "completed" || stage1 === "exited") {
-						// The interrupt stage resolved it: the turn completed
-						// (worker usually still alive — keep it and its session)
-						// or the worker exited alongside. Reap through the
-						// standard teardown only when the worker is actually
-						// gone (close on a dead worker resolves promptly).
-						if (stillMine() && (await client.waitForExit(0))) {
-							await stopWorker();
-						} else if (stillMine() && lastTurnId === turnId) {
-							lastTurnId = null;
+						});
+						if (stage1 === "completed" || stage1 === "exited") {
+							// The interrupt stage resolved it: the turn completed
+							// (worker usually still alive — keep it and its session)
+							// or the worker exited alongside. Reap through the
+							// standard teardown only when the worker is actually
+							// gone (close on a dead worker resolves promptly).
+							if (stillMine() && (await client.waitForExit(0))) {
+								await stopWorker("force-stop");
+							} else if (stillMine() && lastTurnId === turnId) {
+								lastTurnId = null;
+							}
+							if (changedMidForce()) return changedAnswer();
+							if (stillMine()) runGeneration += 1;
+							return json({
+								ok: true,
+								forced: true,
+								step: "interrupt",
+								turnId: lastTurnId,
+								generation: runGeneration,
+							});
 						}
+						// Stages 2-4: stdin EOF, SIGTERM, SIGKILL with ≤5s exit
+						// waits each. close() itself waits unboundedly, so EOF
+						// + bounded wait are spelled out in the shared helper.
+						const step = await escalateTeardown(client);
+						if (step === null) {
+							return json({
+								ok: false,
+								why: "worker survived SIGKILL",
+								turnId: lastTurnId,
+								generation: runGeneration,
+							});
+						}
+						if (stillMine()) await stopWorker("force-stop");
 						if (changedMidForce()) return changedAnswer();
 						if (stillMine()) runGeneration += 1;
 						return json({
 							ok: true,
 							forced: true,
-							step: "interrupt",
+							step,
 							turnId: lastTurnId,
 							generation: runGeneration,
 						});
+					});
+				}
+				if (p === "/api/chat/new" && req.method === "POST") {
+					// T85: start a fresh MSP session on the SAME worker
+					// (no restart, no re-unlock) with the settings in
+					// effect, and swap main to it atomically. The
+					// previous session stays in session/list, so it
+					// shows up in Past chats. Refused while a turn
+					// runs or a stop is in flight — never auto-stops.
+					const preBusy = busyRefusal();
+					if (preBusy) {
+						return json(
+							{ ok: false, error: preBusy.error, why: preBusy.why },
+							preBusy.status,
+						);
 					}
-					// Stage 2: stdin EOF with a ≤5s exit wait. close() itself
-					// waits unboundedly, so EOF + bounded wait are spelled out.
-					client.stdinEof();
-					if (await client.waitForExit(5000)) {
-						if (stillMine()) await stopWorker();
-						if (changedMidForce()) return changedAnswer();
-						if (stillMine()) runGeneration += 1;
-						return json({
-							ok: true,
-							forced: true,
-							step: "exit",
-							turnId: lastTurnId,
-							generation: runGeneration,
-						});
+					// P1-3: capture the owner before queueing (a lock past
+					// this point invalidates instead of re-keying to bypass).
+					const entry = captureLockEntry(req);
+					let result: SwapOutcome;
+					try {
+						result = await swapMain(
+							entry.key,
+							async (client) => {
+								const started = await startMainSession(client);
+								return {
+									session: started.session,
+									approvalMode: started.approvalMode,
+									permissionProfile: started.permissionProfile,
+								};
+							},
+							entry,
+						);
+					} catch (err) {
+						if (err instanceof SwapRefusal) {
+							return json(
+								{ ok: false, error: err.error, why: err.why },
+								err.status,
+							);
+						}
+						if (err instanceof MspError) {
+							const m = mspRefusal(err);
+							return json({ ok: false, error: m.error, why: m.why }, m.status);
+						}
+						throw err;
 					}
-					// Stage 3: SIGTERM + ≤5s.
-					client.kill("SIGTERM");
-					if (await client.waitForExit(5000)) {
-						if (stillMine()) await stopWorker();
-						if (changedMidForce()) return changedAnswer();
-						if (stillMine()) runGeneration += 1;
-						return json({
-							ok: true,
-							forced: true,
-							step: "term",
-							turnId: lastTurnId,
-							generation: runGeneration,
-						});
+					if (!result.ok) {
+						return json(
+							{ ok: false, error: result.error, why: result.why },
+							result.status,
+						);
 					}
-					// Stage 4: SIGKILL + ≤5s.
-					client.kill("SIGKILL");
-					if (await client.waitForExit(5000)) {
-						if (stillMine()) await stopWorker();
-						if (changedMidForce()) return changedAnswer();
-						if (stillMine()) runGeneration += 1;
-						return json({
-							ok: true,
-							forced: true,
-							step: "kill",
-							turnId: lastTurnId,
-							generation: runGeneration,
-						});
-					}
+					const run = liveRun();
 					return json({
-						ok: false,
-						why: "worker survived SIGKILL",
-						turnId: lastTurnId,
+						ok: true,
+						sessionId: result.sessionId,
 						generation: runGeneration,
+						running: run.running,
+						turnId: run.turnId,
+					});
+				}
+				if (p === "/api/chat/resume" && req.method === "POST") {
+					// P1-3: capture the owner first (validation awaits below).
+					const entry = captureLockEntry(req);
+					// T60: resume a past session as main. The id must be
+					// one this worker's session/list returns — never an
+					// arbitrary id — and the live UI settings are
+					// re-applied the way the settings routes do. Any
+					// failure leaves main unchanged.
+					const body = (await req.json()) as { sessionId?: unknown };
+					if (typeof body.sessionId !== "string" || !body.sessionId) {
+						return json(
+							{ ok: false, error: "bad-request", why: "need {sessionId}" },
+							400,
+						);
+					}
+					const sid = body.sessionId;
+					const key = entry.key;
+					// Busy orders over the no-op: resuming the current
+					// main mid-turn is refused, not silently kept.
+					const preBusy = busyRefusal();
+					if (preBusy) {
+						return json(
+							{ ok: false, error: preBusy.error, why: preBusy.why },
+							preBusy.status,
+						);
+					}
+					if (mainSession === sid && mainSettled && mainOwner === key) {
+						const run = liveRun();
+						return json({
+							ok: true,
+							sessionId: sid,
+							resumed: false,
+							generation: runGeneration,
+							running: run.running,
+							turnId: run.turnId,
+						});
+					}
+					let result: SwapOutcome;
+					try {
+						result = await swapMain(
+							key,
+							async (client) => {
+								const list = await client.sessionList();
+								const found = list.sessions.find((s) => s.sessionId === sid);
+								if (!found) {
+									throw new SwapRefusal(
+										404,
+										"unknown-session",
+										`no session ${sid} in this workspace`,
+									);
+								}
+								if (!sessionIsOurs(found)) {
+									throw new SwapRefusal(
+										404,
+										"not-this-workspace",
+										`session ${sid} belongs to another workspace`,
+									);
+								}
+								const resumed = await client.sessionResume(sid);
+								if (
+									resumed.abnormalEnd !== undefined &&
+									resumed.abnormalEnd !== null
+								) {
+									throw new SwapRefusal(
+										409,
+										"abnormal-end",
+										"that session's last run ended abnormally and cannot be resumed — start a new session instead",
+									);
+								}
+								// P1-2: snapshot the settings once, inside the
+								// lock (the setters below await; nothing may
+								// interleave a re-read between them).
+								const snapModel = lastModelId;
+								const snapEffort = lastEffort;
+								const snapMode =
+									(lastAccess as ApprovalMode | null) ?? defaultAccess();
+								const snapWant = lastProfile ?? profileForAccess(snapMode);
+								if (snapModel !== null) {
+									await client.sessionSetModel(sid, snapModel);
+								}
+								if (snapEffort !== null) {
+									await client.sessionSetReasoningEffort(
+										sid,
+										snapEffort as ReasoningEffort,
+									);
+								}
+								await client.sessionSetApprovalMode(sid, snapMode);
+								const applied = await client.sessionSetPermissionProfile(
+									sid,
+									snapWant,
+								);
+								const profile =
+									typeof applied.permissionState?.profileId === "string"
+										? applied.permissionState.profileId
+										: snapWant;
+								// P1-1: publish the state the setters produced,
+								// never the resume snapshot (it predates them —
+								// publishing it cached a stale profile the next
+								// /new inherited). session/read is the durable
+								// post-setter state on the wire.
+								const read = await client.sessionRead(sid);
+								const fresh = read["session"] as MspSession | undefined;
+								if (!fresh || typeof fresh !== "object") {
+									throw new SwapRefusal(
+										400,
+										"msp-error",
+										"session/read after resume carried no session",
+									);
+								}
+								return {
+									session: fresh,
+									approvalMode: snapMode,
+									permissionProfile: profile,
+								};
+							},
+							entry,
+						);
+					} catch (err) {
+						if (err instanceof SwapRefusal) {
+							return json(
+								{ ok: false, error: err.error, why: err.why },
+								err.status,
+							);
+						}
+						if (err instanceof MspError) {
+							const m = mspRefusal(err);
+							return json({ ok: false, error: m.error, why: m.why }, m.status);
+						}
+						throw err;
+					}
+					if (!result.ok) {
+						return json(
+							{ ok: false, error: result.error, why: result.why },
+							result.status,
+						);
+					}
+					const rrun = liveRun();
+					return json({
+						ok: true,
+						sessionId: result.sessionId,
+						resumed: true,
+						generation: runGeneration,
+						running: rrun.running,
+						turnId: rrun.turnId,
 					});
 				}
 				if (p === "/api/chat/history") {
 					const key = workerKey(req);
 					const sid = await ensureMain(key);
+					const run = liveRun();
 					return json({
 						ok: true,
 						sessionId: sid,
+						// The main generation (same monotonic counter as
+						// main/changed): the UI gates late responses on it.
+						generation: runGeneration,
+						// Round 3 (P1-A): the server's live-run state, from
+						// the same tracking /api/chat/stop uses. Tabs take
+						// liveness from here, never from stream continuity.
+						running: run.running,
+						turnId: run.turnId,
 						...(await historyOf(key, sid)),
 					});
 				}
@@ -2700,28 +3683,45 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/chat/model" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as { modelId?: string };
 					if (typeof body.modelId !== "string" || !body.modelId) {
 						return json({ ok: false, why: "need {modelId}" }, 400);
 					}
-					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
-					try {
-						await client.sessionSetModel(sid, body.modelId);
-						lastModelId = body.modelId;
-						return json({ ok: true, modelId: body.modelId });
-					} catch (err) {
-						if (err instanceof MspError) {
+					const modelId = body.modelId;
+					// P1-2: settings mutate under the lifecycle lock, like
+					// send/new/resume — the await is load-bearing (see send).
+					return await withLifecycleLock(async () => {
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
 							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
 							);
 						}
-						throw err;
-					}
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
+						settingsStamp = { sid, gen: runGeneration };
+						try {
+							await client.sessionSetModel(sid, modelId);
+							lastModelId = modelId;
+							return json({ ok: true, modelId });
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
+						}
+					});
 				}
 				if (p === "/api/chat/effort" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as { effort?: string };
 					const tiers = [
 						"none",
@@ -2739,27 +3739,42 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							400,
 						);
 					}
-					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
-					try {
-						await client.sessionSetReasoningEffort(
-							sid,
-							body.effort as ReasoningEffort,
-						);
-						lastEffort = body.effort;
-						return json({ ok: true, effort: body.effort });
-					} catch (err) {
-						if (err instanceof MspError) {
+					const effort = body.effort as string;
+					// P1-2: settings mutate under the lifecycle lock, like
+					// send/new/resume — the await is load-bearing (see send).
+					return await withLifecycleLock(async () => {
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
 							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
 							);
 						}
-						throw err;
-					}
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
+						settingsStamp = { sid, gen: runGeneration };
+						try {
+							await client.sessionSetReasoningEffort(
+								sid,
+								effort as ReasoningEffort,
+							);
+							lastEffort = effort;
+							return json({ ok: true, effort });
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
+						}
+					});
 				}
 				if (p === "/api/chat/access" && req.method === "POST") {
+					// P1-3: capture the owner before validation awaits.
+					const entry = captureLockEntry(req);
 					const body = (await req.json()) as { mode?: string };
 					const modes = [
 						"allowAll",
@@ -2773,47 +3788,60 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							400,
 						);
 					}
-					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
-					try {
-						await client.sessionSetApprovalMode(sid, body.mode as ApprovalMode);
-					} catch (err) {
-						if (err instanceof MspError) {
+					const mode = body.mode as ApprovalMode;
+					// P1-2: settings mutate under the lifecycle lock, like
+					// send/new/resume — the await is load-bearing (see send).
+					return await withLifecycleLock(async () => {
+						// P1-3: re-validate after queueing, before any spawn.
+						const stale = queuedStale(entry);
+						if (stale) {
 							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
+								{ ok: false, error: stale.error, why: stale.why },
+								stale.status,
 							);
 						}
-						throw err;
-					}
-					lastAccess = body.mode;
-					// T101: the profile follows the mode on the live
-					// session (verified mid-session method). A profile
-					// failure after a mode change reports both
-					// honestly: the mode moved, the profile did not.
-					const want = profileForAccess(body.mode);
-					try {
-						const res = await client.sessionSetPermissionProfile(sid, want);
-						lastProfile =
-							typeof res.permissionState?.profileId === "string"
-								? res.permissionState.profileId
-								: want;
-					} catch (err) {
-						if (err instanceof MspError) {
-							return json(
-								{
-									ok: false,
-									why: `${err.kind}: ${err.message}`,
-									mode: body.mode,
-									profile: lastProfile,
-								},
-								400,
-							);
+						const sid = await ensureMain(entry.key);
+						const client = await ensureMsp(entry.key);
+						settingsStamp = { sid, gen: runGeneration };
+						try {
+							await client.sessionSetApprovalMode(sid, mode);
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
 						}
-						throw err;
-					}
-					return json({ ok: true, mode: body.mode, profile: lastProfile });
+						lastAccess = mode;
+						// T101: the profile follows the mode on the live
+						// session (verified mid-session method). A profile
+						// failure after a mode change reports both
+						// honestly: the mode moved, the profile did not.
+						const want = profileForAccess(mode);
+						try {
+							const res = await client.sessionSetPermissionProfile(sid, want);
+							lastProfile =
+								typeof res.permissionState?.profileId === "string"
+									? res.permissionState.profileId
+									: want;
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{
+										ok: false,
+										why: `${err.kind}: ${err.message}`,
+										mode,
+										profile: lastProfile,
+									},
+									400,
+								);
+							}
+							throw err;
+						}
+						return json({ ok: true, mode, profile: lastProfile });
+					});
 				}
 				// T50 approval/question surface: thin relays over the MSP
 				// decide/answer/cancel/listPending commands. Choice ids
@@ -3095,7 +4123,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const client = await ensureMsp(key);
 					const list = await client.sessionList();
 					const pasts = list.sessions
-						.filter((s) => s.sessionId !== mainSession)
+						.filter((s) => s.sessionId !== mainSession && sessionIsOurs(s))
 						.map((s) => {
 							const prompt =
 								typeof s["firstUserPrompt"] === "string"
@@ -3281,7 +4309,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			clearInterval(hb);
 			relay.stop();
 			server.stop();
-			await stopWorker();
+			await stopWorker("shutdown", false);
 		},
 	};
 }

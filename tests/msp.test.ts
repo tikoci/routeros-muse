@@ -477,3 +477,34 @@ for await (const chunk of Bun.stdin.stream()) {
 			},
 		);
 });
+
+describe("dead host (round 4 review)", () => {
+	t(
+		"a call after SIGKILL fails fast instead of waiting out its timeout",
+		async () => {
+			// Bun reports a signal death as exitCode null + signalCode set, so
+			// an exitCode-only guard let calls after a SIGKILL hang 30s.
+			const { home } = makeHome();
+			const c = await MspClient.spawn({
+				provider: "echo",
+				museHome: home,
+				mcpServers: testMcp(),
+			});
+			const proc = (c as unknown as { proc: ReturnType<typeof Bun.spawn> })
+				.proc;
+			proc.kill("SIGKILL");
+			await proc.exited;
+			const started = Date.now();
+			let msg = "";
+			try {
+				await c.call("view/page", {}, 30_000);
+			} catch (err) {
+				msg = (err as Error).message;
+			}
+			expect(msg).toBe("muse host exited");
+			expect(Date.now() - started).toBeLessThan(1_000);
+			await c.close();
+		},
+		30_000,
+	);
+});

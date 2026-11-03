@@ -25,7 +25,15 @@
 // dialog (relay-opened, prefilled, owner-typed save, new card), and the T56 failed-send
 // restore (forced 500/abort/ok:false/oauth failures restore text,
 // images and pills with the why toasted; restore-if-empty; a failed
-// second send leaves the live turn alone).
+// second send leaves the live turn alone), and the swap-review two-tab
+// legs (adopting Send lock, stale-main banner + Load current, stale-send
+// 409 restore, past-load race, no-demo-data markup), and the
+// SSE-reconnect legs (a tab that missed main/changed while deaf banners
+// on reopen; Load current onto a live turn shows Stop; late histories
+// lose to the adopted generation), and the S1 boot-liveness leg (a held
+// idle history released after a send never hides Stop), and the
+// worker-kill leg (run/state clears Stop on every tab; the next send
+// 409s onto the banner and Load current + send recover).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -56,7 +64,10 @@ type SmokeHook = {
 	chatCatchUp: () => void;
 	wsPending: () => void;
 	wsReady: () => void;
+	dropStream: () => void;
+	reconnectStream: () => void;
 	loadStatus: () => Promise<void>;
+	loadHistory: () => Promise<void>;
 };
 
 declare global {
@@ -1496,7 +1507,7 @@ try {
 	check(
 		"t109 backtick trims and image syntax stays plain",
 		JSON.stringify(t109tickRels) === JSON.stringify(["notes.md"]),
-		JSON.stringify(t109parenRels) + " / " + JSON.stringify(t109tickRels),
+		`${JSON.stringify(t109parenRels)} / ${JSON.stringify(t109tickRels)}`,
 	);
 	const t109tickBody = (await t109tick.locator(".body").textContent()) ?? "";
 	check(
@@ -4559,7 +4570,1784 @@ try {
 		`aborts=${sendAbortNoise.length}`,
 	);
 
-	// T89: expected-error exceptions are route-specific. The six
+	// T60/T85: main-session swap on the scriptable fake. New session
+	// (inline confirm, empty transcript, draft + pill survive, send
+	// works on the new main, old main lands in Past chats), Make
+	// current (the past transcript shows in main), and the
+	// while-running contract (both buttons disabled with a Stop
+	// tooltip; the routes 409). Screenshots 48-50.
+	const t60 = stubT50Bin();
+	await withT50Env(t60.log, async () => {
+		const srvS = await startServer({
+			dataHome: mktmp("ui-smoke-t60-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: t60.bin,
+		});
+		try {
+			await page.goto(srvS.url, { waitUntil: "load" });
+			const batchS = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const t60Idle = (): Promise<void> => {
+				return page
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			};
+			const t60Agent = (probe: string): Promise<boolean> =>
+				page
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: 30_000 },
+					)
+					.then(() => true)
+					.catch(() => false);
+			// A first exchange on the starting main, then a pill for
+			// the draft legs (the T49 flow: card → Add → pill).
+			await page.fill("#chatinput", "T60-SMOKE-FIRST");
+			await page.press("#chatinput", "Enter");
+			check(
+				"t60 first exchange lands on the starting main",
+				await t60Agent("T60-SMOKE-FIRST"),
+			);
+			await t60Idle();
+			check(
+				"t60 first exchange gets an agent reply",
+				(
+					(await page.locator("#pane-chat .msg.agent").textContent()) ?? ""
+				).includes("t50 done"),
+			);
+			await page.locator('.dev[data-key="dev-smoke-gw"]').click();
+			await page.waitForSelector("#pdev-add:visible", { timeout: 10_000 });
+			await page.click("#pdev-add");
+			await page.waitForSelector('.tpill[data-dev="smoke-gw"]', {
+				timeout: 5_000,
+			});
+			await page.locator(".ctab.main").click();
+			// New session: inline confirm, cancel path, then start.
+			await page.fill("#chatinput", "T60-UNSENT-DRAFT");
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			check(
+				"t60 new session asks inline with the past-chats note",
+				(
+					(await page.locator("#newsession-confirm").textContent()) ?? ""
+				).includes("Start a new session? This chat moves to Past chats."),
+			);
+			await page.screenshot({
+				path: path.join(OUT, "48-t60-new-confirm.png"),
+			});
+			await page.click("#newsession-cancel");
+			check(
+				"t60 cancel disarms the confirm",
+				(await page.locator("#newsession-confirm:visible").count()) === 0 &&
+					(await page.locator("#newsession-btn:visible").count()) === 1,
+			);
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"t60 new session empties the main transcript",
+				(await page.locator("#pane-chat .msg").count()) === 0,
+			);
+			check(
+				"t60 new session keeps the composer draft",
+				(await page.locator("#chatinput").inputValue()) === "T60-UNSENT-DRAFT",
+			);
+			check(
+				"t60 new session keeps the target pill",
+				(await page.locator('.tpill[data-dev="smoke-gw"]').count()) === 1,
+			);
+			check(
+				"t60 old main lands in Past chats",
+				((await page.locator("#pastlist").textContent()) ?? "").includes(
+					"untitled session",
+				),
+			);
+			// The draft sends clean on the new main.
+			await page.press("#chatinput", "Enter");
+			check(
+				"t60 draft sends on the new main",
+				await t60Agent("T60-UNSENT-DRAFT"),
+			);
+			await t60Idle();
+			check(
+				"t60 draft gets an agent reply on the new main",
+				(await page.locator("#pane-chat .msg.agent").count()) === 1 &&
+					(
+						(await page.locator("#pane-chat .msg.agent").textContent()) ?? ""
+					).includes("t50 done"),
+			);
+			check(
+				"t60 new main carries no old transcript",
+				!((await page.locator("#pane-chat").textContent()) ?? "").includes(
+					"T60-SMOKE-FIRST",
+				),
+			);
+			// Make current: open the past chat, resume it as main.
+			await page
+				.locator(
+					'.rbar button[data-rview="rview-past"]:visible, #crail button[data-crview="rview-past"]:visible',
+				)
+				.first()
+				.click();
+			await page.waitForSelector("#pastlist .minidev:visible", {
+				timeout: 10_000,
+			});
+			await page
+				.locator("#pastlist .minidev", { hasText: "untitled session" })
+				.first()
+				.click();
+			await page.waitForFunction(
+				() =>
+					(document.getElementById("ppc-title")?.textContent ?? "") !==
+						"loading…" &&
+					(document.getElementById("makecurrent-btn")?.dataset?.["session"] ??
+						"") !== "",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.screenshot({
+				path: path.join(OUT, "49-t60-past-tab.png"),
+			});
+			await page.click("#makecurrent-btn");
+			check(
+				"t60 make current shows the past transcript in main",
+				await t60Agent("T60-SMOKE-FIRST"),
+			);
+			check(
+				"t60 make current returns to the main chat tab",
+				(await page.locator(".ctab.main.active").count()) === 1,
+			);
+			check(
+				"t60 make current moves the other session to past",
+				((await page.locator("#pastlist").textContent()) ?? "").includes(
+					"untitled session",
+				),
+			);
+			// While running: both buttons disabled with a Stop
+			// tooltip, and both routes 409 (asserted via direct
+			// fetch — the UI guard correctly blocks the clicks).
+			await page.fill("#chatinput", "NEED-APPROVAL t60 running");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"t60 new session disabled while running",
+				(await page.locator("#newsession-btn:disabled").count()) === 1 &&
+					(
+						(await page.locator("#newsession-btn").getAttribute("title")) ?? ""
+					).includes("Stop"),
+			);
+			check(
+				"t60 make current disabled while running",
+				(await page.locator("#makecurrent-btn:disabled").count()) === 1 &&
+					(
+						(await page.locator("#makecurrent-btn").getAttribute("title")) ?? ""
+					).includes("Stop"),
+			);
+			const new409 = await page.evaluate(async () => {
+				const r = await fetch("/api/chat/new", { method: "POST" });
+				return r.status;
+			});
+			check("t60 new 409s while running", new409 === 409, `got ${new409}`);
+			const resume409 = await page.evaluate(async () => {
+				const r = await fetch("/api/chat/resume", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ sessionId: "t50-past1" }),
+				});
+				return r.status;
+			});
+			check(
+				"t60 resume 409s while running",
+				resume409 === 409,
+				`got ${resume409}`,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "50-t60-swap-running.png"),
+			});
+			await page
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await t60Idle();
+			check(
+				"t60 buttons re-enable after the run",
+				(await page.locator("#newsession-btn:disabled").count()) === 0 &&
+					(await page.locator("#makecurrent-btn:disabled").count()) === 0,
+			);
+			// Quiescence before the stop (mirrors the T50 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchS;
+		} finally {
+			await srvS.stop();
+		}
+	});
+
+	// Swap-review two-tab legs on the scriptable fake. Page B shows S1
+	// while page A swaps: adopting hides Send with Stop's visual (P2-5),
+	// B banners on main/changed and Loads current explicitly (P2-6), a
+	// newer live turn keeps its Stop across afterSwap (P2-5), a deaf B's
+	// stale send 409s with its draft restored (P2-6), and reordered past
+	// loads never split the shown transcript from the Make-current
+	// target (P2-7) — plus the T52 never-demo-data markup assertion.
+	// Screenshots 51-55.
+	const sr = stubT50Bin();
+	await withT50Env(sr.log, async () => {
+		const srvS = await startServer({
+			dataHome: mktmp("ui-smoke-sr-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: sr.bin,
+		});
+		const pageB = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		// The second tab reports into the same gate collectors (raw text:
+		// the T89 reconciliation prefix-matches resource loads).
+		pageB.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		pageB.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		pageB.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srvS.url, { waitUntil: "load" });
+			const batchS = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const srIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const srAgent = (
+				pg: Page,
+				probe: string,
+				ms = 30_000,
+			): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const srOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			// No stop-poll quiesce before swaps: every swap below runs
+			// after UI-idle (the completion already crossed the server),
+			// so a turn stuck live here is the stuck-turn race itself —
+			// these legs prove the fix instead of masking it.
+
+			// Demo-data markup (T52): the past-chat pane ships no demo text.
+			const ppcHtml = (await page.locator("#pane-pastchat").innerHTML()) ?? "";
+			for (const demo of [
+				"Cabin link signal check",
+				"demo-cabin-link",
+				"18 messages",
+				"3d ago",
+				"Signal on the cabin link dipped again",
+				"tx-power reads 17",
+				"twin3",
+			]) {
+				check(
+					`sr pane ships no demo text (${demo.slice(0, 24)})`,
+					!ppcHtml.includes(demo),
+				);
+			}
+
+			// S1 gets its marker; B loads onto S1.
+			await page.fill("#chatinput", "P61-FIRST");
+			await page.press("#chatinput", "Enter");
+			check("sr first exchange lands", await srAgent(page, "P61-FIRST"));
+			await srIdle(page);
+			await pageB.goto(srvS.url, { waitUntil: "load" });
+			await pageB.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			// B's boot-history render races A's just-completed turn
+			// (pre-existing boot race, red 6/6 at a51a102 with this
+			// prefix): reload onto the settled history instead of
+			// asserting the racy first paint. B still sends nothing.
+			await pageB.reload({ waitUntil: "load" });
+			await pageB.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check("sr B shows S1 without sending", await srAgent(pageB, "P61-FIRST"));
+
+			// Response hold for A's /new (route.fetch lets the server swap;
+			// the fulfill releases the answer to the page).
+			const holdGate: { held: Promise<void> | null; release: () => void } = {
+				held: null,
+				release: () => {},
+			};
+			const armHold = (): void => {
+				holdGate.held = new Promise<void>((r) => {
+					holdGate.release = r;
+				});
+			};
+			const disarmHold = (): void => {
+				holdGate.held = null;
+			};
+			await page.route("**/api/chat/new", async (route) => {
+				const res = await route.fetch();
+				if (holdGate.held) await holdGate.held;
+				await route.fulfill({ response: res });
+			});
+
+			// P2-5(1): adopting hides Send with Stop's visual while /new is held.
+			armHold();
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await pollT71Log(sr.log, /START session=t50-s2 /, 15_000);
+			check(
+				"p25 adopting hides Send",
+				(await page.locator("#sendbtn:visible").count()) === 0,
+			);
+			check(
+				"p25 adopting borrows Stop's visual, inert",
+				(await page.locator("#stopbtn:visible").count()) === 1 &&
+					(await page.locator("#stopbtn").isDisabled()),
+			);
+			await page.screenshot({ path: path.join(OUT, "51-p25-adopting.png") });
+			await page.fill("#chatinput", "ADOPT-DRAFT");
+			await page.press("#chatinput", "Enter");
+			await new Promise((r) => setTimeout(r, 500));
+			check(
+				"p25 Enter during adopt sends nothing and keeps the draft",
+				(await page.locator("#chatinput").inputValue()) === "ADOPT-DRAFT" &&
+					!((await page.locator("#pane-chat").textContent()) ?? "").includes(
+						"ADOPT-DRAFT",
+					),
+			);
+			await page.fill("#chatinput", "");
+			// P2-6(1): B banners on the swap (no auto-adopt) with Send
+			// disabled; Load current shows the new main and re-enables.
+			check(
+				"p26 B shows the stale banner without a reload",
+				await srOk(
+					pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			// B heard the publish, so A (the initiating tab) heard it too:
+			// its own swap must never banner it, held or after adopt.
+			check(
+				"p25 initiating tab never shows the stale banner while its swap is held",
+				(await page.locator("#stalemain:visible").count()) === 0,
+			);
+			check(
+				"p26 B keeps the old transcript behind the banner",
+				((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
+					"P61-FIRST",
+				),
+			);
+			check(
+				"p26 B Send disabled with a tooltip while stale",
+				(await pageB.locator("#sendbtn:visible").count()) === 1 &&
+					(await pageB.locator("#sendbtn").isDisabled()) &&
+					(
+						(await pageB.locator("#sendbtn").getAttribute("title")) ?? ""
+					).includes("Load current"),
+			);
+			// Refusal dispatches nothing: the spy (not the draft) proves it.
+			let p26sends = 0;
+			await pageB.route("**/api/chat/send", async (route) => {
+				p26sends += 1;
+				const res = await route.fetch();
+				await route.fulfill({ response: res });
+			});
+			await pageB.fill("#chatinput", "STALE-DRAFT");
+			await pageB.press("#chatinput", "Enter");
+			await new Promise((r) => setTimeout(r, 500));
+			check(
+				"p26 stale Enter sends nothing and keeps the draft",
+				p26sends === 0 &&
+					(await pageB.locator("#chatinput").inputValue()) === "STALE-DRAFT" &&
+					!((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
+						"STALE-DRAFT",
+					),
+				`sends=${p26sends}`,
+			);
+			await pageB.unroute("**/api/chat/send");
+			await pageB.fill("#chatinput", "");
+			await pageB.screenshot({ path: path.join(OUT, "52-p26-stale.png") });
+			await pageB.click("#stalemain-load");
+			// The banner clears only after the whole load settles
+			// (transcript + past list + meter), so its absence — not the
+			// synchronous message clear — gates the asserts below.
+			check(
+				"p26 Load current clears the banner and enables Send",
+				await srOk(
+					pageB.waitForFunction(
+						() => {
+							const b = document.getElementById("stalemain");
+							const s = document.getElementById(
+								"sendbtn",
+							) as HTMLButtonElement | null;
+							return (
+								b !== null &&
+								b.style.display === "none" &&
+								s !== null &&
+								s.style.display !== "none" &&
+								!s.disabled
+							);
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"p26 Load current shows the new main",
+				(await pageB.locator("#pane-chat .msg").count()) === 0,
+			);
+			check(
+				"p26 B past list gains the old main",
+				((await pageB.locator("#pastlist").textContent()) ?? "").includes(
+					"untitled session",
+				),
+			);
+			holdGate.release();
+			disarmHold();
+			await srIdle(page);
+			check(
+				"sr A shows empty S2 after adopt",
+				(await page.locator("#pane-chat .msg").count()) === 0,
+			);
+			check(
+				"p25 initiating tab shows no stale banner after its own adopt",
+				(await page.locator("#stalemain:visible").count()) === 0,
+			);
+
+			// P2-5(2): a newer live turn keeps its Stop across afterSwap. A
+			// swaps S2->S3 with the answer held; B Loads current, then its
+			// held turn goes live on S3 meanwhile.
+			armHold();
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await pollT71Log(sr.log, /START session=t50-s3 /, 15_000);
+			await srOk(
+				pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+			);
+			await pageB.click("#stalemain-load");
+			await srOk(
+				pageB.waitForFunction(
+					() =>
+						(window as unknown as Record<string, unknown>)["__mainSession"] ===
+							"t50-s3" &&
+						document.getElementById("stalemain")?.style.display === "none",
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
+			await pageB.fill("#chatinput", "NEED-APPROVAL p25 live");
+			await pageB.click("#sendbtn");
+			await pageB.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"p25 adopting tab sees the newer live turn",
+				await srOk(
+					page.waitForFunction(
+						() => {
+							const b = document.getElementById(
+								"stopbtn",
+							) as HTMLButtonElement | null;
+							return b !== null && b.style.display !== "none" && !b.disabled;
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			holdGate.release();
+			disarmHold();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"p25 newer live turn keeps its Stop across afterSwap",
+				(await page.locator("#stopbtn:visible").count()) === 1,
+			);
+			await page.screenshot({
+				path: path.join(OUT, "53-p25-stop-survives.png"),
+			});
+			await page.unroute("**/api/chat/new");
+			await pageB
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await srIdle(page);
+			await srIdle(pageB);
+
+			// P2-6(2): a deaf B's stale send 409s with the draft restored. A
+			// moves S3->S4 and marks it; B (stream dropped) still pins S3.
+			await pageB.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await srIdle(page);
+			await page.fill("#chatinput", "S4-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("sr S4 marker lands", await srAgent(page, "S4-MARKER"));
+			await srIdle(page);
+			await pageB.fill("#chatinput", "B-STALE-DRAFT");
+			await pageB.press("#chatinput", "Enter");
+			check(
+				"p26 stale send restores the draft",
+				await srOk(
+					pageB.waitForFunction(
+						() =>
+							(document.getElementById("chatinput") as HTMLInputElement | null)
+								?.value === "B-STALE-DRAFT",
+						undefined,
+						{ timeout: 10_000 },
+					),
+				),
+			);
+			check(
+				"p26 stale send toasts the refusal",
+				await srOk(
+					pageB.waitForFunction(
+						() =>
+							(document.getElementById("toasts")?.textContent ?? "").includes(
+								"main session changed",
+							),
+						undefined,
+						{ timeout: 10_000 },
+					),
+				),
+			);
+			check(
+				"p26 stale send raises the banner, not a reload",
+				await srOk(
+					pageB.waitForSelector("#stalemain:visible", { timeout: 10_000 }),
+				),
+			);
+			check(
+				"p26 stale tab keeps the old transcript until Load current",
+				!((await pageB.locator("#pane-chat").textContent()) ?? "").includes(
+					"S4-MARKER",
+				),
+			);
+			await pageB.screenshot({ path: path.join(OUT, "54-p26-stale-409.png") });
+			await pageB.click("#stalemain-load");
+			check(
+				"p26 Load current shows the current main",
+				await srAgent(pageB, "S4-MARKER", 10_000),
+			);
+			check(
+				"p26 Load current clears the banner and enables Send",
+				await srOk(
+					pageB.waitForFunction(
+						() => {
+							const b = document.getElementById("stalemain");
+							const s = document.getElementById(
+								"sendbtn",
+							) as HTMLButtonElement | null;
+							return (
+								b !== null &&
+								b.style.display === "none" &&
+								s !== null &&
+								s.style.display !== "none" &&
+								!s.disabled
+							);
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+
+			// P2-7: reordered past loads never split the shown transcript from
+			// the Make-current target. S1 (P61-FIRST) loads slow, S3 (p25
+			// live) fast; the stale S1 response must not render over S3.
+			const ids = await page.evaluate(async () => {
+				const p = (await (await fetch("/api/past")).json()) as {
+					pasts: { id: string }[];
+				};
+				return p.pasts.map((x) => x.id);
+			});
+			check("sr three pasts to race", ids.length >= 3, ids.join(","));
+			const s1 = ids[0] as string;
+			const s3 = ids[2] as string;
+			let releasePast!: () => void;
+			const pastGate = new Promise<void>((r) => {
+				releasePast = r;
+			});
+			await page.route(`**/api/past/${s1}`, async (route) => {
+				const res = await route.fetch();
+				await pastGate;
+				await route.fulfill({ response: res });
+			});
+			await page
+				.locator(
+					'.rbar button[data-rview="rview-past"]:visible, #crail button[data-crview="rview-past"]:visible',
+				)
+				.first()
+				.click();
+			await page.waitForSelector("#pastlist .minidev:visible", {
+				timeout: 10_000,
+			});
+			await page.locator(`#pastlist .minidev[data-key="past-${s1}"]`).click();
+			await srOk(
+				page.waitForFunction(
+					() =>
+						document.getElementById("ppc-title")?.textContent === "loading…",
+					undefined,
+					{ timeout: 10_000 },
+				),
+			);
+			check(
+				"p27 make-current disabled with no target while loading",
+				(await page.locator("#makecurrent-btn:disabled").count()) === 1 &&
+					((await page
+						.locator("#makecurrent-btn")
+						.getAttribute("data-session")) ?? "") === "",
+			);
+			await page.locator(`#pastlist .minidev[data-key="past-${s3}"]`).click();
+			check(
+				"p27 fast load renders",
+				await srOk(
+					page.waitForFunction(
+						() =>
+							(document.getElementById("ppc-user")?.textContent ?? "").includes(
+								"p25 live",
+							),
+						undefined,
+						{ timeout: 10_000 },
+					),
+				),
+			);
+			releasePast();
+			await new Promise((r) => setTimeout(r, 750));
+			const shownS3 = (
+				(await page.locator("#ppc-user").textContent()) ?? ""
+			).includes("p25 live");
+			const targetS3 =
+				((await page
+					.locator("#makecurrent-btn")
+					.getAttribute("data-session")) ?? "") === s3;
+			check(
+				"p27 shown transcript and make-current target agree",
+				shownS3 && targetS3,
+				`shownS3=${shownS3} target=${await page.locator("#makecurrent-btn").getAttribute("data-session")}`,
+			);
+			await page.screenshot({ path: path.join(OUT, "55-p27-past-race.png") });
+			await page.unroute(`**/api/past/${s1}`);
+
+			// Round 4 review (P2): a same-main SSE gap that missed a turn's
+			// start. B's stream is down while A starts an approval-held turn
+			// on the SAME main; on reconnect B follows the server's liveness
+			// (Stop shown) and raises no stale banner.
+			await page.click(".ctab.main");
+			await pageB.evaluate(() => window.__smoke?.dropStream());
+			await page.fill("#chatinput", "NEED-APPROVAL r4 gap");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			await pageB.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r4 same-main reconnect shows the live turn's Stop",
+				await srOk(
+					pageB.waitForFunction(
+						() => {
+							const b = document.getElementById("stopbtn");
+							return b !== null && b.style.display !== "none";
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"r4 same-main reconnect raises no stale banner",
+				(await pageB.locator("#stalemain:visible").count()) === 0,
+			);
+			await page
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			await srIdle(page);
+			await srIdle(pageB);
+
+			// Round 4 review (P2): Load current must not clear a banner for a
+			// NEWER publish heard while its own history was in flight. A moves
+			// to S5 (B banners), B's Load current is held on S5's history, A
+			// moves on to S6, then the S5 answer lands: the banner stays.
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await srIdle(page);
+			await srOk(
+				pageB.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+			);
+			let releaseHist!: () => void;
+			const histGate = new Promise<void>((r) => {
+				releaseHist = r;
+			});
+			let holdHist = true;
+			await pageB.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (holdHist) await histGate;
+				await route.fulfill({ response: res });
+			});
+			await pageB.click("#stalemain-load");
+			await new Promise((r) => setTimeout(r, 300));
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await srIdle(page);
+			await new Promise((r) => setTimeout(r, 750));
+			holdHist = false;
+			releaseHist();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r4 Load current keeps the banner for a newer publish",
+				(await pageB.locator("#stalemain:visible").count()) === 1,
+			);
+			check(
+				"r4 Send stays disabled while still stale",
+				await pageB.locator("#sendbtn").isDisabled(),
+			);
+			await pageB.unroute("**/api/chat/history");
+			if ((await pageB.locator("#stalemain-load:visible").count()) === 1)
+				await pageB.click("#stalemain-load");
+			check(
+				"r4 second Load current clears the banner",
+				await srOk(
+					pageB.waitForSelector("#stalemain", {
+						state: "hidden",
+						timeout: 15_000,
+					}),
+				),
+			);
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchS;
+		} finally {
+			await pageB.close();
+			await srvS.stop();
+		}
+	});
+
+	// Stale-main legs on the scriptable fake. A tab that missed
+	// main/changed while its SSE was down banners when the stream
+	// reopens and Loads current explicitly; Load current onto a live
+	// turn shows that turn's transcript with Stop (and Stop works); a
+	// late history response loses to the adopted generation.
+	// Screenshots 56-59.
+	const r2 = stubT50Bin();
+	await withT50Env(r2.log, async () => {
+		const srvR = await startServer({
+			dataHome: mktmp("ui-smoke-r2-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: r2.bin,
+		});
+		const pageR = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		pageR.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		pageR.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		pageR.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srvR.url, { waitUntil: "load" });
+			const batchR = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const rIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const rAgent = (pg: Page, probe: string, ms = 30_000): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const rOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			const rMainOf = (pg: Page): Promise<unknown> =>
+				pg.evaluate(
+					() => (window as unknown as Record<string, unknown>)["__mainSession"],
+				);
+
+			// S1 gets its marker; B loads onto S1 (reloaded onto the
+			// settled history, like the swap-review block — B's first
+			// paint races A's just-completed turn).
+			await page.fill("#chatinput", "R2-S1-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 first exchange lands", await rAgent(page, "R2-S1-MARKER"));
+			await rIdle(page);
+			await pageR.goto(srvR.url, { waitUntil: "load" });
+			await pageR.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageR.reload({ waitUntil: "load" });
+			await pageR.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"r2 B shows S1 without sending",
+				await rAgent(pageR, "R2-S1-MARKER"),
+			);
+
+			// Leg 1: B deaf, A swaps S1->S2 and marks it, B reconnects.
+			await pageR.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R2-S2-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 S2 marker lands", await rAgent(page, "R2-S2-MARKER"));
+			await rIdle(page);
+			await pageR.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r2 reconnected tab banners instead of adopting",
+				await rOk(
+					pageR.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"r2 reconnected tab keeps the old transcript",
+				((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S1-MARKER",
+				),
+			);
+			check(
+				"r2 reconnected tab disables Send while stale",
+				(await pageR.locator("#sendbtn:visible").count()) === 1 &&
+					(await pageR.locator("#sendbtn").isDisabled()),
+			);
+			await pageR.screenshot({ path: path.join(OUT, "56-r2-reconnected.png") });
+			await pageR.click("#stalemain-load");
+			check(
+				"r2 Load current adopts the current main id",
+				await rOk(
+					pageR.waitForFunction(
+						() =>
+							(window as unknown as Record<string, unknown>)[
+								"__mainSession"
+							] === "t50-s2" &&
+							document.getElementById("stalemain")?.style.display === "none",
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"r2 Load current shows the new transcript",
+				await rAgent(pageR, "R2-S2-MARKER", 10_000),
+			);
+			check(
+				"r2 Load current drops the old transcript",
+				!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S1-MARKER",
+				),
+			);
+			check(
+				"r2 Load current enables Send",
+				(await pageR.locator("#sendbtn:visible").count()) === 1 &&
+					!(await pageR.locator("#sendbtn").isDisabled()),
+			);
+
+			// Leg 2: a turn is live on S3 when B Loads current. B is deaf to
+			// the turn/started, so Stop after the load is history-driven
+			// alone — and Stop works from B.
+			await pageR.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			// The adopting flag still owns the composer until the swap
+			// settles — the empty transcript alone doesn't prove it.
+			await rOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
+			await page.fill("#chatinput", "R2-S3-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 S3 marker lands", await rAgent(page, "R2-S3-MARKER"));
+			await rIdle(page);
+			await page.fill("#chatinput", "NEED-APPROVAL r2 live");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			await pageR.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r2 reconnected tab banners on the live swap",
+				await rOk(
+					pageR.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"r2 reconnect touches no run state",
+				(await pageR.locator("#stopbtn:visible").count()) === 0,
+			);
+			await pageR.click("#stalemain-load");
+			check(
+				"r2 live Load current shows the current transcript",
+				await rAgent(pageR, "R2-S3-MARKER", 10_000),
+			);
+			check(
+				"r2 live Load current shows Stop for the live turn",
+				await rOk(
+					pageR.waitForFunction(
+						() => {
+							const b = document.getElementById(
+								"stopbtn",
+							) as HTMLButtonElement | null;
+							return b !== null && b.style.display !== "none" && !b.disabled;
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			await pageR.screenshot({ path: path.join(OUT, "57-r2-live-load.png") });
+			await pageR.click("#stopbtn");
+			await rIdle(page);
+			await rIdle(pageR);
+			check(
+				"r2 Stop from the loaded tab settles the live turn",
+				(await pageR.locator(".appr-card.hold-pending").count()) === 0 &&
+					(await pageR.locator("#sendbtn:visible").count()) === 1 &&
+					!(await pageR.locator("#sendbtn").isDisabled()),
+			);
+			await pageR.fill("#chatinput", "R2-NEXT-ON-S3");
+			await pageR.press("#chatinput", "Enter");
+			check(
+				"r2 next send lands on the loaded main",
+				await rAgent(pageR, "R2-NEXT-ON-S3"),
+			);
+			await rIdle(pageR);
+			check("r2 loaded main id is S3", (await rMainOf(pageR)) === "t50-s3");
+			// The send really landed on S3 (user rows never stream to
+			// other tabs, so the server history — not tab A — proves it).
+			const r2hist = await page.evaluate(async () => {
+				const r = await fetch("/api/chat/history");
+				return (await r.json()) as {
+					sessionId: string;
+					messages: { text: string }[];
+				};
+			});
+			check(
+				"r2 next send is in S3's server history",
+				r2hist.sessionId === "t50-s3" &&
+					r2hist.messages.some((m) => m.text.includes("R2-NEXT-ON-S3")),
+			);
+			await pageR.screenshot({ path: path.join(OUT, "58-r2-loaded.png") });
+
+			// Leg 3a (late history): hold S3's history, publish S4, render
+			// S4's history, release S3's response — the tab stays on S4
+			// (id and transcript).
+			let releaseS3!: () => void;
+			const s3Gate = new Promise<void>((r) => {
+				releaseS3 = r;
+			});
+			let heldS3 = false;
+			let hitS3 = false;
+			await page.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldS3) {
+					heldS3 = true;
+					hitS3 = true;
+					await s3Gate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page.reload({ waitUntil: "load" });
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			{
+				const start = Date.now();
+				while (!hitS3) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r2 S3 history never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			// The adopting flag still owns the composer until the swap
+			// settles — the empty transcript alone doesn't prove it.
+			await rOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
+			await page.fill("#chatinput", "R2-S4-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 S4 marker lands", await rAgent(page, "R2-S4-MARKER"));
+			await rIdle(page);
+			releaseS3();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r2 late history keeps the current main id",
+				(await rMainOf(page)) === "t50-s4",
+			);
+			check(
+				"r2 late history keeps the current transcript",
+				((await page.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S4-MARKER",
+				) &&
+					!((await page.locator("#pane-chat").textContent()) ?? "").includes(
+						"R2-S3-MARKER",
+					),
+			);
+			await page.screenshot({ path: path.join(OUT, "59-r2-late-history.png") });
+			await page.unroute("**/api/chat/history");
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchR;
+		} finally {
+			await pageR.close();
+			await srvR.stop();
+		}
+	});
+
+	// Stale-banner + S1 + P1-B legs on the scriptable fake. B drops its
+	// stream, A swaps S1->S2, B reconnects onto the banner and Loads
+	// current explicitly; a held idle boot history released after a send
+	// never hides Stop (S1); S2's history held, S3's history loaded while
+	// deaf, S2's released — the tab stays on S3 with only S3's markers
+	// (P1-B generation gate). Screenshots 61-63.
+	const r3 = stubT50Bin();
+	await withT50Env(r3.log, async () => {
+		const srv3 = await startServer({
+			dataHome: mktmp("ui-smoke-r3-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: r3.bin,
+		});
+		const page3 = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		page3.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		page3.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		page3.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srv3.url, { waitUntil: "load" });
+			const batch3 = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const sIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const sAgent = (pg: Page, probe: string, ms = 30_000): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const sOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			const sMainOf = (pg: Page): Promise<unknown> =>
+				pg.evaluate(
+					() => (window as unknown as Record<string, unknown>)["__mainSession"],
+				);
+
+			// A marks S1; B loads onto S1.
+			await page.fill("#chatinput", "R3-S1-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r3 first exchange lands", await sAgent(page, "R3-S1-MARKER"));
+			await sIdle(page);
+			await page3.goto(srv3.url, { waitUntil: "load" });
+			await page3.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page3.reload({ waitUntil: "load" });
+			await page3.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"r3 B shows S1 without sending",
+				await sAgent(page3, "R3-S1-MARKER"),
+			);
+
+			// SSE drop, swap, reconnect: B banners and Loads current.
+			await page3.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			// The adopting flag still owns the composer until the swap
+			// settles — the empty transcript alone doesn't prove it.
+			await sOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
+			await page.fill("#chatinput", "R3-S2-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r3 S2 marker lands", await sAgent(page, "R3-S2-MARKER"));
+			await sIdle(page);
+			await page3.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r3 reconnected tab banners on the missed swap",
+				await sOk(
+					page3.waitForSelector("#stalemain:visible", { timeout: 15_000 }),
+				),
+			);
+			check(
+				"r3 reconnected tab keeps the old transcript",
+				((await page3.locator("#pane-chat").textContent()) ?? "").includes(
+					"R3-S1-MARKER",
+				),
+			);
+			await page3.screenshot({ path: path.join(OUT, "61-r3-banner.png") });
+			await page3.click("#stalemain-load");
+			check(
+				"r3 Load current shows the new transcript",
+				await sAgent(page3, "R3-S2-MARKER", 10_000),
+			);
+			check(
+				"r3 Load current clears the banner and enables Send",
+				await sOk(
+					page3.waitForFunction(
+						() => {
+							const b = document.getElementById("stalemain");
+							const s = document.getElementById(
+								"sendbtn",
+							) as HTMLButtonElement | null;
+							return (
+								b !== null &&
+								b.style.display === "none" &&
+								s !== null &&
+								s.style.display !== "none" &&
+								!s.disabled
+							);
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+
+			// S1: a held idle boot history released after a send never
+			// hides Stop. The hold fetches first (an idle snapshot, the
+			// server is quiet), then gates the fulfill past the send.
+			let releaseS1!: () => void;
+			const s1Gate = new Promise<void>((r) => {
+				releaseS1 = r;
+			});
+			let heldS1 = false;
+			let hitS1 = false;
+			await page.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldS1) {
+					heldS1 = true;
+					hitS1 = true;
+					await s1Gate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page.reload({ waitUntil: "load" });
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			{
+				const start = Date.now();
+				while (!hitS1) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r3 S1 boot history never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			// A held turn: a plain turn would complete inside the
+			// release window and idle honestly, proving nothing.
+			await page.fill("#chatinput", "HOLD-OPEN S1-PROBE");
+			await page.press("#chatinput", "Enter");
+			check(
+				"r3 send lands while boot history is held",
+				await sOk(
+					page.waitForSelector("#stopbtn:visible", { timeout: 15_000 }),
+				),
+			);
+			releaseS1();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r3 stale idle snapshot keeps Stop up",
+				(await page.locator("#stopbtn:visible").count()) === 1 &&
+					(await page.locator("#sendbtn:visible").count()) === 0,
+			);
+			await page.screenshot({ path: path.join(OUT, "62-r3-s1-stop.png") });
+			await page.unroute("**/api/chat/history");
+			await page.click("#stopbtn");
+			await sIdle(page);
+			check("r3 held send still echoes", await sAgent(page, "S1-PROBE"));
+
+			// P1-B (reviewer's repro): hold S2's initial history, load S3's
+			// history while SSE is down, release S2's — B stays on S3
+			// with only S3's markers. SSE stays hung from boot so the tab
+			// never hears the swap; the S3 load goes through the seam
+			// (render-only, so the held S2 still lands afterwards).
+			// Deafen by hanging the stream request: no response, no error,
+			// no open — the tab stays deaf with a clean console.
+			await page3.route("**/api/chat/events", async () => {
+				await new Promise(() => {});
+			});
+			let releaseOld!: () => void;
+			const oldGate = new Promise<void>((r) => {
+				releaseOld = r;
+			});
+			let heldOld = false;
+			let hitOld = false;
+			await page3.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldOld) {
+					heldOld = true;
+					hitOld = true;
+					await oldGate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page3.reload({ waitUntil: "load" });
+			await page3.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			{
+				const start = Date.now();
+				while (!hitOld) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r3 S2 history never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R3B-S3-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r3 S3 marker lands", await sAgent(page, "R3B-S3-MARKER"));
+			await sIdle(page);
+			await page3.evaluate(() => window.__smoke?.loadHistory());
+			check(
+				"r3 S3 history renders while deaf",
+				await sAgent(page3, "R3B-S3-MARKER", 10_000),
+			);
+			releaseOld();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r3 late history keeps the current main id",
+				(await sMainOf(page3)) === "t50-s3",
+			);
+			{
+				const text = (await page3.locator("#pane-chat").textContent()) ?? "";
+				check(
+					"r3 late history keeps only the current transcript",
+					text.includes("R3B-S3-MARKER") && !text.includes("R3-S2-MARKER"),
+				);
+			}
+			await page3.screenshot({
+				path: path.join(OUT, "63-r3-late-history.png"),
+			});
+			await page3.unroute("**/api/chat/events");
+			await page3.unroute("**/api/chat/history");
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batch3;
+		} finally {
+			await page3.close();
+			await srv3.stop();
+		}
+	});
+
+	// Worker-kill legs on the scriptable fake. A live turn runs with two
+	// tabs watching; SIGKILL the worker: every tab gets run/state (Stop
+	// hidden, Send back, dead prompts settled), the next send 409s onto
+	// the banner (the respawned main is a new session), and Load current
+	// + send recover cleanly. Screenshots 64-65.
+	const kk = stubT50Bin();
+	await withT50Env(kk.log, async () => {
+		const srvK = await startServer({
+			dataHome: mktmp("ui-smoke-kill-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: kk.bin,
+		});
+		const pageK = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		pageK.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		pageK.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		pageK.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srvK.url, { waitUntil: "load" });
+			const batchK = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const kIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const kAgent = (pg: Page, probe: string, ms = 30_000): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const kOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			const kStopHidden = (pg: Page): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						() => {
+							const b = document.getElementById(
+								"stopbtn",
+							) as HTMLButtonElement | null;
+							return b === null || b.style.display === "none";
+						},
+						undefined,
+						{ timeout: 15_000 },
+					)
+					.then(() => true)
+					.catch(() => false);
+
+			// A seeds S1, swaps to S2 and marks it; K loads onto S2; a held
+			// turn goes live on both. (S2, not S1: the fake mints session
+			// ids per worker, so the respawned worker's first session would
+			// collide with a pinned S1 and the post-kill send wouldn't 409.)
+			await page.fill("#chatinput", "KILL-S1-SEED");
+			await page.press("#chatinput", "Enter");
+			check("kill first exchange lands", await kAgent(page, "KILL-S1-SEED"));
+			await kIdle(page);
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await kOk(
+				page.waitForFunction(
+					() => {
+						const s = document.getElementById(
+							"sendbtn",
+						) as HTMLButtonElement | null;
+						return s !== null && s.style.display !== "none" && !s.disabled;
+					},
+					undefined,
+					{ timeout: 15_000 },
+				),
+			);
+			await page.fill("#chatinput", "KILL-S2-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("kill S2 marker lands", await kAgent(page, "KILL-S2-MARKER"));
+			await kIdle(page);
+			await pageK.goto(srvK.url, { waitUntil: "load" });
+			await pageK.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageK.reload({ waitUntil: "load" });
+			await pageK.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"kill K shows S2 without sending",
+				await kAgent(pageK, "KILL-S2-MARKER"),
+			);
+			await page.fill("#chatinput", "NEED-APPROVAL kill live");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"kill both tabs show Stop for the live turn",
+				(await page.locator("#stopbtn:visible").count()) === 1 &&
+					(await pageK.locator("#stopbtn:visible").count()) === 1,
+			);
+
+			// Raw SSE witness (node side): the broadcast itself, not just
+			// its UI shadow.
+			const sseMethods: string[] = [];
+			const stream = await fetch(`${srvK.url}api/chat/events`);
+			if (!stream.body) throw new Error("kill leg: no SSE body");
+			const reader = stream.body.getReader();
+			const decoder = new TextDecoder();
+			let sseBuf = "";
+			let sseOpen = true;
+			const pump = (async () => {
+				while (sseOpen) {
+					const { done, value } = await reader.read();
+					if (done) return;
+					sseBuf += decoder.decode(value, { stream: true });
+					for (;;) {
+						const idx = sseBuf.indexOf("\n\n");
+						if (idx < 0) break;
+						const frame = sseBuf.slice(0, idx);
+						sseBuf = sseBuf.slice(idx + 2);
+						for (const line of frame.split("\n")) {
+							if (!line.startsWith("data: ")) continue;
+							try {
+								const evt = JSON.parse(line.slice("data: ".length)) as Record<
+									string,
+									unknown
+								>;
+								if (typeof evt["method"] === "string")
+									sseMethods.push(evt["method"]);
+							} catch {
+								// ignore partial frames
+							}
+						}
+					}
+				}
+			})();
+
+			// Kill the worker under the live turn. /api/status probes
+			// (`muse --version` through the shim) log their own SPAWN lines
+			// and exit at once, so the victim is the last SPAWN pid that
+			// is still alive — never the last line.
+			const pids = [
+				...nodeFs.readFileSync(kk.log, "utf8").matchAll(/SPAWN pid=(\d+)/g),
+			].map((m) => Number(m[1]));
+			const alive = pids.filter((pid) => {
+				try {
+					process.kill(pid, 0);
+					return true;
+				} catch {
+					return false;
+				}
+			});
+			const victim = alive.at(-1);
+			if (!victim) throw new Error("kill leg: no live worker pid in log");
+			process.kill(victim, "SIGKILL");
+			{
+				const start = Date.now();
+				while (!sseMethods.includes("run/state")) {
+					if (Date.now() - start > 15_000)
+						throw new Error(
+							`kill leg: no run/state in ${sseMethods.join(",")}`,
+						);
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			check("kill run/state broadcasts", sseMethods.includes("run/state"));
+			check("kill A hides Stop", await kStopHidden(page));
+			check("kill K hides Stop", await kStopHidden(pageK));
+			check(
+				"kill both tabs get Send back",
+				(await page.locator("#sendbtn:visible").count()) === 1 &&
+					!(await page.locator("#sendbtn").isDisabled()) &&
+					(await pageK.locator("#sendbtn:visible").count()) === 1 &&
+					!(await pageK.locator("#sendbtn").isDisabled()),
+			);
+			await page.screenshot({ path: path.join(OUT, "64-kill-runstate.png") });
+
+			// The next send respawns onto a new main: 409, draft kept,
+			// banner up — then Load current + send recover cleanly.
+			await page.fill("#chatinput", "KILL-PROBE");
+			await page.press("#chatinput", "Enter");
+			check(
+				"kill stale send restores the draft",
+				await kOk(
+					page.waitForFunction(
+						() =>
+							(document.getElementById("chatinput") as HTMLInputElement | null)
+								?.value === "KILL-PROBE",
+						undefined,
+						{ timeout: 10_000 },
+					),
+				),
+			);
+			check(
+				"kill stale send raises the banner",
+				await kOk(
+					page.waitForSelector("#stalemain:visible", { timeout: 10_000 }),
+				),
+			);
+			await page.click("#stalemain-load");
+			// The banner clears only after the whole load settles, so its
+			// absence — not the synchronous message clear — gates the send.
+			check(
+				"kill Load current lands on the respawned main",
+				await kOk(
+					page.waitForFunction(
+						() =>
+							document.getElementById("stalemain")?.style.display === "none" &&
+							document.querySelectorAll("#pane-chat .msg").length === 0,
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			await page.fill("#chatinput", "KILL-AFTER");
+			await page.press("#chatinput", "Enter");
+			check("kill send works after recovery", await kAgent(page, "KILL-AFTER"));
+			await kIdle(page);
+			await page.screenshot({ path: path.join(OUT, "65-kill-recovered.png") });
+
+			sseOpen = false;
+			try {
+				await reader.cancel();
+			} catch {
+				// already closed
+			}
+			await pump;
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchK;
+		} finally {
+			await pageK.close();
+			await srvK.stop();
+		}
+	});
+
+	// T89: expected-error exceptions are route-specific. The ten
 	// deliberate failures (each leg asserts its own honest UI above):
 	// - fake-ref open-in-tab: GET /api/chat/output -> 400 (MspError)
 	// - wrong-password unlock: POST /api/auth/unlock -> 401
@@ -4567,9 +6355,15 @@ try {
 	// - raced credential save (T72 leg a): POST credentials -> 409
 	// - failed send (T56 L1): POST /api/chat/send -> 500 with why
 	// - oauth-required send (T56 L5): POST /api/chat/send -> 403
+	// - swap while running (T60 leg): POST /api/chat/new -> 409
+	// - resume while running (T60 leg): POST /api/chat/resume -> 409
+	// - stale-tab send (swap-review leg): POST /api/chat/send -> 409 main-changed
+	// - post-kill send (worker-kill leg): POST /api/chat/send -> 409 main-changed
 	// Query strings are ignored in the path match (the fake ref carries
 	// query params); match on pathname only.
 	const EXPECTED_FAILED: FailedResponse[] = [
+		{ status: 409, method: "POST", pathname: "/api/chat/new" },
+		{ status: 409, method: "POST", pathname: "/api/chat/resume" },
 		{ status: 400, method: "GET", pathname: "/api/chat/output" },
 		// T109 re-review: the deliberately injected /api/status 500
 		// (route-intercepted) proves failed status publishes nothing.
@@ -4585,6 +6379,8 @@ try {
 		},
 		{ status: 500, method: "POST", pathname: "/api/chat/send" },
 		{ status: 403, method: "POST", pathname: "/api/chat/send" },
+		{ status: 409, method: "POST", pathname: "/api/chat/send" },
+		{ status: 409, method: "POST", pathname: "/api/chat/send" },
 	];
 	const failedKey = (f: FailedResponse): string =>
 		`${f.status} ${f.method} ${f.pathname}`;

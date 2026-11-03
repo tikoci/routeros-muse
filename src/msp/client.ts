@@ -70,6 +70,27 @@ export type SetPermissionProfileResult = {
 	[k: string]: unknown;
 };
 
+/**
+ * T60/T85: session/resume result (cold-resume capture
+ * out/wire-capture-t60/02-resume.jsonl, echo provider). Minimal
+ * params ({commandId, sessionId}) serve the inline history, the
+ * last-turn fold, empty pendingRequests, the loaded session, and
+ * the view head. abnormalEnd is experimental (absent on a clean
+ * prior end); unknown ids fail sessionNotFound (-32020).
+ */
+export type SessionResumeResult = {
+	history: {
+		items: Record<string, unknown>[];
+		mode: string;
+		snapshot: unknown;
+	};
+	lastTurn: { terminal: string; turnId: string } | null;
+	pendingRequests: Record<string, unknown>[];
+	session: MspSession;
+	viewCursor: string;
+	abnormalEnd?: { lastActivityAt?: string; [k: string]: unknown } | null;
+};
+
 export type ViewEvent = {
 	method: string;
 	params: Record<string, unknown>;
@@ -183,6 +204,9 @@ export class MspClient {
 	private pending = new Map<number, Pending>();
 	private notifyHandlers = new Set<(ev: ViewEvent) => void>();
 	private closed = false;
+	// Set once the host is gone: exit (code OR signal — a SIGKILL leaves
+	// exitCode null) or stdout EOF. call() fails fast on it.
+	private dead = false;
 
 	private constructor(
 		proc: ReturnType<typeof Bun.spawn>,
@@ -190,6 +214,10 @@ export class MspClient {
 	) {
 		this.proc = proc;
 		this.mcpServers = mcpServers;
+		const markDead = (): void => {
+			this.dead = true;
+		};
+		proc.exited.then(markDead, markDead);
 		void this.readLoop();
 	}
 
@@ -293,12 +321,19 @@ export class MspClient {
 		};
 	}
 
+	/** Call cb once when the worker process exits (any cause). */
+	onExit(cb: () => void): void {
+		this.proc.exited.then(cb, cb);
+	}
+
 	async sessionStart(opts: {
 		workspaceRoot: string;
 		workspaceRoots?: string[];
 		approvalMode?: ApprovalMode;
 		/** T101/D42: explicit profile per session (stable member). */
 		permissionProfile?: string;
+		/** T60/T85: initial model (a start member, like the profile). */
+		modelId?: string;
 	}): Promise<{ session: MspSession; viewCursor: string }> {
 		return (await this.call("session/start", {
 			commandId: uuid7(),
@@ -308,10 +343,18 @@ export class MspClient {
 			...(opts.permissionProfile
 				? { permissionProfile: opts.permissionProfile }
 				: {}),
+			...(opts.modelId ? { modelId: opts.modelId } : {}),
 			// T55: the ui MCP servers, when the host granted
 			// sessionMcp and there is something to send.
 			...(this.uiTools ? { config: { mcpServers: this.mcpServers } } : {}),
 		})) as { session: MspSession; viewCursor: string };
+	}
+
+	async sessionResume(sessionId: string): Promise<SessionResumeResult> {
+		return (await this.call("session/resume", {
+			commandId: uuid7(),
+			sessionId,
+		})) as SessionResumeResult;
 	}
 
 	async turnStart(opts: {
@@ -728,6 +771,16 @@ export class MspClient {
 		params: unknown,
 		timeoutMs = 30_000,
 	): Promise<unknown> {
+		// Fail fast on a dead worker: without this a call issued
+		// after the exit — but before the server's exit watcher runs
+		// — would hang until its own timeout.
+		if (this.closed) throw new Error("client closed");
+		if (
+			this.dead ||
+			this.proc.exitCode !== null ||
+			this.proc.signalCode !== null
+		)
+			throw new Error("muse host exited");
 		const id = this.nextId++;
 		const line = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
 		return new Promise((resolve, reject) => {
@@ -775,6 +828,7 @@ export class MspClient {
 		} catch {
 			// stream closed under us; pending calls fail below
 		} finally {
+			this.dead = true;
 			reader.releaseLock();
 			// EOF without close(): the host exited, so pending calls
 			// would otherwise hang until their own timeout (30s for

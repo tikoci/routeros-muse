@@ -35,20 +35,55 @@ import * as fs from "node:fs";
 import * as readline from "node:readline";
 
 const log = process.env["T50_LOG"] ?? "";
+// T60/T85: FAKE_START_DELAY_MS delays session/start answers (stale-
+// generation probes); FAKE_RESUME_ABNORMAL=1 attaches abnormalEnd to
+// session/resume results; FAKE_RESUME_INUSE=1 fails it sessionInUse.
+// Swap-review fixes: FAKE_MODE_DELAY_MS delays session/setApprovalMode
+// answers (P1-2 access-vs-new race); FAKE_INTERRUPT_ACK_DELAY_MS delays
+// the turn/interrupt ack while the completion still lands promptly
+// (stop-in-progress proof); FAKE_FOREIGN_SESSION=1 adds a session/list
+// entry from another workspace (P2-4).
+// Round 3: FAKE_TURN_ACK_DELAY_MS delays the turn/start ack while its
+// notifications (turn/started, approvals, questions) emit immediately —
+// the slow-ack shape for the send-buffer (P2-C) and pending-stop (P2-D)
+// proofs.
+const startDelayMs = Number(process.env["FAKE_START_DELAY_MS"] ?? "0");
+const modeDelayMs = Number(process.env["FAKE_MODE_DELAY_MS"] ?? "0");
+const interruptAckDelayMs = Number(process.env["FAKE_INTERRUPT_ACK_DELAY_MS"] ?? "0");
+const turnAckDelayMs = Number(process.env["FAKE_TURN_ACK_DELAY_MS"] ?? "0");
 function logLine(line) {
 	if (log) fs.appendFileSync(log, line + "\n");
 }
 
 const SESSION = "t50-s1";
+const CANNED_PASTS = ["t50-past1", "t50-past2", "t50-past3"];
+// T60/T85: every session/start mints a live session (the first stays
+// t50-s1, later ones t50-s2, ...); turns are tagged by session and
+// view/page filters on it. Canned pasts materialize on resume.
+const liveSessions = [SESSION];
+let startN = 1;
+let startedOnce = false;
+let liveSession = null;
 let workspaceRoot = "";
 // T55: the negotiated sessionMcp flag plus the transmitted
 // config.mcpServers (the NEED-UI-TOOLS scenario drives the real
 // bridge through them, the way the real host would).
 let sessionMcp = false;
 let mcpConfig = null;
-// T101: the live profile id (canned permissionState per profile,
-// captured shapes: :ask-me sandboxed/off/human, :unrestricted open).
-let liveProfile = ":unrestricted";
+// T101: canned permissionState per profile (captured shapes: :ask-me
+// sandboxed/off/human, :unrestricted open). Swap-review P1-1: the
+// profile, approval mode, model and effort live PER SESSION (a global
+// made resume-staleness tests pass vacuously — every snapshot agreed
+// with the setters by construction).
+const sessionState = new Map();
+function stateOf(sid) {
+	let st = sessionState.get(sid);
+	if (!st) {
+		st = { profile: ":unrestricted", mode: "allowAll", model: null, effort: null, ws: workspaceRoot };
+		sessionState.set(sid, st);
+	}
+	return st;
+}
 function permState(id) {
 	const sandboxed = id === ":ask-me" || id === ":auto-review" || id === ":read-only";
 	return {
@@ -223,17 +258,19 @@ function makeQuestion(turnId, multi) {
 function completeLive(terminal, extra) {
 	if (!liveTurn) return;
 	const id = liveTurn;
+	const sid = liveSession ?? SESSION;
 	liveTurn = null;
+	liveSession = null;
 	logLine("COMPLETE turnId=" + id + " terminal=" + terminal);
 	notify("item/completed", {
-		sessionId: SESSION,
+		sessionId: sid,
 		item: {
 			kind: "agentMessage",
 			itemId: id + "-msg",
 			text: "t50 done (" + terminal + ")" + (extra ? " | " + extra : ""),
 		},
 	});
-	notify("turn/completed", { sessionId: SESSION, turnId: id, terminal: terminal });
+	notify("turn/completed", { sessionId: sid, turnId: id, terminal: terminal });
 }
 
 function uiArg(text, key) {
@@ -410,11 +447,11 @@ rl.on("line", (text) => {
 		return;
 	}
 	if (method === "session/start") {
+		logLine("RECV_START");
 		workspaceRoot = String(params.workspaceRoot ?? "");
-		liveProfile = String(params.permissionProfile ?? ":unrestricted");
+		const startProfile = String(params.permissionProfile ?? ":unrestricted");
 		mcpConfig =
 			(params.config && params.config.mcpServers) || null;
-		logLine("START session=" + SESSION + " approvalMode=" + String(params.approvalMode ?? "(none)") + " permissionProfile=" + String(params.permissionProfile ?? "(none)"));
 		// T55: the grounded B2 refusal — config without the
 		// capability is rejected before any durable byte, so a
 		// server that forgot sessionMcp breaks loudly here.
@@ -427,21 +464,122 @@ rl.on("line", (text) => {
 			);
 			return;
 		}
-		if (mcpConfig) logLine("MCPCFG " + JSON.stringify(mcpConfig));
-		send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: SESSION, permissionState: permState(liveProfile) }, viewCursor: "" } });
+		// T60/T85: the first start keeps the canned id; later ones
+		// mint. The START line keeps its prefix (existing regexes)
+		// with the requested modelId appended for the swap tests.
+		let sid = SESSION;
+		if (startedOnce) {
+			startN += 1;
+			sid = "t50-s" + startN;
+			liveSessions.push(sid);
+		}
+		startedOnce = true;
+		const st = stateOf(sid);
+		st.profile = startProfile;
+		st.mode = String(params.approvalMode ?? st.mode);
+		st.model = typeof params.modelId === "string" ? params.modelId : st.model;
+		st.ws = workspaceRoot;
+		const respond = () => {
+			if (dead) return;
+			logLine("START session=" + sid + " approvalMode=" + String(params.approvalMode ?? "(none)") + " permissionProfile=" + String(params.permissionProfile ?? "(none)") + " modelId=" + String(params.modelId ?? "(none)"));
+			if (mcpConfig) logLine("MCPCFG " + JSON.stringify(mcpConfig));
+			send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: sid, permissionState: permState(stateOf(sid).profile) }, viewCursor: "" } });
+		};
+		if (startDelayMs > 0) setTimeout(respond, startDelayMs);
+		else respond();
+		return;
+	}
+	if (method === "session/setModel") {
+		logLine("SETMODEL session=" + String(params.sessionId) + " modelId=" + String((params.model && params.model.modelId) ?? "(none)"));
+		if (typeof params.sessionId === "string" && params.model && typeof params.model.modelId === "string") {
+			stateOf(params.sessionId).model = params.model.modelId;
+		}
+		send({ jsonrpc: "2.0", id: id, result: {} });
+		return;
+	}
+	if (method === "session/setReasoningEffort") {
+		logLine("SETEFFORT session=" + String(params.sessionId) + " effort=" + String(params.reasoningEffort ?? "(none)"));
+		if (typeof params.sessionId === "string" && typeof params.reasoningEffort === "string") {
+			stateOf(params.sessionId).effort = params.reasoningEffort;
+		}
+		send({ jsonrpc: "2.0", id: id, result: {} });
+		return;
+	}
+	if (method === "session/resume") {
+		// T60/T85: shape mirrors the echo cold-resume capture
+		// (out/wire-capture-t60/02-resume.jsonl): minimal params,
+		// inline history, lastTurn, empty pendingRequests, session
+		// with permissionState, viewCursor. Unknown ids fail
+		// sessionNotFound (-32020); canned pasts materialize.
+		const sid = String(params.sessionId ?? "");
+		logLine("RESUME session=" + sid);
+		if (process.env["FAKE_RESUME_INUSE"] === "1") {
+			errTo(id, -32030, "session in use: " + sid, "sessionInUse");
+			return;
+		}
+		const known =
+			liveSessions.includes(sid) ||
+			CANNED_PASTS.includes(sid) ||
+			(process.env["FAKE_FOREIGN_SESSION"] === "1" && sid === "t50-foreign1");
+		if (!known) {
+			errTo(id, -32020, "session " + sid + " not found", "sessionNotFound");
+			return;
+		}
+		if (!liveSessions.includes(sid)) liveSessions.push(sid);
+		const mine = turns.filter((t) => t.session === sid);
+		const items = mine.map((t) => ({
+			itemId: t.id + "-u",
+			kind: "userMessage",
+			status: "completed",
+			text: t.text,
+			turnId: t.id,
+		}));
+		const last = mine.length > 0 ? { terminal: "completed", turnId: mine[mine.length - 1].id } : null;
+		const res = {
+			history: { items: items, mode: "inline", snapshot: null },
+			lastTurn: last,
+			pendingRequests: [],
+			session: { sessionId: sid, permissionState: permState(stateOf(sid).profile), turnCount: mine.length },
+			viewCursor: cursor(),
+		};
+		if (process.env["FAKE_RESUME_ABNORMAL"] === "1") {
+			res.abnormalEnd = { lastActivityAt: new Date().toISOString() };
+		}
+		send({ jsonrpc: "2.0", id: id, result: res });
 		return;
 	}
 	if (method === "session/setApprovalMode") {
-		logLine("MODE " + String(params.mode));
-		send({ jsonrpc: "2.0", id: id, result: {} });
+		const modeSid = String(params.sessionId ?? "");
+		const modeWant = String(params.mode ?? "");
+		logLine("MODE " + modeWant + " session=" + modeSid);
+		// Grounded on the live host (2026-11-03 probe): every
+		// accepted setApprovalMode folds session/approvalModeChanged
+		// carrying the session id. The answer (and its echo) ride
+		// FAKE_MODE_DELAY_MS together, like one slow commit.
+		const answerMode = () => {
+			if (dead) return;
+			if (modeSid) stateOf(modeSid).mode = modeWant;
+			notify("session/approvalModeChanged", {
+				sessionId: modeSid,
+				mode: modeWant,
+				commandId: params.commandId,
+				source: "approvalReconfigure",
+				sourceRange: srcRange(),
+				viewCursor: cursor(),
+			});
+			send({ jsonrpc: "2.0", id: id, result: {} });
+		};
+		if (modeDelayMs > 0) setTimeout(answerMode, modeDelayMs);
+		else answerMode();
 		return;
 	}
 	if (method === "session/setPermissionProfile") {
 		const want = String(params.profileId ?? "");
-		logLine("PROFILE " + want);
-		liveProfile = want;
+		const profSid = String(params.sessionId ?? "");
+		logLine("PROFILE " + want + " session=" + profSid);
+		if (profSid) stateOf(profSid).profile = want;
 		notify("session/permissionProfileChanged", {
-			sessionId: SESSION,
+			sessionId: profSid || SESSION,
 			profileId: want,
 			commandId: params.commandId,
 			source: "livePicker",
@@ -452,13 +590,14 @@ rl.on("line", (text) => {
 		return;
 	}
 	if (method === "turn/start") {
-		if (params.sessionId !== SESSION) {
+		if (!liveSessions.includes(params.sessionId)) {
 			errTo(id, -32000, "session not loaded: " + String(params.sessionId), "sessionNotLoaded");
 			return;
 		}
 		turnN += 1;
 		const t = "t50-t" + turnN;
 		liveTurn = t;
+		liveSession = params.sessionId;
 		const parts = Array.isArray(params.input) ? params.input : [];
 		const textIn = parts
 			.filter((p) => p && p.type === "text")
@@ -466,23 +605,59 @@ rl.on("line", (text) => {
 			.join("\n");
 		logLine("RECV_TURN turnId=" + t);
 		logLine("TURN_TEXT " + JSON.stringify(textIn));
-		turns.push({ id: t, text: textIn });
-		send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
-		notify("turn/started", { sessionId: SESSION, turnId: t });
+		turns.push({ id: t, text: textIn, session: params.sessionId });
+		// Stuck-turn race probe: FAKE_COALESCE_TURN=1 writes a plain
+		// turn's ack plus its turn/started, item/completed and
+		// turn/completed in ONE stdout write, so the client's
+		// synchronous line pump always sees the completion before the
+		// turn/start await resolves. Held turns keep the slow path.
+		const needsApproval = textIn.includes("NEED-APPROVAL") || textIn.includes("NEED-BOTH");
+		const needsQuestion = textIn.includes("NEED-QUESTION") || textIn.includes("NEED-BOTH");
+		const needsMulti = textIn.includes("NEED-MULTI");
+		const needsUi = textIn.includes("NEED-UI-TOOLS");
+		const heldTurn =
+			textIn.includes("HOLD-OPEN") || needsApproval || needsQuestion || needsMulti || needsUi;
+		if (process.env["FAKE_COALESCE_TURN"] === "1" && !heldTurn && !dead) {
+			const sid = params.sessionId;
+			liveTurn = null;
+			liveSession = null;
+			logLine("COMPLETE turnId=" + t + " terminal=completed");
+			const frames = [
+				JSON.stringify({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } }),
+				JSON.stringify({ jsonrpc: "2.0", method: "turn/started", params: { sessionId: sid, turnId: t } }),
+				JSON.stringify({ jsonrpc: "2.0", method: "item/completed", params: { sessionId: sid, item: { kind: "agentMessage", itemId: t + "-msg", text: "t50 done (completed)" } } }),
+				JSON.stringify({ jsonrpc: "2.0", method: "turn/completed", params: { sessionId: sid, turnId: t, terminal: "completed" } }),
+			];
+			process.stdout.write(frames.join("\n") + "\n");
+			return;
+		}
+		// Round 3: with a delayed ack the notifications emit now and
+		// only the ack waits — approvals/questions travel while the
+		// server's turnStart is still pending.
+		const ackTurn = () => {
+			if (dead) return;
+			logLine("ACK_TURN turnId=" + t);
+			send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
+		};
+		if (turnAckDelayMs > 0) setTimeout(ackTurn, turnAckDelayMs);
+		else ackTurn();
+		notify("turn/started", { sessionId: params.sessionId, turnId: t });
 		let held = false;
-		if (textIn.includes("NEED-APPROVAL") || textIn.includes("NEED-BOTH")) {
+		// T60/T85: HOLD-OPEN stays live until turn/interrupt (409 probes).
+		if (textIn.includes("HOLD-OPEN")) held = true;
+		if (needsApproval) {
 			makeApproval(t);
 			held = true;
 		}
-		if (textIn.includes("NEED-QUESTION") || textIn.includes("NEED-BOTH")) {
+		if (needsQuestion) {
 			makeQuestion(t, false);
 			held = true;
 		}
-		if (textIn.includes("NEED-MULTI")) {
+		if (needsMulti) {
 			makeQuestion(t, true);
 			held = true;
 		}
-		if (textIn.includes("NEED-UI-TOOLS")) {
+		if (needsUi) {
 			runUiTools(t, textIn);
 			held = true;
 		}
@@ -504,7 +679,17 @@ rl.on("line", (text) => {
 			});
 			return;
 		}
-		send({ jsonrpc: "2.0", id: id, result: { status: "accepted", turnId: liveTurn } });
+		// FAKE_INTERRUPT_ACK_DELAY_MS holds only the ack: the
+		// completion (and the approval/question settles) still land
+		// promptly, so the server sits with no live turn while its
+		// stop stays in flight — the stop-in-progress proof.
+		const ackedTurn = liveTurn;
+		const ackInterrupt = () => {
+			if (dead) return;
+			send({ jsonrpc: "2.0", id: id, result: { status: "accepted", turnId: ackedTurn } });
+		};
+		if (interruptAckDelayMs > 0) setTimeout(ackInterrupt, interruptAckDelayMs);
+		else ackInterrupt();
 		for (const [aid, cur] of approvals) {
 			approvals.delete(aid);
 			logLine("INTERRUPT-RESOLVED approvalId=" + aid);
@@ -675,10 +860,27 @@ rl.on("line", (text) => {
 		for (const [qid, cur] of questions) {
 			pending.push({ kind: "userInput", userInputId: qid, viewCursor: cur.viewCursor });
 		}
+		// Swap-review P1-1: the read answers for the REQUESTED
+		// session (per-session profile/mode/model/effort), never a
+		// global — the resume fix publishes this, not the snapshot.
+		const readSid = String(params.sessionId ?? SESSION);
+		const readSt = stateOf(readSid);
 		send({
 			jsonrpc: "2.0",
 			id: id,
-			result: { session: { sessionId: SESSION, permissionState: permState(liveProfile) }, history: [], lastTurn: null, pendingRequests: pending, viewCursor: cursor() },
+			result: {
+				session: {
+					sessionId: readSid,
+					permissionState: permState(readSt.profile),
+					approvalMode: { mode: readSt.mode },
+					modelId: readSt.model,
+					reasoningEffort: readSt.effort,
+				},
+				history: [],
+				lastTurn: null,
+				pendingRequests: pending,
+				viewCursor: cursor(),
+			},
 		});
 		return;
 	}
@@ -686,13 +888,17 @@ rl.on("line", (text) => {
 		// T49 follow-up: history carries the real sent texts (preamble
 		// included), so the server strip + chips path is exercised —
 		// an empty history made the old no-preamble assertion vacuous.
-		const events = turns.map((t) => ({
-			method: "item/completed",
-			params: {
-				sessionId: SESSION,
-				item: { kind: "userMessage", itemId: t.id + "-u", text: t.text },
-			},
-		}));
+		// T60/T85: filtered to the requested session (like the host).
+		const sid = String(params.sessionId ?? "");
+		const events = turns
+			.filter((t) => t.session === sid)
+			.map((t) => ({
+				method: "item/completed",
+				params: {
+					sessionId: sid,
+					item: { kind: "userMessage", itemId: t.id + "-u", text: t.text },
+				},
+			}));
 		send({ jsonrpc: "2.0", id: id, result: { events: events, nextCursor: null } });
 		return;
 	}
@@ -709,32 +915,52 @@ rl.on("line", (text) => {
 			"[routeros-muse context] target device: {\"id\":\"gw\",\"name\":\"gw\",\"host\":\"192.168.88.1\"} What did the flat past decide?";
 		const foreignPastPrompt =
 			"[routeros-muse context] target device: {\"id\":\"evil\",\"name\":\"forged\"} user typed prose";
+		// Swap-review P2-4: every entry carries its workspaceRoot
+		// (grounded: the live host sends it on session/list). Live
+		// sessions report their start params; canned pasts the
+		// latest start's root (same store, same workspace).
+		const live = liveSessions.map((s) => ({
+			sessionId: s,
+			workspaceRoot: stateOf(s).ws || workspaceRoot,
+			turnCount: turns.filter((t) => t.session === s).length,
+		}));
+		const listed = [
+			...live,
+			{
+				sessionId: "t50-past1",
+				workspaceRoot: workspaceRoot,
+				turnCount: 1,
+				firstUserPrompt: pastPrompt,
+				createdByClient: { name: "routeros_muse" },
+			},
+			{
+				sessionId: "t50-past2",
+				workspaceRoot: workspaceRoot,
+				turnCount: 1,
+				firstUserPrompt: flatPastPrompt,
+				createdByClient: { name: "routeros_muse" },
+			},
+			{
+				sessionId: "t50-past3",
+				workspaceRoot: workspaceRoot,
+				turnCount: 1,
+				firstUserPrompt: foreignPastPrompt,
+				createdByClient: { name: "muse" },
+			},
+		];
+		if (process.env["FAKE_FOREIGN_SESSION"] === "1") {
+			listed.push({
+				sessionId: "t50-foreign1",
+				workspaceRoot: "/foreign/workspace",
+				turnCount: 1,
+				firstUserPrompt: "a session from another workspace",
+				createdByClient: { name: "routeros_muse" },
+			});
+		}
 		send({
 			jsonrpc: "2.0",
 			id: id,
-			result: {
-				sessions: [
-					{ sessionId: SESSION, turnCount: turnN },
-					{
-						sessionId: "t50-past1",
-						turnCount: 1,
-						firstUserPrompt: pastPrompt,
-						createdByClient: { name: "routeros_muse" },
-					},
-					{
-						sessionId: "t50-past2",
-						turnCount: 1,
-						firstUserPrompt: flatPastPrompt,
-						createdByClient: { name: "routeros_muse" },
-					},
-					{
-						sessionId: "t50-past3",
-						turnCount: 1,
-						firstUserPrompt: foreignPastPrompt,
-						createdByClient: { name: "muse" },
-					},
-				],
-			},
+			result: { sessions: listed },
 		});
 		return;
 	}
@@ -797,18 +1023,35 @@ export function stubT50Bin(): { bin: string; log: string } {
  * Run fn with the fake-muse log env set (restored after). The fake
  * reads its config from the spawn env, which the server snapshots
  * from process.env at startup — so the server must start inside fn.
+ * T60/T85: extra fake knobs (FAKE_RESUME_ABNORMAL, FAKE_RESUME_INUSE,
+ * FAKE_START_DELAY_MS) ride the optional third arg, same restore.
+ * Swap-review fixes add FAKE_MODE_DELAY_MS, FAKE_INTERRUPT_ACK_DELAY_MS
+ * and FAKE_FOREIGN_SESSION the same way, and the stuck-turn round
+ * adds FAKE_COALESCE_TURN. Round 3 adds FAKE_TURN_ACK_DELAY_MS.
  */
 export async function withT50Env<T>(
 	log: string,
 	fn: () => Promise<T>,
+	extra?: Record<string, string>,
 ): Promise<T> {
 	const saved = process.env["T50_LOG"];
 	process.env["T50_LOG"] = log;
+	const savedExtra: Record<string, string | undefined> = {};
+	if (extra) {
+		for (const [k, v] of Object.entries(extra)) {
+			savedExtra[k] = process.env[k];
+			process.env[k] = v;
+		}
+	}
 	try {
 		return await fn();
 	} finally {
 		if (saved === undefined) delete process.env["T50_LOG"];
 		else process.env["T50_LOG"] = saved;
+		for (const [k, v] of Object.entries(savedExtra)) {
+			if (v === undefined) delete process.env[k];
+			else process.env[k] = v;
+		}
 	}
 }
 
