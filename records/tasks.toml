@@ -1064,12 +1064,12 @@ updated = "2026-11-02"
 [[task]]
 id = "T107"
 title = "Never render the [routeros-muse context] preamble in chat rows"
-status = "active"
+status = "done"
 detail = "T49 prepends a '[routeros-muse context] target device: {...}' preamble to the turn input when target pills are attached. T49's 'never renders' check covers only the fake-backed page, whose replies don't echo input. With the echo provider, the reply quotes the input and the preamble shows in the agent bubble (T56 smoke shots 47-49). A real agent that quotes its input, or a user-message row rebuilt from session history, would leak it the same way. Decide where to strip or hide it: the user row from displayText only, and agent text left as is, or a marker the UI strips. Ground it with an echo-provider smoke check and a session-history reload."
-evidence = "T56 child report 2026-11-02; out/ui-smoke/47-t56-kept-typing.png (local)"
+evidence = "T56 child report 2026-11-02; out/ui-smoke/47-t56-kept-typing.png (local). DONE 2026-11-03: root cause was the session-list surface, not chat rows — the host flattens newline runs to one space in session/list firstUserPrompt, so the exact multi-line grammar never matched and Past titles leaked the raw preamble (live echo+meta probes 2026-11-02, temp XDG_DATA_HOME). Fix (e7c3ced, merged cef5ae0): summary-only parseSessionSummaryPreamble/stripSessionSummaryPreamble in src/serve/server.ts handle the flattened image; parseTargetPreamble stays exact-grammar so transcript rows keep foreign literal text verbatim; /api/past strips only when createdByClient.name == routeros_muse (codex P2 confinement + provenance, real-host probe confirmed the stored clientInfo). Codex re-review round 3 merge-ready. Gate on main green (full suite + SMOKE GREEN incl. t107 legs: stripped routeros-muse pasts, foreign past title verbatim); t49 40/40."
 blocked_by = []
 agent = "muse-wonder-1.0 (orch)"
-updated = "2026-11-02"
+updated = "2026-11-03"
 
 [[task]]
 id = "T108"
