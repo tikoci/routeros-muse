@@ -906,6 +906,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// Tracks session/start + setPermissionProfile responses and the
 	// permissionProfileChanged fold — never null, like lastAccess.
 	let lastProfile: string | null = profileForAccess(defaultAccess());
+	// P1-2: which session+generation the cached settings were last
+	// written for. Every settings mutation (and every publish) stamps
+	// it; the settings-change notification folds below only apply
+	// when the event's session and the live generation both match —
+	// a stale echo never writes over the current main's state.
+	let settingsStamp: { sid: string; gen: number } | null = null;
+	function settingsCurrent(sid: unknown): boolean {
+		return (
+			settingsStamp !== null &&
+			typeof sid === "string" &&
+			sid === settingsStamp.sid &&
+			sid === mainSession &&
+			runGeneration === settingsStamp.gen
+		);
+	}
 	// T101/D43: pre-seed report for /api/status. Workspace mode
 	// fills this at boot; no-workspace mode stays null.
 	type PreallowReport = {
@@ -1102,6 +1117,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T101: same for the profile.
 		lastAccess = defaultAccess();
 		lastProfile = profileForAccess(defaultAccess());
+		settingsStamp = null;
 		sessionStartedAt = null;
 		if (prev) {
 			try {
@@ -1208,15 +1224,24 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					}
 					if (ev.method === "session/approvalModeChanged") {
 						// T50: the host is the truth for the live mode (it
-						// echoes every session/start + setApprovalMode).
+						// echoes every session/start + setApprovalMode) —
+						// P1-2: scoped to the stamped session+generation.
 						const p = ev.params as Record<string, unknown>;
-						if (typeof p["mode"] === "string") lastAccess = p["mode"];
+						if (
+							typeof p["mode"] === "string" &&
+							settingsCurrent(p["sessionId"])
+						)
+							lastAccess = p["mode"];
 					}
 					if (ev.method === "session/permissionProfileChanged") {
 						// T101: same fold for the profile (every
-						// accepted setPermissionProfile commit).
+						// accepted setPermissionProfile commit) —
+						// P1-2: scoped to the stamped session+generation.
 						const p = ev.params as Record<string, unknown>;
-						if (typeof p["profileId"] === "string")
+						if (
+							typeof p["profileId"] === "string" &&
+							settingsCurrent(p["sessionId"])
+						)
 							lastProfile = p["profileId"];
 					}
 					if (
@@ -1312,18 +1337,23 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		approvalMode: ApprovalMode;
 		permissionProfile: string;
 	}> {
+		// P1-2: snapshot the settings once, before the first await
+		// (this runs inside the lifecycle lock; the settings routes
+		// hold the same lock, so the snapshot cannot mix generations).
 		const approvalMode = (lastAccess as ApprovalMode | null) ?? defaultAccess();
 		const permissionProfile = lastProfile ?? profileForAccess(approvalMode);
+		const snapModel = lastModelId;
+		const snapEffort = lastEffort;
 		const started = await client.sessionStart({
 			workspaceRoot: root,
 			approvalMode,
 			permissionProfile,
-			...(lastModelId ? { modelId: lastModelId } : {}),
+			...(snapModel ? { modelId: snapModel } : {}),
 		});
-		if (lastEffort !== null) {
+		if (snapEffort !== null) {
 			await client.sessionSetReasoningEffort(
 				started.session.sessionId,
-				lastEffort as ReasoningEffort,
+				snapEffort as ReasoningEffort,
 			);
 		}
 		return { ...started, approvalMode, permissionProfile };
@@ -1357,6 +1387,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		contextPressure = null;
 		totalTokens = null;
 		runGeneration += 1;
+		settingsStamp = { sid, gen: runGeneration };
 		mainSettled = true;
 	}
 
@@ -3169,21 +3200,26 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						return json({ ok: false, why: "need {modelId}" }, 400);
 					}
 					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
-					try {
-						await client.sessionSetModel(sid, body.modelId);
-						lastModelId = body.modelId;
-						return json({ ok: true, modelId: body.modelId });
-					} catch (err) {
-						if (err instanceof MspError) {
-							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
-							);
+					// P1-2: settings mutate under the lifecycle lock, like
+					// send/new/resume — the await is load-bearing (see send).
+					return await withLifecycleLock(async () => {
+						const sid = await ensureMain(key);
+						const client = await ensureMsp(key);
+						settingsStamp = { sid, gen: runGeneration };
+						try {
+							await client.sessionSetModel(sid, body.modelId);
+							lastModelId = body.modelId;
+							return json({ ok: true, modelId: body.modelId });
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
 						}
-						throw err;
-					}
+					});
 				}
 				if (p === "/api/chat/effort" && req.method === "POST") {
 					const body = (await req.json()) as { effort?: string };
@@ -3204,24 +3240,29 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 					}
 					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
-					try {
-						await client.sessionSetReasoningEffort(
-							sid,
-							body.effort as ReasoningEffort,
-						);
-						lastEffort = body.effort;
-						return json({ ok: true, effort: body.effort });
-					} catch (err) {
-						if (err instanceof MspError) {
-							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
+					// P1-2: settings mutate under the lifecycle lock, like
+					// send/new/resume — the await is load-bearing (see send).
+					return await withLifecycleLock(async () => {
+						const sid = await ensureMain(key);
+						const client = await ensureMsp(key);
+						settingsStamp = { sid, gen: runGeneration };
+						try {
+							await client.sessionSetReasoningEffort(
+								sid,
+								body.effort as ReasoningEffort,
 							);
+							lastEffort = body.effort;
+							return json({ ok: true, effort: body.effort });
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
 						}
-						throw err;
-					}
+					});
 				}
 				if (p === "/api/chat/access" && req.method === "POST") {
 					const body = (await req.json()) as { mode?: string };
@@ -3238,46 +3279,54 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 					}
 					const key = workerKey(req);
-					const sid = await ensureMain(key);
-					const client = await ensureMsp(key);
-					try {
-						await client.sessionSetApprovalMode(sid, body.mode as ApprovalMode);
-					} catch (err) {
-						if (err instanceof MspError) {
-							return json(
-								{ ok: false, why: `${err.kind}: ${err.message}` },
-								400,
+					// P1-2: settings mutate under the lifecycle lock, like
+					// send/new/resume — the await is load-bearing (see send).
+					return await withLifecycleLock(async () => {
+						const sid = await ensureMain(key);
+						const client = await ensureMsp(key);
+						settingsStamp = { sid, gen: runGeneration };
+						try {
+							await client.sessionSetApprovalMode(
+								sid,
+								body.mode as ApprovalMode,
 							);
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{ ok: false, why: `${err.kind}: ${err.message}` },
+									400,
+								);
+							}
+							throw err;
 						}
-						throw err;
-					}
-					lastAccess = body.mode;
-					// T101: the profile follows the mode on the live
-					// session (verified mid-session method). A profile
-					// failure after a mode change reports both
-					// honestly: the mode moved, the profile did not.
-					const want = profileForAccess(body.mode);
-					try {
-						const res = await client.sessionSetPermissionProfile(sid, want);
-						lastProfile =
-							typeof res.permissionState?.profileId === "string"
-								? res.permissionState.profileId
-								: want;
-					} catch (err) {
-						if (err instanceof MspError) {
-							return json(
-								{
-									ok: false,
-									why: `${err.kind}: ${err.message}`,
-									mode: body.mode,
-									profile: lastProfile,
-								},
-								400,
-							);
+						lastAccess = body.mode;
+						// T101: the profile follows the mode on the live
+						// session (verified mid-session method). A profile
+						// failure after a mode change reports both
+						// honestly: the mode moved, the profile did not.
+						const want = profileForAccess(body.mode);
+						try {
+							const res = await client.sessionSetPermissionProfile(sid, want);
+							lastProfile =
+								typeof res.permissionState?.profileId === "string"
+									? res.permissionState.profileId
+									: want;
+						} catch (err) {
+							if (err instanceof MspError) {
+								return json(
+									{
+										ok: false,
+										why: `${err.kind}: ${err.message}`,
+										mode: body.mode,
+										profile: lastProfile,
+									},
+									400,
+								);
+							}
+							throw err;
 						}
-						throw err;
-					}
-					return json({ ok: true, mode: body.mode, profile: lastProfile });
+						return json({ ok: true, mode: body.mode, profile: lastProfile });
+					});
 				}
 				// T50 approval/question surface: thin relays over the MSP
 				// decide/answer/cancel/listPending commands. Choice ids

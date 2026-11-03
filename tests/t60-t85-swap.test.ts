@@ -606,6 +606,49 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 	);
 
 	t(
+		"access racing new: the new main matches the published settings (P1-2)",
+		async () => {
+			const { bin, log } = stubT50Bin();
+			await withT50Env(
+				log,
+				async () => {
+					const srv = await startT50Srv(bin);
+					try {
+						const first = await postJson(`${srv.url}api/chat/send`, {
+							text: "P12-S1",
+						});
+						expect(first.json["ok"]).toBe(true);
+						await waitIdle(srv.url);
+						// Slow the approval-mode commit; flip to Allow-all
+						// and swap while it is still in flight.
+						const flipping = postJson(`${srv.url}api/chat/access`, {
+							mode: "allowAll",
+						});
+						await pollT71Log(log, /MODE allowAll/, 15_000);
+						const created = await postJson(`${srv.url}api/chat/new`, {});
+						expect(created.json["ok"]).toBe(true);
+						const s2 = created.json["sessionId"];
+						expect((await flipping).json["ok"]).toBe(true);
+						await pollT71Log(log, new RegExp(`START session=${s2} `), 15_000);
+						// The new main's actual start params equal what the
+						// UI shows — no mixed state, no update to the old
+						// session leaking into the published truth.
+						const stats = await getJson(`${srv.url}api/chat/stats`);
+						const text = nodeFs.readFileSync(log, "utf8");
+						expect(text).toContain(
+							`START session=${s2} approvalMode=${stats["access"]} permissionProfile=${stats["profile"]}`,
+						);
+					} finally {
+						await srv.stop();
+					}
+				},
+				{ FAKE_MODE_DELAY_MS: "2000" },
+			);
+		},
+		60_000,
+	);
+
+	t(
 		"resume publishes the re-applied settings, never the stale snapshot (P1-1)",
 		async () => {
 			const { bin, log } = stubT50Bin();
