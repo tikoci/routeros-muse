@@ -73,10 +73,9 @@ Usage: centrs discover [--timeout 15s] [--save] [flags]
   --cdb-file / --cdb-password / --format / --json
 ```
 
-- MCP shape matches: `centrs_discover` listens for MNDP
-  neighbors; `save=true` writes the CDB and requires
-  `confirm:true` (observed discover input
-  shape + `requireConfirm`).
+- CLI shape: `centrs discover --json` listens for MNDP
+  neighbors and only lists offers; `--save` writes them into
+  the CDB (`group=discovered`, `source=mndp`).
 - Offering is not enrolling: every discovered neighbor still
   needs an explicit grant (§3) before any agent call touches it.
   A `--save` into `group=discovered` is an address-book entry,
