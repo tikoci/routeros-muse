@@ -543,13 +543,13 @@
 
     <div class="cpane" id="pane-pastchat">
       <div class="pastwrap">
-        <div class="lockbar"><span class="lockchip">locked</span><span id="ppc-sub">titled by the agent · 18 messages</span></div>
-        <h1 id="ppc-title">Cabin link signal check</h1>
-        <p class="lede"><span id="ppc-age">3d ago</span> · <span id="ppc-dev">demo-cabin-link</span></p>
-        <div class="msg user"><div class="bubble" id="ppc-user">Signal on the cabin link dipped again last night — same as before?</div></div>
+        <div class="lockbar"><span class="lockchip">locked</span><span id="ppc-sub">…</span></div>
+        <h1 id="ppc-title">…</h1>
+        <p class="lede"><span id="ppc-age">…</span> · <span id="ppc-dev">…</span></p>
+        <div class="msg user"><div class="bubble" id="ppc-user">…</div></div>
         <div class="msg agent">
           <div class="who"><span class="dot"></span><span>muse · then</span></div>
-          <div class="body"><p id="ppc-agent">Same signature: tx-power reads 17 against a plan of 20. I can draft the bump and prove it on twin3 first.</p></div>
+          <div class="body"><p id="ppc-agent">…</p></div>
         </div>
         <div class="tomlfoot"><button class="btn primary" id="makecurrent-btn" title="Resume this chat as the main chat">Make current</button><span class="note">today's main chat moves to Past chats</span></div>
       </div>
@@ -805,9 +805,16 @@
   let META_AUTH = "unknown";
   function composerIdlePlaceholder() { return META_AUTH === "absent" ? "Meta login required — run `muse login`, then Recheck…" : idlePlaceholder(); }
   function refreshSendVisibility() {
-    const showSend = !AGENT_RUNNING && META_AUTH !== "absent";
+    // P2-5: adopting borrows the running visual (Send hidden, Stop
+    // shown). With no live turn Stop is inert — its handler already
+    // ignores disabled clicks — and the ticker's own disabled state
+    // (STOP_PIN set) is never touched here.
+    const showSend = !AGENT_RUNNING && ADOPTING === 0 && META_AUTH !== "absent";
     document.getElementById("sendbtn").style.display = showSend ? "" : "none";
-    document.getElementById("stopbtn").style.display = AGENT_RUNNING ? "" : "none";
+    const stop = document.getElementById("stopbtn");
+    stop.style.display = (AGENT_RUNNING || ADOPTING > 0) ? "" : "none";
+    if (ADOPTING > 0 && !AGENT_RUNNING) stop.disabled = true;
+    else if (STOP_PIN === null) stop.disabled = false;
     refreshSwapButtons();
   }
   // T60/T85: New session + Make current share Stop's signal —
@@ -821,8 +828,10 @@
     }
     const mc = document.getElementById("makecurrent-btn");
     if (mc) {
-      mc.disabled = running;
-      mc.title = running ? "Stop the running turn first" : "Resume this chat as the main chat";
+      // P2-7: loading gates the button like running does (it has no
+      // target until its session renders).
+      mc.disabled = running || pastLoading;
+      mc.title = running ? "Stop the running turn first" : pastLoading ? "Loading past chat…" : "Resume this chat as the main chat";
     }
     if (running) disarmNewSession();
   }
@@ -844,6 +853,15 @@
   let STOP_TIMER = null;
   let STOP_EPOCH = 0;
   let LIVE_TURN = null;
+  // P2-5: swaps in flight (a counter: overlapping swaps must not clear
+  // each other's visual). While nonzero Send is disabled with the
+  // running visual and send() refuses to dispatch.
+  let ADOPTING = 0;
+  // P2-6: the main this tab believes in, learned from loadHistory and
+  // main/changed (window-scoped like __pasts, so scripted checks can
+  // gate on it). Sends pin it; a 409 adopts the server's newer pair.
+  window.__mainSession = null;
+  window.__mainGen = -1;
   const STOP_HTML = '<span class="sq"></span>Stop';
   function stopNote(text, isErr) {
     const n = document.getElementById("stopnote");
@@ -1081,13 +1099,25 @@
       document.getElementById("doc-body").textContent = await r.text();
     } catch (e) { document.getElementById("doc-body").textContent = "unavailable: " + e.message; }
   }
+  // P2-7: past-load sequence (a stale response never renders) plus
+  // the loading flag refreshSwapButtons reads: Make current is enabled,
+  // and its target set, only after its session rendered successfully.
+  let pastSeq = 0;
+  let pastLoading = false;
   async function renderPastChat(id) {
-    // T60: Make current always resumes what this pane rendered.
-    document.getElementById("makecurrent-btn").dataset.session = id;
+    // T60: Make current always resumes what this pane rendered — so
+    // while loading the button is disabled and has no target at all.
+    const my = ++pastSeq;
+    pastLoading = true;
+    const mc = document.getElementById("makecurrent-btn");
+    mc.disabled = true;
+    delete mc.dataset.session;
+    refreshSwapButtons();
     document.getElementById("ppc-title").textContent = "loading…";
     try {
       const r = await fetch("/api/past/" + encodeURIComponent(id));
       const j = await r.json();
+      if (my !== pastSeq) return;
       if (!j.ok) { document.getElementById("ppc-title").textContent = "unavailable"; return; }
       const row = (window.__pasts || []).find((p) => p.id === id) || {};
       document.getElementById("ppc-title").textContent = row.name || "past chat";
@@ -1096,7 +1126,13 @@
       document.getElementById("ppc-dev").textContent = "";
       document.getElementById("ppc-user").textContent = j.firstUser || "(no user turn captured)";
       document.getElementById("ppc-agent").textContent = j.lastAgent || "(no agent turn captured)";
-    } catch (e) { document.getElementById("ppc-title").textContent = "unavailable: " + e.message; }
+      mc.dataset.session = id;
+      pastLoading = false;
+      refreshSwapButtons();
+    } catch (e) {
+      if (my !== pastSeq) return;
+      document.getElementById("ppc-title").textContent = "unavailable: " + e.message;
+    }
   }
   async function renderDevice(id) {
     const nameEl = document.getElementById("pdev-name");
@@ -2466,6 +2502,9 @@
   async function send(text) {
     text = (text || "").trim();
     if (!text && pendingImages.length === 0) return;
+    // P2-5: the adopting swap owns the composer — refuse before the
+    // snapshot so the draft stays exactly as typed.
+    if (ADOPTING > 0) return;
     // T69: capture + clear the payload atomically (no await above this
     // line): text-only double-sends were already safe via the input
     // clear, but images cleared only after ack, so a second dispatch
@@ -2489,12 +2528,27 @@
       const r = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, images, targets }),
+        body: JSON.stringify({ text, images, targets, expectedSessionId: window.__mainSession }),
       });
       let j = null;
       try { j = await r.json(); } catch { j = null; }
       if (!r.ok || !j || j.ok !== true) {
         failSend(saved, optimistic, (j && typeof j.why === "string" && j.why) || ("HTTP " + r.status), j && j.code);
+        // P2-6: our main id went stale mid-flight — adopt the current
+        // one. Idle tabs reload the transcript; a live turn keeps
+        // streaming (SSE already carries the new main) and only the
+        // id, past list and meter catch up. Idleness is AGENT_RUNNING
+        // alone — LIVE_TURN also names completed turns, and a stale
+        // (completed) id must never block the reload.
+        if (r.status === 409 && j && j.error === "main-changed") {
+          if (typeof j.sessionId === "string") window.__mainSession = j.sessionId;
+          if (typeof j.generation === "number") window.__mainGen = j.generation;
+          if (!AGENT_RUNNING) {
+            await afterSwap();
+          } else {
+            await Promise.all([loadPast(), refreshStatpop()]);
+          }
+        }
         return;
       }
       if (typeof j.turnId === "string") {
@@ -2516,11 +2570,29 @@
     document.getElementById("newsession-btn").style.display = "none";
     document.getElementById("newsession-confirm").style.display = "";
   }
-  async function afterSwap() {
-    LIVE_TURN = null;
-    streamItem = null;
-    chatScroll = null;
-    setRunning(false);
+  // P2-6: the one main-adopt path — the swapping tab calls it off its
+  // POST response and every tab calls it off main/changed. The (id,
+  // generation) pair applies once, whichever arrives first; malformed
+  // pairs still reload (today's behavior) without adopting.
+  async function applyMainChanged(sid, gen, stamp) {
+    if (typeof sid !== "string" || !sid || typeof gen !== "number") {
+      await afterSwap(stamp);
+      return;
+    }
+    if (sid === window.__mainSession && gen === window.__mainGen) return;
+    window.__mainSession = sid;
+    window.__mainGen = gen;
+    await afterSwap(stamp);
+  }
+  async function afterSwap(stamp) {
+    // P2-5: only pre-swap run state clears — a newer turn that went
+    // live mid-swap (another tab's send, seen on SSE) keeps its Stop.
+    if (!stamp || (STOP_EPOCH === stamp.epoch && LIVE_TURN === stamp.live)) {
+      LIVE_TURN = null;
+      streamItem = null;
+      chatScroll = null;
+      setRunning(false);
+    }
     // Drop the old main's pending cards; the new main recovers its
     // own below. In-flight recoveries are invalidated by seq bump.
     for (const rec of pendingApprovals.values()) {
@@ -2544,6 +2616,11 @@
   async function doNewSession() {
     const go = document.getElementById("newsession-go");
     go.disabled = true;
+    // P2-5: stamp the pre-swap run state; the adopting flag owns the
+    // composer until the swap settles.
+    const stamp = { epoch: STOP_EPOCH, live: LIVE_TURN };
+    ADOPTING += 1;
+    refreshSendVisibility();
     try {
       const r = await fetch("/api/chat/new", { method: "POST" });
       let j = null;
@@ -2553,17 +2630,24 @@
         showToast("New session failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
         return;
       }
-      await afterSwap();
+      await applyMainChanged(j.sessionId, j.generation, stamp);
       showToast("New session started — this chat moved to Past chats.", "info");
     } catch (e) {
       disarmNewSession();
       showToast("New session failed: " + e.message, "alert");
     } finally {
+      ADOPTING -= 1;
+      refreshSendVisibility();
       go.disabled = false;
     }
   }
   async function doMakeCurrent(sessionId) {
     document.getElementById("makecurrent-btn").disabled = true;
+    // P2-5: stamp the pre-swap run state; the adopting flag owns the
+    // composer until the swap settles.
+    const stamp = { epoch: STOP_EPOCH, live: LIVE_TURN };
+    ADOPTING += 1;
+    refreshSendVisibility();
     try {
       const r = await fetch("/api/chat/resume", {
         method: "POST",
@@ -2576,11 +2660,13 @@
         showToast("Make current failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
         return;
       }
-      await afterSwap();
+      await applyMainChanged(j.sessionId, j.generation, stamp);
       showPane("pane-chat");
     } catch (e) {
       showToast("Make current failed: " + e.message, "alert");
     } finally {
+      ADOPTING -= 1;
+      refreshSendVisibility();
       refreshSwapButtons();
     }
   }
@@ -3154,6 +3240,7 @@
       setRunning(true);
       return;
     }
+    if (m.method === "main/changed") { const pp = m.params || {}; applyMainChanged(pp.sessionId, pp.generation); return; }
     if (m.method === "meta/authChanged") { applyMeta(m.params && m.params.meta); return; }
     if (m.method === "ui/notify") { const p = m.params || {}; if (typeof p.text === "string" && p.text) showToast(p.text, p.level); return; }
     if (m.method === "ui/open") { onUiOpen(m.params || {}); return; }
@@ -3261,6 +3348,9 @@
     try {
       const j = await getJSON("/api/chat/history");
       if (!j.ok) return;
+      // P2-6: record which main this transcript belongs to (the boot
+      // read seeds it; swaps adopt via applyMainChanged).
+      if (typeof j.sessionId === "string") window.__mainSession = j.sessionId;
       const rows = Array.isArray(j.items)
         ? j.items
         : (j.messages || []).map((m) => ({
@@ -4219,6 +4309,9 @@
     else showGuidance(st);
   }
 
+  // P2-6 smoke seam: the live event stream, so scripted checks can
+  // deafen one tab (a closed EventSource never reconnects).
+  let sseSource = null;
   function enterApp(st) {
     hideOverlays();
     setAuthRow(st);
@@ -4236,6 +4329,7 @@
     loadHistory().then(() => { refreshStatpop(); recoverPending(); });
     const es = new EventSource("/api/chat/events");
     es.onmessage = onStream;
+    sseSource = es;
     // T45: stream drops used to be silent (stale Stop, no rows). Native
     // retry reconnects; the chip says so until it succeeds. T50: a
     // Every open recovers — reconnects (frames may have been lost
@@ -4280,7 +4374,10 @@
     // T109 P2a boot-race simulation: suspend the status, render, then
     // land the status and catch up. Smoke-only.
     wsPending: () => { WSSTATUS = false; },
-    wsReady: () => { WSSTATUS = true; chatCatchUp(); } };
+    wsReady: () => { WSSTATUS = true; chatCatchUp(); },
+    // P2-6 stale-tab simulation: deafen this tab's event stream.
+    // Smoke-only.
+    dropStream: () => { try { if (sseSource) sseSource.close(); } catch { /* already down */ } } };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the
   // post-save refresh across, same window-property idiom as __devices.
