@@ -113,6 +113,7 @@ agents use centrs/quickchr/rosetta directly.
 
 ## Docs
 
+- `SECURITY.md` — security facts and known gaps.
 - `docs/internals.md` — how the pieces fit (bootstrap steps, server
   routes, render services, unlock, registry, smoke).
 - `docs/design/` — design notes carried from the staging archive.
