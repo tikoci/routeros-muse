@@ -223,10 +223,13 @@ describe("installed bundle", () => {
 	});
 
 	tbundle("package.json pins the trilogy to the preview channel", () => {
+		// T133: centrs stays pinned to the 0.1.9 release while the
+		// next tag resolves to a prerelease without the encrypted-CDB
+		// surface (init --encrypt, devices encrypt, --password-stdin).
 		const specs = pinnedTools();
 		expect(specs).toEqual({
 			quickchr: "next",
-			centrs: "next",
+			centrs: "0.1.9",
 			rosetta: "next",
 		});
 	});

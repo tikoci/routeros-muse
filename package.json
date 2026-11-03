@@ -22,7 +22,7 @@
 		"lint:fix": "biome check --write ."
 	},
 	"dependencies": {
-		"@tikoci/centrs": "next",
+		"@tikoci/centrs": "0.1.9",
 		"@tikoci/quickchr": "next",
 		"@tikoci/rosetta": "next",
 		"mermaid": "12.2.0",
