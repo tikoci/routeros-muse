@@ -224,11 +224,11 @@ updated = "2026-11-02"
 [[task]]
 id = "T23"
 title = "Centrs follow-through wave (post-prerelease)"
-status = "active"
+status = "needed"
 detail = "Re-triage the centrs need list against current upstream and the bundled 0.1.9-next.24, verify fixes in the consumer, and resume follow-through. 2026-11-02 developer: centrs is next for upstream work; file one routeros-muse tracking issue with the pressing items (CLI path with an encrypted CDB first, MCP password channel for later per D46)."
-evidence = "T80 2026-11-01: bundle 0.1.9-next.24; #541/#547 merged. T103 issue handoff 2026-11-02: C1=tikoci/centrs#542; C2=#546 closed, consumer L2 verification pending; C7=https://github.com/tikoci/centrs/issues/588; C8=https://github.com/tikoci/centrs/issues/589; C9=https://github.com/tikoci/centrs/issues/590; C10=https://github.com/tikoci/centrs/issues/591; C11=https://github.com/tikoci/centrs/issues/592. C13-C19 existing open issues respectively #551/#558/#581/#582/#583/#587/#586. T22 feature handoff #593/#594/#595. Historical C7-C10 #518 is a coordination reference, not their GitHub issue; #547 fixes C2 only. New historical reports explicitly require current-main reproduction; this task remains needed for consumer verification. Original brief: notes/centrs-followup-prompt.md."
+evidence = "T80 2026-11-01: bundle 0.1.9-next.24; #541/#547 merged. T103 issue handoff 2026-11-02: C1=tikoci/centrs#542; C2=#546 closed, consumer L2 verification pending; C7=https://github.com/tikoci/centrs/issues/588; C8=https://github.com/tikoci/centrs/issues/589; C9=https://github.com/tikoci/centrs/issues/590; C10=https://github.com/tikoci/centrs/issues/591; C11=https://github.com/tikoci/centrs/issues/592. C13-C19 existing open issues respectively #551/#558/#581/#582/#583/#587/#586. T22 feature handoff #593/#594/#595. Historical C7-C10 #518 is a coordination reference, not their GitHub issue; #547 fixes C2 only. New historical reports explicitly require current-main reproduction; this task remains needed for consumer verification. Original brief: notes/centrs-followup-prompt.md. T23 triage 2026-11-02 (codex sol, main 629b01c vs bundle fb8635c): tracking issue https://github.com/tikoci/centrs/issues/602 (pressing items, CLI now / MCP after; no prior MCP password-channel issue, recorded in #602; MCP takes --cdb-password but needs a non-argv, non-inherited-env channel). C9/C10/C17/C19 fixed on main, unbundled: next action is a centrs publish then bump plus consumer verification. Open with no PR: C1, C7, C8, C11, C12(#595), C13, C15, C16, C18; C14 PR #600 ready."
 blocked_by = []
-agent = "codex gpt-6.1-sol (orch claude)"
+agent = ""
 updated = "2026-11-02"
 
 [[task]]

@@ -95,10 +95,10 @@ repo = "centrs"
 title = "Empty-token removal stores empty value"
 status = "needed"
 detail = "devices set target key= should remove the token per docs; stores an empty value instead."
-evidence = "coord 20261027-0337-C #518"
+evidence = "coord 20261027-0337-C #518; T23 triage 2026-11-02 (sol): fixed on centrs main 629b01c via #597/#601, NOT in bundled 0.1.9-next.24 (npm next tag unchanged); consume after the next centrs publish and verify in the consumer."
 blocked_by = []
 agent = ""
-updated = "2026-10-27"
+updated = "2026-11-02"
 
 [[need]]
 id = "C10"
@@ -106,10 +106,10 @@ repo = "centrs"
 title = "transfer/execute transport naming gap"
 status = "needed"
 detail = "transfer ignores record via=ssh (methods are rest/native/sftp); needs explicit --via sftp. Unify naming or document."
-evidence = "coord 20261027-0337-C #518"
+evidence = "coord 20261027-0337-C #518; T23 triage 2026-11-02 (sol): fixed on centrs main 629b01c via #599/#601, NOT in bundled 0.1.9-next.24 (npm next tag unchanged); consume after the next centrs publish and verify in the consumer."
 blocked_by = []
 agent = ""
-updated = "2026-10-27"
+updated = "2026-11-02"
 
 [[need]]
 id = "C11"
@@ -293,10 +293,10 @@ repo = "centrs"
 title = "CDB encrypted init plus open-to-encrypted conversion"
 status = "needed"
 detail = "Supported encrypted-CDB lifecycle: encrypted first-time init (no-clobber, 0600, an existing open CDB must not satisfy encrypted-required) plus one-command open-to-encrypted conversion; explicit backup semantics (converting/rotating never implies old plaintext/ciphertext revoked). Rotation/decryption and any new inspection API stay follow-ups."
-evidence = "tikoci/centrs#558 (filed 2026-10-28; T39 consumer case plus encrypted-init lifecycle comment 2026-11-01); T80 upstream recheck: #558 remains open; T67 permission ruling alone cannot deliver encrypted first-run setup. Keep no-clobber encrypted init and open conversion in the upstream lane; consume through @next, no private CDB writer."
+evidence = "tikoci/centrs#558 (filed 2026-10-28; T39 consumer case plus encrypted-init lifecycle comment 2026-11-01); T80 upstream recheck: #558 remains open; T67 permission ruling alone cannot deliver encrypted first-run setup. Keep no-clobber encrypted init and open conversion in the upstream lane; consume through @next, no private CDB writer.; T23 triage 2026-11-02: PR tikoci/centrs#600 open, MERGEABLE/CLEAN, 12 checks green, comment-only reviews; WinBox interop unverified."
 blocked_by = []
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[need]]
 id = "C15"
@@ -326,10 +326,10 @@ repo = "centrs"
 title = "Retrieve-side multi-user record selection"
 status = "needed"
 detail = "With two users on one target, retrieve has no working record selector (--user is a login override, --where user= fails, --match rejected) while remediation text advises re-running with --match. Need a retrieve-side selector consistent with show --match, plus corrected remediation text."
-evidence = "tikoci/centrs#583 (filed 2026-11-01 from T80 verification against real centrs 0.1.9-next.24; local consumption T68)"
+evidence = "tikoci/centrs#583 (filed 2026-11-01 from T80 verification against real centrs 0.1.9-next.24; local consumption T68); T23 triage 2026-11-02 (sol): fixed on centrs main 629b01c via #598/#601, NOT in bundled 0.1.9-next.24 (npm next tag unchanged); consume after the next centrs publish and verify in the consumer."
 blocked_by = []
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[need]]
 id = "Q3"
@@ -359,7 +359,7 @@ repo = "centrs"
 title = "centrs retrieve dispatches a non-read when a path fragment drops /print"
 status = "needed"
 detail = "T101 round-2 review (sol, 2026-11-02), CONFIRMED on a disposable CHR 7.24.5: `centrs retrieve --quickchr <vm> '/system/reboot#' --no-validate --attribute uptime --json` rebooted the router without --yes. centrs appends /print, but URL fragment handling drops it, so the wire request is POST /rest/system/reboot with a .proplist body (src/protocols/adapter.ts:351 and :1338; installed 0.1.9-next.24 reproduces). retrieve must reject paths with '#'/'?' and any target that does not resolve to a print, regardless of --no-validate. A bug, not a security issue (developer 2026-11-02): centrs is a wrapper/helper, not a policy enforcer; the security boundary is the RouterOS account's own policy. `?` has the same effect (offline URL check: path stays /rest/system/reboot). `centrs retrieve` stays in the seeded read set (developer 2026-11-02): centrs validates and splits read from write, RouterOS reveals RO/RW only at run time, and strict setups should use a restricted RouterOS account. Developer fixes it upstream."
-evidence = "sol review of t3/private-muse-config-home 63c5bed, 2026-11-02; upstream https://github.com/tikoci/centrs/issues/586"
+evidence = "sol review of t3/private-muse-config-home 63c5bed, 2026-11-02; upstream https://github.com/tikoci/centrs/issues/586; T23 triage 2026-11-02 (sol): fixed on centrs main 629b01c via #596/#601, NOT in bundled 0.1.9-next.24 (npm next tag unchanged); consume after the next centrs publish and verify in the consumer."
 blocked_by = []
 agent = "developer"
 updated = "2026-11-02"
