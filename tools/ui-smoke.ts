@@ -14,6 +14,8 @@
 // settings default, late join — all on the scriptable T50 fake),
 // and the T49 trust row (on/off/no-workspace) plus device targeting
 // (pill targets become chips; the preamble lands in the turn input),
+// and the T107 flattened-preamble past (the host-flattened session/list
+// shape strips to prose in the past list, never the raw preamble),
 // and the T101 profile row (live :ask-me/:unrestricted on echo),
 // pre-seed list + toggle (file-backed), and access flips both ways,
 // and the T55 ui_* tools (fake-driven bridge calls: toast, opened
@@ -3705,9 +3707,11 @@ try {
 				chipTexts.join(" | ") || "(no chips)",
 			);
 			const domLeak = await page.evaluate(() =>
-				(document.body.textContent ?? "").includes("[routeros-muse context]"),
+				(document.querySelector("#pane-chat")?.textContent ?? "").includes(
+					"[routeros-muse context]",
+				),
 			);
-			check("t49 raw preamble never renders in the DOM", domLeak === false);
+			check("t49 raw preamble never renders in chat", domLeak === false);
 			const t49Turns = nodeFs
 				.readFileSync(t50.log, "utf8")
 				.split("\n")
@@ -3750,14 +3754,64 @@ try {
 				reloadedChips.join(" | ") || "(no chips)",
 			);
 			const reloadedLeak = await page.evaluate(() =>
-				(document.body.textContent ?? "").includes("[routeros-muse context]"),
+				(document.querySelector("#pane-chat")?.textContent ?? "").includes(
+					"[routeros-muse context]",
+				),
 			);
 			check(
-				"t49 raw preamble never renders after reload",
+				"t49 raw preamble never renders in chat after reload",
 				reloadedLeak === false,
 			);
 			await page.screenshot({
 				path: path.join(OUT, "41-t49-target-reload.png"),
+			});
+			// T107: the past-chat list renders /api/past names. The
+			// fake's t50-past2 carries the REAL session/list shape
+			// (host-flattened single line), so this leg proves the
+			// server strip — not the fake's exact-shape past — keeps
+			// the raw preamble out of the past list.
+			await page.waitForFunction(
+				() =>
+					[...document.querySelectorAll("#pastlist .minidev .t")].some((el) =>
+						(el.textContent ?? "").includes("flat past"),
+					),
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const pastNames = await page
+				.locator("#pastlist .minidev .t")
+				.allTextContents();
+			check(
+				"t107 flattened past renders stripped prose",
+				pastNames.some((t) => t === "What did the flat past decide?"),
+				pastNames.join(" | ") || "(no pasts)",
+			);
+			check(
+				"t107 raw preamble never renders for routeros-muse pasts",
+				pastNames
+					.filter((t) => t.includes("[routeros-muse context]"))
+					.every(
+						(t) =>
+							t ===
+							'[routeros-muse context] target device: {"id":"evil","name":"',
+					),
+				pastNames.join(" | ").slice(0, 200),
+			);
+			check(
+				"t107 foreign past title stays verbatim",
+				pastNames.some(
+					(t) =>
+						t ===
+						'[routeros-muse context] target device: {"id":"evil","name":"',
+				),
+				pastNames.join(" | ").slice(0, 200),
+			);
+			await page.click('#crail button[data-crview="rview-past"]');
+			await page.waitForSelector("#pastlist .minidev:visible", {
+				timeout: 10_000,
+			});
+			await page.screenshot({
+				path: path.join(OUT, "41b-t107-flat-past.png"),
 			});
 			// The reloads above fired fresh app batches after
 			// batchT resolved: prove quiescence before the stop.

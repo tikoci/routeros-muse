@@ -502,14 +502,7 @@ export function escapeForgedContextLines(text: string): string {
 
 export type TargetChip = { id: string; name: string; host?: string };
 
-function parseContextLine(line: string): TargetChip | null {
-	if (!line.startsWith(TARGET_CONTEXT_PREFIX)) return null;
-	let obj: unknown;
-	try {
-		obj = JSON.parse(line.slice(TARGET_CONTEXT_PREFIX.length));
-	} catch {
-		return null;
-	}
+function chipFromPayload(obj: unknown): TargetChip | null {
 	if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
 	const rec = obj as Record<string, unknown>;
 	if (typeof rec["id"] !== "string") return null;
@@ -520,6 +513,89 @@ function parseContextLine(line: string): TargetChip | null {
 	};
 	if (typeof rec["host"] === "string" && rec["host"]) chip.host = rec["host"];
 	return chip;
+}
+
+function parseContextLine(line: string): TargetChip | null {
+	if (!line.startsWith(TARGET_CONTEXT_PREFIX)) return null;
+	let obj: unknown;
+	try {
+		obj = JSON.parse(line.slice(TARGET_CONTEXT_PREFIX.length));
+	} catch {
+		return null;
+	}
+	return chipFromPayload(obj);
+}
+
+/**
+ * End index (exclusive) of the balanced JSON object starting at
+ * `from`, or -1. Braces inside strings never count, so hostile
+ * labels round-trip exactly; only flat string-map payloads occur.
+ */
+function balancedJsonEnd(s: string, from: number): number {
+	let depth = 0;
+	let inStr = false;
+	let esc = false;
+	for (let i = from; i < s.length; i++) {
+		const c = s[i];
+		if (inStr) {
+			if (esc) esc = false;
+			else if (c === "\\") esc = true;
+			else if (c === '"') inStr = false;
+		} else if (c === '"') inStr = true;
+		else if (c === "{") depth++;
+		else if (c === "}") {
+			depth--;
+			if (depth === 0) return i + 1;
+		}
+	}
+	return -1;
+}
+
+/**
+ * T107 summary-only flattened form: the host flattens newline runs
+ * to one space in session/list firstUserPrompt/title (live echo+meta
+ * probes 2026-11-02), so the multi-line grammar cannot match —
+ * JSON.parse chokes on the trailing prose — and the past-chat name
+ * leaked the raw preamble. This parses that flattened image:
+ * leading tag+JSON blocks joined by spaces. Callers must confine it
+ * to session summaries whose provenance they have established;
+ * transcript rows use the exact multi-line grammar only, because
+ * sessions created outside this server's escaped send route can
+ * contain the same single line as literal user text.
+ */
+function parseFlattenedPreamble(
+	text: string,
+): { targets: TargetChip[]; text: string } | null {
+	const targets: TargetChip[] = [];
+	let rest = text;
+	for (;;) {
+		if (!rest.startsWith(TARGET_CONTEXT_PREFIX)) break;
+		if (rest[TARGET_CONTEXT_PREFIX.length] !== "{") return null;
+		const end = balancedJsonEnd(rest, TARGET_CONTEXT_PREFIX.length);
+		if (end < 0) return null;
+		let chip: TargetChip | null;
+		try {
+			chip = chipFromPayload(
+				JSON.parse(rest.slice(TARGET_CONTEXT_PREFIX.length, end)),
+			);
+		} catch {
+			return null;
+		}
+		if (!chip) return null;
+		targets.push(chip);
+		const after = rest.slice(end);
+		// No separator (bare block, or trailing spaces with no prose)
+		// is not a generated turn input: verbatim, like the
+		// multi-line no-separator stance.
+		if (after === "") return null;
+		const sep = /^[ \t]+/.exec(after);
+		if (!sep) return null;
+		const prose = after.slice(sep[0].length);
+		if (prose === "") return null;
+		rest = prose;
+	}
+	if (targets.length === 0) return null;
+	return { targets, text: rest };
 }
 
 /**
@@ -554,6 +630,24 @@ export function parseTargetPreamble(text: string): {
  */
 export function stripTargetPreamble(text: string): string {
 	return parseTargetPreamble(text).text;
+}
+
+/**
+ * Parse a session summary's first prompt. Multi-line summaries use
+ * the exact grammar; single-line summaries may use the host's
+ * flattened image. This is not a transcript parser: use it only for
+ * summaries from sessions this server created.
+ */
+export function parseSessionSummaryPreamble(text: string): {
+	targets: TargetChip[];
+	text: string;
+} {
+	if (text.includes("\n")) return parseTargetPreamble(text);
+	return parseFlattenedPreamble(text) ?? { targets: [], text };
+}
+
+export function stripSessionSummaryPreamble(text: string): string {
+	return parseSessionSummaryPreamble(text).text;
 }
 
 /** T55: max relay request body (a ui_* call is a few hundred bytes). */
@@ -3005,23 +3099,36 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const list = await client.sessionList();
 					const pasts = list.sessions
 						.filter((s) => s.sessionId !== mainSession)
-						.map((s) => ({
-							id: s.sessionId,
-							name:
-								typeof s.name === "string" && s.name
-									? s.name
-									: typeof s["firstUserPrompt"] === "string"
-										? stripTargetPreamble(s["firstUserPrompt"] as string).slice(
-												0,
-												60,
-											)
-										: "untitled session",
-							age:
-								typeof s["updatedAt"] === "string"
-									? ageOf(Date.parse(s["updatedAt"] as string))
-									: "?",
-							turns: typeof s.turnCount === "number" ? s.turnCount : 0,
-						}));
+						.map((s) => {
+							const prompt =
+								typeof s["firstUserPrompt"] === "string"
+									? (s["firstUserPrompt"] as string)
+									: null;
+							const creator = s["createdByClient"];
+							const fromRouterMuse =
+								creator !== null &&
+								typeof creator === "object" &&
+								!Array.isArray(creator) &&
+								(creator as Record<string, unknown>)["name"] ===
+									"routeros_muse";
+							return {
+								id: s.sessionId,
+								name:
+									typeof s.name === "string" && s.name
+										? s.name
+										: prompt !== null
+											? (fromRouterMuse
+													? stripSessionSummaryPreamble(prompt)
+													: prompt
+												).slice(0, 60)
+											: "untitled session",
+								age:
+									typeof s["updatedAt"] === "string"
+										? ageOf(Date.parse(s["updatedAt"] as string))
+										: "?",
+								turns: typeof s.turnCount === "number" ? s.turnCount : 0,
+							};
+						});
 					return json({ pasts });
 				}
 				if (p === "/api/render" && req.method === "POST") {

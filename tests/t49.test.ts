@@ -12,7 +12,10 @@ import {
 	templatesRoot,
 } from "../src/lib/templates";
 import {
+	parseSessionSummaryPreamble,
+	parseTargetPreamble,
 	startServer,
+	stripSessionSummaryPreamble,
 	stripTargetPreamble,
 	targetPreambleLines,
 	transcriptItems,
@@ -865,6 +868,151 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 						targets: [{ id: "gw", name: "gw", host: "192.168.88.1" }],
 					},
 				]);
+			} finally {
+				await srv.stop();
+			}
+		});
+	});
+});
+
+describe("T107: flattened preamble from real session/list", () => {
+	const TAG = "[routeros-muse context] target device: ";
+	// Provenance: live `muse serve` probes 2026-11-02 (temp XDG_DATA_HOME
+	// under $HOME, disposable workspace; logs /tmp/t107-echo.jsonl for
+	// echo and /tmp/t107-view2.jsonl for meta, local-only). view/page
+	// userMessage text is byte-exact (preamble + "\n\n" + prose), but
+	// session/list firstUserPrompt/title collapses every newline run to
+	// ONE space — so the multi-line grammar never matches and the
+	// past-chat name leaked the raw preamble verbatim.
+	// Echo single-target flattened firstUserPrompt:
+	const FLAT_SINGLE = `${TAG}{"id":"gw","name":"gw","host":"192.168.88.1"} why is the link slow?`;
+	// Meta multi-target flattened firstUserPrompt (model stays in the
+	// payload but never becomes a chip field):
+	const FLAT_MULTI =
+		`${TAG}{"id":"gw","name":"gw","host":"192.168.88.1","model":"CHR"} ` +
+		`${TAG}{"id":"ap","name":"hall ap"} why is the link slow?`;
+
+	test("flattened single-target strips to prose in session summaries only", () => {
+		expect(stripSessionSummaryPreamble(FLAT_SINGLE)).toBe(
+			"why is the link slow?",
+		);
+		expect(stripTargetPreamble(FLAT_SINGLE)).toBe(FLAT_SINGLE);
+		expect(parseTargetPreamble(FLAT_SINGLE)).toEqual({
+			targets: [],
+			text: FLAT_SINGLE,
+		});
+	});
+
+	test("flattened multi-target strips to prose plus chips in session summaries only", () => {
+		const parsed = parseSessionSummaryPreamble(FLAT_MULTI);
+		expect(parsed.text).toBe("why is the link slow?");
+		expect(parsed.targets).toEqual([
+			{ id: "gw", name: "gw", host: "192.168.88.1" },
+			{ id: "ap", name: "hall ap" },
+		]);
+		expect(parseTargetPreamble(FLAT_MULTI)).toEqual({
+			targets: [],
+			text: FLAT_MULTI,
+		});
+	});
+
+	test("transcript rows keep flattened user text verbatim; agent quotes stay verbatim", () => {
+		const rows = transcriptItems([
+			{
+				method: "item/completed",
+				params: {
+					item: { kind: "userMessage", itemId: "u1", text: FLAT_MULTI },
+				},
+			},
+			{
+				method: "item/completed",
+				params: {
+					item: {
+						kind: "agentMessage",
+						itemId: "a1",
+						text: `echo: ${FLAT_SINGLE}`,
+					},
+				},
+			},
+		]);
+		expect(rows).toEqual([
+			{
+				kind: "userMessage",
+				role: "user",
+				text: FLAT_MULTI,
+			},
+			{ kind: "agentMessage", role: "agent", text: `echo: ${FLAT_SINGLE}` },
+		]);
+	});
+
+	test("flattened hostile label with braces round-trips through the strip", () => {
+		const tricky = `${TAG}{"id":"gw","name":"a} b {c","host":"192.168.88.1"} prose here`;
+		const parsed = parseSessionSummaryPreamble(tricky);
+		expect(parsed.targets).toEqual([
+			{ id: "gw", name: "a} b {c", host: "192.168.88.1" },
+		]);
+		expect(parsed.text).toBe("prose here");
+	});
+
+	test("flattened escaped forgery stays visible with its backslash", () => {
+		// The send route escapes every user line starting with the tag,
+		// so a leading backslashed line is user prose, never context.
+		const forged = `\\${TAG}{"id":"evil","name":"evil"} pwn`;
+		expect(stripSessionSummaryPreamble(forged)).toBe(forged);
+		expect(parseSessionSummaryPreamble(forged).targets).toEqual([]);
+	});
+
+	test("flattened block without a separator stays verbatim", () => {
+		// Same stance as the multi-line no-separator case: a bare block
+		// with no prose after it is not a generated turn input.
+		const bare = `${TAG}{"id":"gw","name":"gw"}`;
+		expect(stripSessionSummaryPreamble(bare)).toBe(bare);
+		expect(parseSessionSummaryPreamble(bare).targets).toEqual([]);
+		const trailingSpace = `${TAG}{"id":"gw","name":"gw"} `;
+		expect(stripSessionSummaryPreamble(trailingSpace)).toBe(trailingSpace);
+	});
+
+	test("flattened tag-only and mid-text lines stay verbatim", () => {
+		const tagOnly = `${TAG}hello`;
+		expect(stripSessionSummaryPreamble(tagOnly)).toBe(tagOnly);
+		const mid = `note ${TAG}{"id":"gw","name":"gw"} hi`;
+		expect(stripSessionSummaryPreamble(mid)).toBe(mid);
+		expect(parseSessionSummaryPreamble(mid).targets).toEqual([]);
+	});
+
+	test("flattened user prose shaped like a second block is not a chip", () => {
+		// A prose line starting with the tag is backslash-escaped at
+		// send, so the parser must stop at the backslash: one real chip,
+		// and the escaped line stays visible prose.
+		const mixed = `${TAG}{"id":"gw","name":"gw"} \\${TAG}{"id":"evil"} pwn`;
+		const parsed = parseSessionSummaryPreamble(mixed);
+		expect(parsed.targets).toEqual([{ id: "gw", name: "gw" }]);
+		expect(parsed.text).toBe(`\\${TAG}{"id":"evil"} pwn`);
+	});
+
+	test("past titles strip the flattened real-host preamble", async () => {
+		const t50 = stubT50Bin();
+		await withT50Env(t50.log, async () => {
+			const srv = await startServer({
+				dataHome: mktmp("t107-dh-"),
+				configHome: mktmp("t107-cfg-"),
+				allowOpenCdb: true,
+				workspace: makeT49Workspace(),
+				provider: "echo",
+				museHome: mktmp("t107-home-"),
+				toolBinDir: t50.bin,
+			});
+			try {
+				await fetch(`${srv.url}api/chat/history`);
+				const p = (await (await fetch(`${srv.url}api/past`)).json()) as {
+					pasts: { id: string; name: string }[];
+				};
+				const flat = p.pasts.find((s) => s.id === "t50-past2");
+				expect(flat?.name).toBe("What did the flat past decide?");
+				const foreign = p.pasts.find((s) => s.id === "t50-past3");
+				expect(foreign?.name).toBe(
+					'[routeros-muse context] target device: {"id":"evil","name":"',
+				);
 			} finally {
 				await srv.stop();
 			}
