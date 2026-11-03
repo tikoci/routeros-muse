@@ -868,12 +868,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	let msp: MspClient | null = null;
 	let mainSession: string | null = null;
 	// T71 stop lifecycle: the live run on the main session. runGeneration
-	// starts 0 and bumps on every turnStart send, worker spawn/takeover,
+	// starts at the boot time in ms (restart-monotonic: open tabs gate
+	// late responses on it, so a counter reset to 0 would strand them;
+	// the old server could only outrank it with more bumps than ms of
+	// uptime) and bumps on every turnStart send, worker spawn/takeover,
 	// stopWorker/lock, and effective force-stop; lastTurnId tracks the
 	// live turn (cleared on its turn/completed). Stop pins its interrupt
 	// to the live turn; force-stop pins itself to the generation the UI
 	// saw when Stop was pressed.
-	let runGeneration = 0;
+	let runGeneration = Date.now();
 	let lastTurnId: string | null = null;
 	// Stuck-turn race: while a send's turnStart is in flight this holds
 	// the turn notifications that arrive before the ack resolves (the

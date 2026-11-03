@@ -17,7 +17,13 @@ import * as path from "node:path";
 import { have } from "../src/lib/run";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
-import { startT50Srv, stubT50Bin, T50_FAKE_MUSE, withT50Env } from "./t50-fake";
+import {
+	makeT50Workspace,
+	startT50Srv,
+	stubT50Bin,
+	T50_FAKE_MUSE,
+	withT50Env,
+} from "./t50-fake";
 import { pollT71Log } from "./t71-fake";
 
 afterAll(cleanupTmpdirs);
@@ -157,6 +163,41 @@ async function unlock(srvUrl: string): Promise<string> {
 }
 
 describe("main-session swap (T60 resume + T85 new)", () => {
+	t(
+		"generation keeps rising across a server restart (open tabs gate on it)",
+		async () => {
+			// Tabs ignore history/main-changed older than the generation they
+			// adopted; a restart that reset the counter would strand every
+			// open tab (stale ignores, 409 loops). Seeded from boot time, the
+			// new server's first generation outranks anything the old one sent.
+			const { bin, log } = stubT50Bin();
+			await withT50Env(log, async () => {
+				const workspace = makeT50Workspace();
+				const a = await startT50Srv(bin, { workspace });
+				let before: number;
+				try {
+					await postJson(`${a.url}api/chat/send`, { text: "RESTART-A" });
+					await waitIdle(a.url);
+					const created = await postJson(`${a.url}api/chat/new`, {});
+					expect(created.status).toBe(200);
+					before = created.json["generation"] as number;
+					expect(typeof before).toBe("number");
+				} finally {
+					await a.stop();
+				}
+				const b = await startT50Srv(bin, { workspace, dataHome: a.dataHome });
+				try {
+					const hist = await getJson(`${b.url}api/chat/history`);
+					expect(typeof hist["generation"]).toBe("number");
+					expect(hist["generation"] as number).toBeGreaterThan(before);
+				} finally {
+					await b.stop();
+				}
+			});
+		},
+		60_000,
+	);
+
 	t(
 		"new swaps main: next send goes to the new id, transcript resets, old main is past",
 		async () => {
