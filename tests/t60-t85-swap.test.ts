@@ -606,6 +606,44 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 	);
 
 	t(
+		"foreign-workspace sessions never show and never resume (P2-4)",
+		async () => {
+			const { bin, log } = stubT50Bin();
+			await withT50Env(
+				log,
+				async () => {
+					const srv = await startT50Srv(bin);
+					try {
+						const first = await postJson(`${srv.url}api/chat/send`, {
+							text: "P24-S1",
+						});
+						expect(first.json["ok"]).toBe(true);
+						await waitIdle(srv.url);
+						const past = await getJson(`${srv.url}api/past`);
+						const ids = ((past["pasts"] as { id: string }[]) ?? []).map(
+							(p) => p.id,
+						);
+						expect(ids.length).toBeGreaterThan(0);
+						expect(ids).not.toContain("t50-foreign1");
+						const denied = await postJson(`${srv.url}api/chat/resume`, {
+							sessionId: "t50-foreign1",
+						});
+						expect(denied.status).toBe(404);
+						expect(denied.json["error"]).toBe("not-this-workspace");
+						// Main unchanged: still the first session.
+						const hist = await getJson(`${srv.url}api/chat/history`);
+						expect(hist["sessionId"]).toBe(first.json["sessionId"]);
+					} finally {
+						await srv.stop();
+					}
+				},
+				{ FAKE_FOREIGN_SESSION: "1" },
+			);
+		},
+		60_000,
+	);
+
+	t(
 		"a swap queued behind another never spawns after lock (P1-3)",
 		async () => {
 			const { bin, log } = stubSwapBin();

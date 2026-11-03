@@ -696,6 +696,27 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// No-workspace mode still needs a root for the MSP session: the
 	// server's cwd, honestly labeled. Workspace file routes refuse.
 	const root = noWs ? process.cwd() : path.resolve(opts.workspace as string);
+	// P2-4: the workspaceRoot every session/start carries, realpath-
+	// canonical. A session belongs to this server only when its own
+	// workspaceRoot canonicalizes to the same value (same muse data
+	// home, another workspace root is a foreign session).
+	let canonicalRoot: string;
+	try {
+		canonicalRoot = nodeFs.realpathSync(root);
+	} catch {
+		canonicalRoot = root;
+	}
+	function sessionIsOurs(s: MspSession): boolean {
+		const ws = s.workspaceRoot;
+		if (typeof ws !== "string" || !ws) return false;
+		let canon: string;
+		try {
+			canon = nodeFs.realpathSync(ws);
+		} catch {
+			return false;
+		}
+		return canon === canonicalRoot;
+	}
 	if (!noWs && !nodeFs.existsSync(path.join(root, "workspace.toml"))) {
 		throw new Error(`not a workspace (no workspace.toml): ${root}`);
 	}
@@ -3085,11 +3106,19 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							key,
 							async (client) => {
 								const list = await client.sessionList();
-								if (!list.sessions.some((s) => s.sessionId === sid)) {
+								const found = list.sessions.find((s) => s.sessionId === sid);
+								if (!found) {
 									throw new SwapRefusal(
 										404,
 										"unknown-session",
 										`no session ${sid} in this workspace`,
+									);
+								}
+								if (!sessionIsOurs(found)) {
+									throw new SwapRefusal(
+										404,
+										"not-this-workspace",
+										`session ${sid} belongs to another workspace`,
 									);
 								}
 								const resumed = await client.sessionResume(sid);
@@ -3711,7 +3740,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const client = await ensureMsp(key);
 					const list = await client.sessionList();
 					const pasts = list.sessions
-						.filter((s) => s.sessionId !== mainSession)
+						.filter((s) => s.sessionId !== mainSession && sessionIsOurs(s))
 						.map((s) => {
 							const prompt =
 								typeof s["firstUserPrompt"] === "string"
