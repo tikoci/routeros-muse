@@ -3299,6 +3299,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json({
 						ok: true,
 						sessionId: sid,
+						// The main generation (same monotonic counter as
+						// main/changed): the UI gates late responses on it.
+						generation: runGeneration,
 						...(await historyOf(key, sid)),
 					});
 				}

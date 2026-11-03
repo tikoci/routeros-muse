@@ -809,11 +809,11 @@
     // shown). With no live turn Stop is inert — its handler already
     // ignores disabled clicks — and the ticker's own disabled state
     // (STOP_PIN set) is never touched here.
-    const showSend = !AGENT_RUNNING && ADOPTING === 0 && META_AUTH !== "absent";
+    const showSend = !AGENT_RUNNING && ADOPTING === 0 && PENDING_MAIN === null && META_AUTH !== "absent";
     document.getElementById("sendbtn").style.display = showSend ? "" : "none";
     const stop = document.getElementById("stopbtn");
-    stop.style.display = (AGENT_RUNNING || ADOPTING > 0) ? "" : "none";
-    if (ADOPTING > 0 && !AGENT_RUNNING) stop.disabled = true;
+    stop.style.display = (AGENT_RUNNING || ADOPTING > 0 || PENDING_MAIN !== null) ? "" : "none";
+    if ((ADOPTING > 0 || PENDING_MAIN !== null) && !AGENT_RUNNING) stop.disabled = true;
     else if (STOP_PIN === null) stop.disabled = false;
     refreshSwapButtons();
   }
@@ -857,6 +857,18 @@
   // each other's visual). While nonzero Send is disabled with the
   // running visual and send() refuses to dispatch.
   let ADOPTING = 0;
+  // SSE-reconnect round: a newer main adopted while a turn streams.
+  // The pair waits here (transcript untouched) until the turn
+  // completes; Send refuses meanwhile with the adopting visual.
+  let PENDING_MAIN = null;
+  // Stream continuity: every SSE (re)open bumps STREAM_GEN, and every
+  // run start stamps TURN_GEN. A run is provably live only on the
+  // current continuity — anything older may have completed in a deaf
+  // gap, and a newer main then adopts immediately instead of
+  // stranding on a completion that will never arrive.
+  let STREAM_GEN = 0;
+  let TURN_GEN = -1;
+  function isTurnLive() { return AGENT_RUNNING && TURN_GEN === STREAM_GEN; }
   // P2-6: the main this tab believes in, learned from loadHistory and
   // main/changed (window-scoped like __pasts, so scripted checks can
   // gate on it). Sends pin it; a 409 adopts the server's newer pair.
@@ -910,8 +922,8 @@
   }
   function setRunning(on) {
     AGENT_RUNNING = on;
-    if (on) runSecs = 0;
-    else stopReset();
+    if (on) { runSecs = 0; TURN_GEN = STREAM_GEN; }
+    else { TURN_GEN = -1; stopReset(); }
     document.getElementById("runstat").style.display = on ? "" : "none";
     document.getElementById("runstat").title = on ? "Agent is running" : "Agent is idle";
     refreshSendVisibility();
@@ -2503,8 +2515,9 @@
     text = (text || "").trim();
     if (!text && pendingImages.length === 0) return;
     // P2-5: the adopting swap owns the composer — refuse before the
-    // snapshot so the draft stays exactly as typed.
-    if (ADOPTING > 0) return;
+    // snapshot so the draft stays exactly as typed. A deferred
+    // adoption (pending refresh) refuses the same way.
+    if (ADOPTING > 0 || PENDING_MAIN !== null) return;
     // T69: capture + clear the payload atomically (no await above this
     // line): text-only double-sends were already safe via the input
     // clear, but images cleared only after ack, so a second dispatch
@@ -2535,19 +2548,10 @@
       if (!r.ok || !j || j.ok !== true) {
         failSend(saved, optimistic, (j && typeof j.why === "string" && j.why) || ("HTTP " + r.status), j && j.code);
         // P2-6: our main id went stale mid-flight — adopt the current
-        // one. Idle tabs reload the transcript; a live turn keeps
-        // streaming (SSE already carries the new main) and only the
-        // id, past list and meter catch up. Idleness is AGENT_RUNNING
-        // alone — LIVE_TURN also names completed turns, and a stale
-        // (completed) id must never block the reload.
+        // one through the one adopt path (idle tabs reload the
+        // transcript; a live turn defers to a pending refresh).
         if (r.status === 409 && j && j.error === "main-changed") {
-          if (typeof j.sessionId === "string") window.__mainSession = j.sessionId;
-          if (typeof j.generation === "number") window.__mainGen = j.generation;
-          if (!AGENT_RUNNING) {
-            await afterSwap();
-          } else {
-            await Promise.all([loadPast(), refreshStatpop()]);
-          }
+          await applyMainChanged(j.sessionId, j.generation);
         }
         return;
       }
@@ -2580,9 +2584,28 @@
       return;
     }
     if (sid === window.__mainSession && gen === window.__mainGen) return;
+    if (isTurnLive()) {
+      // Don't replace the transcript mid-stream: hold the pair for a
+      // pending refresh (the turn's end consumes it) and refuse Send
+      // meanwhile. The shown id stays the old one until the adoption
+      // lands; past list and meter catch up now.
+      PENDING_MAIN = { sid, gen };
+      refreshSendVisibility();
+      await Promise.all([loadPast(), refreshStatpop()]);
+      return;
+    }
     window.__mainSession = sid;
     window.__mainGen = gen;
     await afterSwap(stamp);
+  }
+  // A deferred adoption waits out its turn here; idling (turn/completed
+  // settle, force-stop ok) runs the full adoption now.
+  function consumePendingMain() {
+    if (PENDING_MAIN === null) return;
+    const p = PENDING_MAIN;
+    PENDING_MAIN = null;
+    refreshSendVisibility();
+    applyMainChanged(p.sid, p.gen);
   }
   async function afterSwap(stamp) {
     // P2-5: only pre-swap run state clears — a newer turn that went
@@ -3257,6 +3280,7 @@
         streamItem = null;
         clearChips();
         refreshStatpop();
+        consumePendingMain();
       };
       if (typeof doneId === "string") {
         if (doneId === LIVE_TURN) { settle(); return; }
@@ -4107,6 +4131,7 @@
       streamItem = null;
       clearChips();
       refreshStatpop();
+      consumePendingMain();
       stopNote("Stopped via " + stepName + ".", false);
     });
     $("adddevice").addEventListener("click", () => {
@@ -4312,6 +4337,44 @@
   // P2-6 smoke seam: the live event stream, so scripted checks can
   // deafen one tab (a closed EventSource never reconnects).
   let sseSource = null;
+  // (Re)open the live event stream. Native retry reuses the same
+  // EventSource (its onopen refires); the smoke seam below opens a
+  // fresh one after dropStream. Every open runs the same handlers.
+  function connectStream() {
+    if (sseSource) { try { sseSource.close(); } catch { /* already down */ } }
+    const es = new EventSource("/api/chat/events");
+    es.onmessage = onStream;
+    sseSource = es;
+    // T45: stream drops used to be silent (stale Stop, no rows). Native
+    // retry reconnects; the chip says so until it succeeds. T50: a
+    // Every open recovers — reconnects (frames may have been lost
+    // in the gap) AND the first connect: the history-triggered
+    // pending fetch can finish before SSE connects, and a prompt
+    // emitted in between is missed by both paths unless the first
+    // open recovers too.
+    es.onerror = () => { $("ssestate").style.display = ""; };
+    es.onopen = () => {
+      $("ssestate").style.display = "none";
+      STREAM_GEN += 1;
+      reconcileMain();
+      recoverPending();
+    };
+  }
+  // Every SSE (re)open re-reads the current main: a tab that missed
+  // main/changed while deaf adopts it here instead of sitting on the
+  // old session. Session identity decides — the generation advances
+  // on every turn, so the pair differs after any turn even on the
+  // same main (comparing it would spuriously re-adopt on every
+  // reconnect). The pair flows through the one adopt path (pending
+  // refresh included); the transcript payload is discarded — the
+  // adoption refetches when it actually swaps.
+  async function reconcileMain() {
+    let j = null;
+    try { j = await getJSON("/api/chat/history"); } catch { return; }
+    if (!j || j.ok !== true) return;
+    if (typeof j.sessionId !== "string" || j.sessionId === window.__mainSession) return;
+    applyMainChanged(j.sessionId, j.generation);
+  }
   function enterApp(st) {
     hideOverlays();
     setAuthRow(st);
@@ -4327,23 +4390,7 @@
     // No loadTwins(): the Twins tab fetches on first show (T38 on-demand).
     loadPast();
     loadHistory().then(() => { refreshStatpop(); recoverPending(); });
-    const es = new EventSource("/api/chat/events");
-    es.onmessage = onStream;
-    sseSource = es;
-    // T45: stream drops used to be silent (stale Stop, no rows). Native
-    // retry reconnects; the chip says so until it succeeds. T50: a
-    // Every open recovers — reconnects (frames may have been lost
-    // in the gap) AND the first connect: the history-triggered
-    // pending fetch can finish before SSE connects, and a prompt
-    // emitted in between is missed by both paths unless the first
-    // open recovers too.
-    let sseDown = false;
-    es.onerror = () => { sseDown = true; $("ssestate").style.display = ""; };
-    es.onopen = () => {
-      $("ssestate").style.display = "none";
-      sseDown = false;
-      recoverPending();
-    };
+    connectStream();
   }
 
   wireComposer();
@@ -4377,7 +4424,10 @@
     wsReady: () => { WSSTATUS = true; chatCatchUp(); },
     // P2-6 stale-tab simulation: deafen this tab's event stream.
     // Smoke-only.
-    dropStream: () => { try { if (sseSource) sseSource.close(); } catch { /* already down */ } } };
+    dropStream: () => { try { if (sseSource) sseSource.close(); } catch { /* already down */ } },
+    // SSE-reconnect simulation: open a fresh stream after dropStream
+    // (a closed EventSource never reconnects on its own). Smoke-only.
+    reconnectStream: () => { connectStream(); } };
   // T48: the set-credentials modal lives in the global script block
   // above while the inventory loader lives in this IIFE — bridge the
   // post-save refresh across, same window-property idiom as __devices.

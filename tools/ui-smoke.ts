@@ -25,7 +25,10 @@
 // images and pills with the why toasted; restore-if-empty; a failed
 // second send leaves the live turn alone), and the swap-review two-tab
 // legs (adopting Send lock, main/changed follow, stale-send 409
-// restore, past-load race, no-demo-data markup).
+// restore, past-load race, no-demo-data markup), and the SSE-reconnect
+// legs (a tab that missed main/changed while deaf adopts on reopen; a
+// turn live at reopen defers the transcript swap until it completes,
+// refusing Send meanwhile).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -57,6 +60,7 @@ type SmokeHook = {
 	wsPending: () => void;
 	wsReady: () => void;
 	dropStream: () => void;
+	reconnectStream: () => void;
 	loadStatus: () => Promise<void>;
 };
 
@@ -5127,6 +5131,281 @@ try {
 		} finally {
 			await pageB.close();
 			await srvS.stop();
+		}
+	});
+
+	// SSE-reconnect legs on the scriptable fake. A tab that missed
+	// main/changed while its SSE was down adopts the current main when
+	// the stream reopens (same adopt path); when a turn is live at
+	// reopen the transcript swap defers until it completes (pending
+	// refresh: Send refused with the adopting visual, adoption on
+	// completion, next send on the new main). Screenshots 56-58.
+	const r2 = stubT50Bin();
+	await withT50Env(r2.log, async () => {
+		const srvR = await startServer({
+			dataHome: mktmp("ui-smoke-r2-dh-"),
+			configHome: SMOKE_CONFIG_HOME,
+			allowOpenCdb: true,
+			workspace: makeWorkspace(),
+			provider: "echo",
+			museHome: makeHome(),
+			toolBinDir: r2.bin,
+		});
+		const pageR = await browser.newPage({
+			viewport: { width: 1600, height: 900 },
+		});
+		pageR.on("console", (msg) => {
+			if (msg.type() === "error") {
+				consoleErrors.push(msg.text().slice(0, 300));
+			}
+		});
+		pageR.on("response", (res) => {
+			if (res.status() >= 400) {
+				const req = res.request();
+				failedResponses.push({
+					status: res.status(),
+					method: req.method(),
+					pathname: new URL(req.url()).pathname,
+				});
+			}
+		});
+		pageR.on("pageerror", (err) =>
+			pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
+		);
+		try {
+			await page.goto(srvR.url, { waitUntil: "load" });
+			const batchR = watchAppBatch(page);
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			const rIdle = (pg: Page): Promise<void> =>
+				pg
+					.waitForSelector("#sendbtn:visible", { timeout: 15_000 })
+					.then(() => undefined);
+			const rAgent = (pg: Page, probe: string, ms = 30_000): Promise<boolean> =>
+				pg
+					.waitForFunction(
+						(p) =>
+							[...document.querySelectorAll("#pane-chat .msg")].some((el) =>
+								(el.textContent ?? "").includes(p),
+							),
+						probe,
+						{ timeout: ms },
+					)
+					.then(() => true)
+					.catch(() => false);
+			const rOk = (p: Promise<unknown>): Promise<boolean> =>
+				p.then(() => true).catch(() => false);
+			const rMainOf = (pg: Page): Promise<unknown> =>
+				pg.evaluate(
+					() => (window as unknown as Record<string, unknown>)["__mainSession"],
+				);
+
+			// S1 gets its marker; B loads onto S1 (reloaded onto the
+			// settled history, like the swap-review block — B's first
+			// paint races A's just-completed turn).
+			await page.fill("#chatinput", "R2-S1-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 first exchange lands", await rAgent(page, "R2-S1-MARKER"));
+			await rIdle(page);
+			await pageR.goto(srvR.url, { waitUntil: "load" });
+			await pageR.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await pageR.reload({ waitUntil: "load" });
+			await pageR.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			check(
+				"r2 B shows S1 without sending",
+				await rAgent(pageR, "R2-S1-MARKER"),
+			);
+
+			// Leg 1: B deaf, A swaps S1->S2 and marks it, B reconnects.
+			await pageR.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R2-S2-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 S2 marker lands", await rAgent(page, "R2-S2-MARKER"));
+			await rIdle(page);
+			await pageR.evaluate(() => window.__smoke?.reconnectStream());
+			check(
+				"r2 reconnected tab adopts the current main id",
+				await rOk(
+					pageR.waitForFunction(
+						() =>
+							(window as unknown as Record<string, unknown>)[
+								"__mainSession"
+							] === "t50-s2",
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			check(
+				"r2 reconnected tab shows the new transcript",
+				await rAgent(pageR, "R2-S2-MARKER", 10_000),
+			);
+			check(
+				"r2 reconnected tab drops the old transcript",
+				!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S1-MARKER",
+				),
+			);
+			await pageR.screenshot({ path: path.join(OUT, "56-r2-reconnected.png") });
+
+			// Leg 2 (variant): a turn is live on S3 at reconnect. B's
+			// reconcile history stays held until S3's turn/started
+			// reaches B's fresh stream, so the adoption must defer.
+			await pageR.evaluate(() => window.__smoke?.dropStream());
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R2-S3-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 S3 marker lands", await rAgent(page, "R2-S3-MARKER"));
+			await rIdle(page);
+			let releaseHist!: () => void;
+			const histGate = new Promise<void>((r) => {
+				releaseHist = r;
+			});
+			let heldFirst = false;
+			await pageR.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldFirst) {
+					heldFirst = true;
+					await histGate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await pageR.evaluate(() => window.__smoke?.reconnectStream());
+			await page.fill("#chatinput", "NEED-APPROVAL r2 live");
+			await page.click("#sendbtn");
+			await page.waitForSelector(".appr-card.hold-pending", {
+				timeout: 15_000,
+			});
+			check(
+				"r2 reconnecting tab sees the live turn",
+				await rOk(
+					pageR.waitForFunction(
+						() => {
+							const b = document.getElementById(
+								"stopbtn",
+							) as HTMLButtonElement | null;
+							return b !== null && b.style.display !== "none";
+						},
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			releaseHist();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r2 pending keeps the old transcript mid-stream",
+				((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S2-MARKER",
+				),
+			);
+			// Refusal dispatches nothing: a 409-restore would also keep
+			// the draft, so the spy (not the input) proves it.
+			let r2sends = 0;
+			await pageR.route("**/api/chat/send", async (route) => {
+				r2sends += 1;
+				const res = await route.fetch();
+				await route.fulfill({ response: res });
+			});
+			await pageR.fill("#chatinput", "R2-PENDING-DRAFT");
+			await pageR.press("#chatinput", "Enter");
+			await new Promise((r) => setTimeout(r, 500));
+			check(
+				"r2 pending refuses Send and keeps the draft",
+				r2sends === 0 &&
+					(await pageR.locator("#chatinput").inputValue()) ===
+						"R2-PENDING-DRAFT" &&
+					!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+						"R2-PENDING-DRAFT",
+					),
+				`sends=${r2sends}`,
+			);
+			await pageR.unroute("**/api/chat/send");
+			await pageR.fill("#chatinput", "");
+			await pageR.screenshot({ path: path.join(OUT, "57-r2-pending.png") });
+			await pageR
+				.locator('.appr-card.hold-pending .appr-btn[data-choice="allow_once"]')
+				.first()
+				.click();
+			check(
+				"r2 adoption lands on completion",
+				await rAgent(pageR, "R2-S3-MARKER", 15_000),
+			);
+			check(
+				"r2 adoption drops the old transcript",
+				!((await pageR.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S2-MARKER",
+				),
+			);
+			await rIdle(page);
+			await rIdle(pageR);
+			await pageR.fill("#chatinput", "R2-NEXT-ON-S3");
+			await pageR.press("#chatinput", "Enter");
+			check(
+				"r2 next send lands on the adopted main",
+				await rAgent(pageR, "R2-NEXT-ON-S3"),
+			);
+			await rIdle(pageR);
+			check("r2 adopted main id is S3", (await rMainOf(pageR)) === "t50-s3");
+			// The send really landed on S3 (user rows never stream to
+			// other tabs, so the server history — not tab A — proves it).
+			const r2hist = await page.evaluate(async () => {
+				const r = await fetch("/api/chat/history");
+				return (await r.json()) as {
+					sessionId: string;
+					messages: { text: string }[];
+				};
+			});
+			check(
+				"r2 next send is in S3's server history",
+				r2hist.sessionId === "t50-s3" &&
+					r2hist.messages.some((m) => m.text.includes("R2-NEXT-ON-S3")),
+			);
+			await pageR.screenshot({ path: path.join(OUT, "58-r2-adopted.png") });
+			await pageR.unroute("**/api/chat/history");
+
+			// Quiescence before the stop (mirrors the T60 block).
+			await page.evaluate(async () => {
+				await Promise.all(
+					["/api/chat/models", "/api/past", "/api/chat/history"].map((p) =>
+						fetch(p),
+					),
+				);
+			});
+			await batchR;
+		} finally {
+			await pageR.close();
+			await srvR.stop();
 		}
 	});
 
