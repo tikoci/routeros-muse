@@ -604,4 +604,62 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 		},
 		60_000,
 	);
+
+	t(
+		"resume publishes the re-applied settings, never the stale snapshot (P1-1)",
+		async () => {
+			const { bin, log } = stubT50Bin();
+			await withT50Env(log, async () => {
+				const srv = await startT50Srv(bin);
+				try {
+					// s1 starts Ask-first; flip to Allow-all while live.
+					const first = await postJson(`${srv.url}api/chat/send`, {
+						text: "P11-S1",
+					});
+					const s1 = first.json["sessionId"];
+					await waitIdle(srv.url);
+					expect(
+						(
+							await postJson(`${srv.url}api/chat/access`, {
+								mode: "allowAll",
+							})
+						).json["ok"],
+					).toBe(true);
+					// s2 starts Allow-all; flip back to Ask-first (s2
+					// live, s1 keeps Allow-all in the fake's store).
+					const created = await postJson(`${srv.url}api/chat/new`, {});
+					expect(created.json["ok"]).toBe(true);
+					expect(
+						(
+							await postJson(`${srv.url}api/chat/access`, {
+								mode: "promptUnmatched",
+							})
+						).json["ok"],
+					).toBe(true);
+					// Resume the Allow-all s1 under Ask-first: the resume
+					// snapshot still says :unrestricted, the setters say
+					// :ask-me, and the published state must be the latter.
+					const back = await postJson(`${srv.url}api/chat/resume`, {
+						sessionId: s1,
+					});
+					expect(back.json["ok"]).toBe(true);
+					const stats = await getJson(`${srv.url}api/chat/stats`);
+					expect(stats["access"]).toBe("promptUnmatched");
+					expect(stats["profile"]).toBe(":ask-me");
+					const status = await getJson(`${srv.url}api/status`);
+					expect(status["permissionProfile"]).toBe(":ask-me");
+					const created2 = await postJson(`${srv.url}api/chat/new`, {});
+					const s3 = created2.json["sessionId"];
+					await pollT71Log(log, new RegExp(`START session=${s3} `), 15_000);
+					const text = nodeFs.readFileSync(log, "utf8");
+					expect(text).toContain(
+						`START session=${s3} approvalMode=promptUnmatched permissionProfile=:ask-me`,
+					);
+				} finally {
+					await srv.stop();
+				}
+			});
+		},
+		60_000,
+	);
 });

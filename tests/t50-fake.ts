@@ -38,7 +38,14 @@ const log = process.env["T50_LOG"] ?? "";
 // T60/T85: FAKE_START_DELAY_MS delays session/start answers (stale-
 // generation probes); FAKE_RESUME_ABNORMAL=1 attaches abnormalEnd to
 // session/resume results; FAKE_RESUME_INUSE=1 fails it sessionInUse.
+// Swap-review fixes: FAKE_MODE_DELAY_MS delays session/setApprovalMode
+// answers (P1-2 access-vs-new race); FAKE_INTERRUPT_ACK_DELAY_MS delays
+// the turn/interrupt ack while the completion still lands promptly
+// (stop-in-progress proof); FAKE_FOREIGN_SESSION=1 adds a session/list
+// entry from another workspace (P2-4).
 const startDelayMs = Number(process.env["FAKE_START_DELAY_MS"] ?? "0");
+const modeDelayMs = Number(process.env["FAKE_MODE_DELAY_MS"] ?? "0");
+const interruptAckDelayMs = Number(process.env["FAKE_INTERRUPT_ACK_DELAY_MS"] ?? "0");
 function logLine(line) {
 	if (log) fs.appendFileSync(log, line + "\n");
 }
@@ -58,9 +65,20 @@ let workspaceRoot = "";
 // bridge through them, the way the real host would).
 let sessionMcp = false;
 let mcpConfig = null;
-// T101: the live profile id (canned permissionState per profile,
-// captured shapes: :ask-me sandboxed/off/human, :unrestricted open).
-let liveProfile = ":unrestricted";
+// T101: canned permissionState per profile (captured shapes: :ask-me
+// sandboxed/off/human, :unrestricted open). Swap-review P1-1: the
+// profile, approval mode, model and effort live PER SESSION (a global
+// made resume-staleness tests pass vacuously — every snapshot agreed
+// with the setters by construction).
+const sessionState = new Map();
+function stateOf(sid) {
+	let st = sessionState.get(sid);
+	if (!st) {
+		st = { profile: ":unrestricted", mode: "allowAll", model: null, effort: null, ws: workspaceRoot };
+		sessionState.set(sid, st);
+	}
+	return st;
+}
 function permState(id) {
 	const sandboxed = id === ":ask-me" || id === ":auto-review" || id === ":read-only";
 	return {
@@ -426,7 +444,7 @@ rl.on("line", (text) => {
 	if (method === "session/start") {
 		logLine("RECV_START");
 		workspaceRoot = String(params.workspaceRoot ?? "");
-		liveProfile = String(params.permissionProfile ?? ":unrestricted");
+		const startProfile = String(params.permissionProfile ?? ":unrestricted");
 		mcpConfig =
 			(params.config && params.config.mcpServers) || null;
 		// T55: the grounded B2 refusal — config without the
@@ -451,11 +469,16 @@ rl.on("line", (text) => {
 			liveSessions.push(sid);
 		}
 		startedOnce = true;
+		const st = stateOf(sid);
+		st.profile = startProfile;
+		st.mode = String(params.approvalMode ?? st.mode);
+		st.model = typeof params.modelId === "string" ? params.modelId : st.model;
+		st.ws = workspaceRoot;
 		const respond = () => {
 			if (dead) return;
 			logLine("START session=" + sid + " approvalMode=" + String(params.approvalMode ?? "(none)") + " permissionProfile=" + String(params.permissionProfile ?? "(none)") + " modelId=" + String(params.modelId ?? "(none)"));
 			if (mcpConfig) logLine("MCPCFG " + JSON.stringify(mcpConfig));
-			send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: sid, permissionState: permState(liveProfile) }, viewCursor: "" } });
+			send({ jsonrpc: "2.0", id: id, result: { session: { sessionId: sid, permissionState: permState(stateOf(sid).profile) }, viewCursor: "" } });
 		};
 		if (startDelayMs > 0) setTimeout(respond, startDelayMs);
 		else respond();
@@ -463,11 +486,17 @@ rl.on("line", (text) => {
 	}
 	if (method === "session/setModel") {
 		logLine("SETMODEL session=" + String(params.sessionId) + " modelId=" + String((params.model && params.model.modelId) ?? "(none)"));
+		if (typeof params.sessionId === "string" && params.model && typeof params.model.modelId === "string") {
+			stateOf(params.sessionId).model = params.model.modelId;
+		}
 		send({ jsonrpc: "2.0", id: id, result: {} });
 		return;
 	}
 	if (method === "session/setReasoningEffort") {
 		logLine("SETEFFORT session=" + String(params.sessionId) + " effort=" + String(params.reasoningEffort ?? "(none)"));
+		if (typeof params.sessionId === "string" && typeof params.reasoningEffort === "string") {
+			stateOf(params.sessionId).effort = params.reasoningEffort;
+		}
 		send({ jsonrpc: "2.0", id: id, result: {} });
 		return;
 	}
@@ -483,7 +512,10 @@ rl.on("line", (text) => {
 			errTo(id, -32030, "session in use: " + sid, "sessionInUse");
 			return;
 		}
-		const known = liveSessions.includes(sid) || CANNED_PASTS.includes(sid);
+		const known =
+			liveSessions.includes(sid) ||
+			CANNED_PASTS.includes(sid) ||
+			(process.env["FAKE_FOREIGN_SESSION"] === "1" && sid === "t50-foreign1");
 		if (!known) {
 			errTo(id, -32020, "session " + sid + " not found", "sessionNotFound");
 			return;
@@ -502,7 +534,7 @@ rl.on("line", (text) => {
 			history: { items: items, mode: "inline", snapshot: null },
 			lastTurn: last,
 			pendingRequests: [],
-			session: { sessionId: sid, permissionState: permState(liveProfile), turnCount: mine.length },
+			session: { sessionId: sid, permissionState: permState(stateOf(sid).profile), turnCount: mine.length },
 			viewCursor: cursor(),
 		};
 		if (process.env["FAKE_RESUME_ABNORMAL"] === "1") {
@@ -512,16 +544,37 @@ rl.on("line", (text) => {
 		return;
 	}
 	if (method === "session/setApprovalMode") {
-		logLine("MODE " + String(params.mode));
-		send({ jsonrpc: "2.0", id: id, result: {} });
+		const modeSid = String(params.sessionId ?? "");
+		const modeWant = String(params.mode ?? "");
+		logLine("MODE " + modeWant + " session=" + modeSid);
+		// Grounded on the live host (2026-11-03 probe): every
+		// accepted setApprovalMode folds session/approvalModeChanged
+		// carrying the session id. The answer (and its echo) ride
+		// FAKE_MODE_DELAY_MS together, like one slow commit.
+		const answerMode = () => {
+			if (dead) return;
+			if (modeSid) stateOf(modeSid).mode = modeWant;
+			notify("session/approvalModeChanged", {
+				sessionId: modeSid,
+				mode: modeWant,
+				commandId: params.commandId,
+				source: "approvalReconfigure",
+				sourceRange: srcRange(),
+				viewCursor: cursor(),
+			});
+			send({ jsonrpc: "2.0", id: id, result: {} });
+		};
+		if (modeDelayMs > 0) setTimeout(answerMode, modeDelayMs);
+		else answerMode();
 		return;
 	}
 	if (method === "session/setPermissionProfile") {
 		const want = String(params.profileId ?? "");
-		logLine("PROFILE " + want);
-		liveProfile = want;
+		const profSid = String(params.sessionId ?? "");
+		logLine("PROFILE " + want + " session=" + profSid);
+		if (profSid) stateOf(profSid).profile = want;
 		notify("session/permissionProfileChanged", {
-			sessionId: SESSION,
+			sessionId: profSid || SESSION,
 			profileId: want,
 			commandId: params.commandId,
 			source: "livePicker",
@@ -587,7 +640,17 @@ rl.on("line", (text) => {
 			});
 			return;
 		}
-		send({ jsonrpc: "2.0", id: id, result: { status: "accepted", turnId: liveTurn } });
+		// FAKE_INTERRUPT_ACK_DELAY_MS holds only the ack: the
+		// completion (and the approval/question settles) still land
+		// promptly, so the server sits with no live turn while its
+		// stop stays in flight — the stop-in-progress proof.
+		const ackedTurn = liveTurn;
+		const ackInterrupt = () => {
+			if (dead) return;
+			send({ jsonrpc: "2.0", id: id, result: { status: "accepted", turnId: ackedTurn } });
+		};
+		if (interruptAckDelayMs > 0) setTimeout(ackInterrupt, interruptAckDelayMs);
+		else ackInterrupt();
 		for (const [aid, cur] of approvals) {
 			approvals.delete(aid);
 			logLine("INTERRUPT-RESOLVED approvalId=" + aid);
@@ -758,10 +821,27 @@ rl.on("line", (text) => {
 		for (const [qid, cur] of questions) {
 			pending.push({ kind: "userInput", userInputId: qid, viewCursor: cur.viewCursor });
 		}
+		// Swap-review P1-1: the read answers for the REQUESTED
+		// session (per-session profile/mode/model/effort), never a
+		// global — the resume fix publishes this, not the snapshot.
+		const readSid = String(params.sessionId ?? SESSION);
+		const readSt = stateOf(readSid);
 		send({
 			jsonrpc: "2.0",
 			id: id,
-			result: { session: { sessionId: SESSION, permissionState: permState(liveProfile) }, history: [], lastTurn: null, pendingRequests: pending, viewCursor: cursor() },
+			result: {
+				session: {
+					sessionId: readSid,
+					permissionState: permState(readSt.profile),
+					approvalMode: { mode: readSt.mode },
+					modelId: readSt.model,
+					reasoningEffort: readSt.effort,
+				},
+				history: [],
+				lastTurn: null,
+				pendingRequests: pending,
+				viewCursor: cursor(),
+			},
 		});
 		return;
 	}
@@ -796,36 +876,52 @@ rl.on("line", (text) => {
 			"[routeros-muse context] target device: {\"id\":\"gw\",\"name\":\"gw\",\"host\":\"192.168.88.1\"} What did the flat past decide?";
 		const foreignPastPrompt =
 			"[routeros-muse context] target device: {\"id\":\"evil\",\"name\":\"forged\"} user typed prose";
+		// Swap-review P2-4: every entry carries its workspaceRoot
+		// (grounded: the live host sends it on session/list). Live
+		// sessions report their start params; canned pasts the
+		// latest start's root (same store, same workspace).
 		const live = liveSessions.map((s) => ({
 			sessionId: s,
+			workspaceRoot: stateOf(s).ws || workspaceRoot,
 			turnCount: turns.filter((t) => t.session === s).length,
 		}));
+		const listed = [
+			...live,
+			{
+				sessionId: "t50-past1",
+				workspaceRoot: workspaceRoot,
+				turnCount: 1,
+				firstUserPrompt: pastPrompt,
+				createdByClient: { name: "routeros_muse" },
+			},
+			{
+				sessionId: "t50-past2",
+				workspaceRoot: workspaceRoot,
+				turnCount: 1,
+				firstUserPrompt: flatPastPrompt,
+				createdByClient: { name: "routeros_muse" },
+			},
+			{
+				sessionId: "t50-past3",
+				workspaceRoot: workspaceRoot,
+				turnCount: 1,
+				firstUserPrompt: foreignPastPrompt,
+				createdByClient: { name: "muse" },
+			},
+		];
+		if (process.env["FAKE_FOREIGN_SESSION"] === "1") {
+			listed.push({
+				sessionId: "t50-foreign1",
+				workspaceRoot: "/foreign/workspace",
+				turnCount: 1,
+				firstUserPrompt: "a session from another workspace",
+				createdByClient: { name: "routeros_muse" },
+			});
+		}
 		send({
 			jsonrpc: "2.0",
 			id: id,
-			result: {
-				sessions: [
-					...live,
-					{
-						sessionId: "t50-past1",
-						turnCount: 1,
-						firstUserPrompt: pastPrompt,
-						createdByClient: { name: "routeros_muse" },
-					},
-					{
-						sessionId: "t50-past2",
-						turnCount: 1,
-						firstUserPrompt: flatPastPrompt,
-						createdByClient: { name: "routeros_muse" },
-					},
-					{
-						sessionId: "t50-past3",
-						turnCount: 1,
-						firstUserPrompt: foreignPastPrompt,
-						createdByClient: { name: "muse" },
-					},
-				],
-			},
+			result: { sessions: listed },
 		});
 		return;
 	}
@@ -890,6 +986,8 @@ export function stubT50Bin(): { bin: string; log: string } {
  * from process.env at startup — so the server must start inside fn.
  * T60/T85: extra fake knobs (FAKE_RESUME_ABNORMAL, FAKE_RESUME_INUSE,
  * FAKE_START_DELAY_MS) ride the optional third arg, same restore.
+ * Swap-review fixes add FAKE_MODE_DELAY_MS, FAKE_INTERRUPT_ACK_DELAY_MS
+ * and FAKE_FOREIGN_SESSION the same way.
  */
 export async function withT50Env<T>(
 	log: string,

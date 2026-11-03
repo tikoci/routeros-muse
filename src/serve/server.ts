@@ -2998,30 +2998,49 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									"that session's last run ended abnormally and cannot be resumed — start a new session instead",
 								);
 							}
-							if (lastModelId !== null) {
-								await client.sessionSetModel(sid, lastModelId);
+							// P1-2: snapshot the settings once, inside the
+							// lock (the setters below await; nothing may
+							// interleave a re-read between them).
+							const snapModel = lastModelId;
+							const snapEffort = lastEffort;
+							const snapMode =
+								(lastAccess as ApprovalMode | null) ?? defaultAccess();
+							const snapWant = lastProfile ?? profileForAccess(snapMode);
+							if (snapModel !== null) {
+								await client.sessionSetModel(sid, snapModel);
 							}
-							if (lastEffort !== null) {
+							if (snapEffort !== null) {
 								await client.sessionSetReasoningEffort(
 									sid,
-									lastEffort as ReasoningEffort,
+									snapEffort as ReasoningEffort,
 								);
 							}
-							const mode =
-								(lastAccess as ApprovalMode | null) ?? defaultAccess();
-							await client.sessionSetApprovalMode(sid, mode);
-							const want = lastProfile ?? profileForAccess(mode);
+							await client.sessionSetApprovalMode(sid, snapMode);
 							const applied = await client.sessionSetPermissionProfile(
 								sid,
-								want,
+								snapWant,
 							);
 							const profile =
 								typeof applied.permissionState?.profileId === "string"
 									? applied.permissionState.profileId
-									: want;
+									: snapWant;
+							// P1-1: publish the state the setters produced,
+							// never the resume snapshot (it predates them —
+							// publishing it cached a stale profile the next
+							// /new inherited). session/read is the durable
+							// post-setter state on the wire.
+							const read = await client.sessionRead(sid);
+							const fresh = read["session"] as MspSession | undefined;
+							if (!fresh || typeof fresh !== "object") {
+								throw new SwapRefusal(
+									400,
+									"msp-error",
+									"session/read after resume carried no session",
+								);
+							}
 							return {
-								session: resumed.session,
-								approvalMode: mode,
+								session: fresh,
+								approvalMode: snapMode,
 								permissionProfile: profile,
 							};
 						});
