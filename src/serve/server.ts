@@ -876,14 +876,31 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// live turn (cleared on its turn/completed). Stop pins its interrupt
 	// to the live turn; force-stop pins itself to the generation the UI
 	// saw when Stop was pressed.
+	// Accepted residual: Date.now() is restart-monotonic unless the wall clock steps backwards.
 	let runGeneration = Date.now();
 	let lastTurnId: string | null = null;
-	// Stuck-turn race: while a send's turnStart is in flight this holds
-	// the turn notifications that arrive before the ack resolves (the
-	// client's synchronous line pump can deliver a same-chunk
-	// turn/completed first). The send replays them after installing —
-	// the same early-array shape as MspClient.runTurn.
-	let turnStartBuffer: ViewEvent[] | null = null;
+	// Round 3: the send whose turnStart is in flight (sends serialize on
+	// the lifecycle lock, so at most one). Notifications always forward
+	// to SSE immediately, in wire order — never held. Only the run-state
+	// bookkeeping waits: turn/completed ids seen while pending, so the
+	// ack skips installing an already-finished turn (the bd957eb
+	// stuck-turn guarantee without the buffer). stopQueued records a
+	// Stop that landed mid-start; done resolves when the start settles
+	// so Force can wait instead of claiming a ghost.
+	type PendingStart = {
+		worker: Promise<MspClient> | null;
+		completedIds: Set<string>;
+		untypedCompleted: boolean;
+		stopQueued: boolean;
+		done: Promise<void>;
+		resolveDone: () => void;
+	};
+	let pendingStart: PendingStart | null = null;
+	/** The live-run state /api/chat/stop uses, for history + swap answers. */
+	function liveRun(): { running: boolean; turnId: string | null } {
+		const pending = pendingStart !== null && pendingStart.worker === mspPromise;
+		return { running: lastTurnId !== null || pending, turnId: lastTurnId };
+	}
 	// T60/T85 lifecycle lock: send holds it from main-resolve to
 	// turn-start ack; a main swap (new/resume) holds it from the busy
 	// check through publish. One promise chain, released in finally;
@@ -1170,6 +1187,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		// T71: the run dies with the worker (covers lock, which funnels here).
 		runGeneration += 1;
 		lastTurnId = null;
+		// Round 3: a torn-down worker settles any pending start (its
+		// turnStart is about to fail; Force waiters must not hang on it).
+		if (pendingStart !== null) {
+			const p = pendingStart;
+			pendingStart = null;
+			p.resolveDone();
+		}
 		// T81: only a published session dies with its worker. An
 		// in-flight reservation (mainSettled false) survives the
 		// stop, so its guard adopts the live generation instead of
@@ -1230,11 +1254,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 
 	/**
 	 * Fold one worker notification: live-turn tracking, meter folds,
-	 * settings folds, and the SSE fan-out. The installed listener
-	 * buffers through turnStartBuffer while a send's turnStart is in
-	 * flight; the send replays the buffer through this same function
-	 * after installing, so a fast completion lands exactly like a
-	 * slow one.
+	 * settings folds, and the SSE fan-out. Every notification forwards
+	 * immediately, in wire order — never held. While a send's turnStart
+	 * is in flight the listener additionally records turn/completed ids
+	 * so the ack skips an already-finished turn; the fold itself still
+	 * runs now (a pre-install completion for the new turn matches
+	 * nothing, so the tracking stays correct).
 	 */
 	function handleMspNotification(ev: ViewEvent): void {
 		if (ev.method === "turn/completed") {
@@ -1344,13 +1369,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
 				});
 				client.onNotification((ev) => {
-					// While a send's turnStart is in flight, hold its
-					// notifications for the ordered replay after the
-					// install (never fold a completion against the
-					// pre-install tracking — that is the stuck turn).
-					if (turnStartBuffer) {
-						turnStartBuffer.push(ev);
-						return;
+					// Round 3 (P2-C): every notification forwards
+					// immediately, in wire order — never held
+					// (approvals included). While a turnStart is
+					// pending only the bookkeeping waits: record this
+					// worker's turn/completed ids so the ack can skip
+					// an already-finished turn.
+					if (
+						pendingStart !== null &&
+						pendingStart.worker === mspPromise &&
+						ev.method === "turn/completed"
+					) {
+						const doneId = (ev.params as Record<string, unknown>)["turnId"];
+						if (typeof doneId === "string")
+							pendingStart.completedIds.add(doneId);
+						else pendingStart.untypedCompleted = true;
 					}
 					handleMspNotification(ev);
 				});
@@ -2819,6 +2852,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							body.expectedSessionId !== "" &&
 							body.expectedSessionId !== sid
 						) {
+							const run = liveRun();
 							return json(
 								{
 									ok: false,
@@ -2826,20 +2860,33 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									why: "the main session changed — your draft was kept and the chat reloaded; send again",
 									sessionId: sid,
 									generation: runGeneration,
+									running: run.running,
+									turnId: run.turnId,
 								},
 								409,
 							);
 						}
 						const client = await ensureMsp(entry.key);
 						try {
-							// Buffer this turn's notifications across its
-							// turnStart (the same early-array shape as
-							// MspClient.runTurn): a same-chunk
-							// turn/completed would otherwise fold against
-							// the pre-install tracking, clear nothing, and
-							// stick the completed turn as live.
-							const early: ViewEvent[] = [];
-							turnStartBuffer = early;
+							// Round 3 (P2-C/P2-D): track the in-flight
+							// turnStart — its turn/completed ids (a
+							// same-chunk completion would otherwise
+							// install as live: the stuck turn) and a Stop
+							// that lands mid-start. Notifications forward
+							// immediately throughout.
+							let resolveDone!: () => void;
+							const done = new Promise<void>((r) => {
+								resolveDone = r;
+							});
+							const pending: PendingStart = {
+								worker: mspPromise,
+								completedIds: new Set(),
+								untypedCompleted: false,
+								stopQueued: false,
+								done,
+								resolveDone,
+							};
+							pendingStart = pending;
 							let turnId: string;
 							try {
 								({ turnId } = await client.turnStart({
@@ -2847,29 +2894,46 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									input,
 								}));
 							} catch (err) {
-								turnStartBuffer = null;
-								for (const ev of early) handleMspNotification(ev);
+								if (pendingStart === pending) pendingStart = null;
+								resolveDone();
 								throw err;
 							}
-							turnStartBuffer = null;
 							// Reconcile before installing: a completion
-							// already buffered for this turn means it
+							// already seen for this turn means it
 							// finished fast — never install it as running.
-							// An untyped completion counts (the fold below
+							// An untyped completion counts (the fold
 							// clears on any completion without a turnId).
-							const completed = early.some((ev) => {
-								if (ev.method !== "turn/completed") return false;
-								const doneId = (ev.params as Record<string, unknown>)["turnId"];
-								return typeof doneId !== "string" || doneId === turnId;
-							});
+							// Either way the install replaces the previous
+							// tracking (a steered-over orphan clears).
+							const completed =
+								pending.untypedCompleted || pending.completedIds.has(turnId);
 							// T71: every started turn is a new run generation.
 							runGeneration += 1;
 							lastTurnId = completed ? null : turnId;
-							// Deliver the buffered notifications in order,
-							// exactly as if they had arrived after the
-							// install: the run state comes out identical
-							// to a slow completion.
-							for (const ev of early) handleMspNotification(ev);
+							const queued = pending.stopQueued;
+							if (pendingStart === pending) pendingStart = null;
+							resolveDone();
+							// Round 3 (P2-D): a Stop that landed mid-start
+							// interrupts now, through the normal T71 path
+							// (bounded; missing_run syncs like Stop).
+							if (queued && !completed && lastTurnId === turnId) {
+								try {
+									await withStopInFlight(() =>
+										withTimeout(
+											client.turnInterrupt({ sessionId: sid, turnId }),
+											10_000,
+											() => new Error("interrupt timed out"),
+										),
+									);
+								} catch (err) {
+									if (err instanceof MspError && err.reason === "missing_run") {
+										if (lastTurnId === turnId) lastTurnId = null;
+									}
+									// A timed-out queued interrupt leaves the turn
+									// live: its completion (or a re-Stop onto the
+									// fresh generation) settles it.
+								}
+							}
 							return json({ ok: true, turnId, sessionId: sid });
 						} catch (err) {
 							if (err instanceof MspError) {
@@ -2889,6 +2953,24 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const client = msp;
 					const sid = mainSession;
 					const turnId = lastTurnId;
+					const pending = pendingStart;
+					if (
+						(!client || !sid || !turnId) &&
+						pending !== null &&
+						pending.worker === mspPromise
+					) {
+						// Round 3 (P2-D): no live turn yet, but a turnStart is
+						// in flight — record the stop; the send interrupts on
+						// ack through the T71 path above.
+						pending.stopQueued = true;
+						return json({
+							ok: true,
+							stopped: false,
+							queued: true,
+							turnId: null,
+							generation: runGeneration,
+						});
+					}
 					if (!client || !sid || !turnId) {
 						return json({
 							ok: true,
@@ -2968,6 +3050,38 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								turnId: lastTurnId,
 								generation: runGeneration,
 							});
+						}
+						const pending = pendingStart;
+						if (pending !== null && pending.worker === mspPromise) {
+							// Round 3 (P2-D): a turnStart is in flight — wait
+							// for it (bounded by the T71 interrupt cap)
+							// instead of claiming the pre-start worker as
+							// stopped. The pin re-checks after: the send's
+							// bump retires it to stale-generation (the UI
+							// re-Stops onto a fresh pin, already handled).
+							try {
+								await withTimeout(
+									pending.done,
+									10_000,
+									() => new Error("start timed out"),
+								);
+							} catch {
+								return json({
+									ok: false,
+									why: "the turn is still starting — retry",
+									turnId: lastTurnId,
+									generation: runGeneration,
+								});
+							}
+							if (body.generation !== runGeneration) {
+								return json({
+									ok: false,
+									code: "stale-generation",
+									why: "run changed since Stop was pressed",
+									turnId: lastTurnId,
+									generation: runGeneration,
+								});
+							}
 						}
 						const client = msp;
 						const sid = mainSession;
@@ -3150,10 +3264,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							result.status,
 						);
 					}
+					const run = liveRun();
 					return json({
 						ok: true,
 						sessionId: result.sessionId,
 						generation: runGeneration,
+						running: run.running,
+						turnId: run.turnId,
 					});
 				}
 				if (p === "/api/chat/resume" && req.method === "POST") {
@@ -3183,11 +3300,14 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 					}
 					if (mainSession === sid && mainSettled && mainOwner === key) {
+						const run = liveRun();
 						return json({
 							ok: true,
 							sessionId: sid,
 							resumed: false,
 							generation: runGeneration,
+							running: run.running,
+							turnId: run.turnId,
 						});
 					}
 					let result: SwapOutcome;
@@ -3289,22 +3409,31 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							result.status,
 						);
 					}
+					const rrun = liveRun();
 					return json({
 						ok: true,
 						sessionId: result.sessionId,
 						resumed: true,
 						generation: runGeneration,
+						running: rrun.running,
+						turnId: rrun.turnId,
 					});
 				}
 				if (p === "/api/chat/history") {
 					const key = workerKey(req);
 					const sid = await ensureMain(key);
+					const run = liveRun();
 					return json({
 						ok: true,
 						sessionId: sid,
 						// The main generation (same monotonic counter as
 						// main/changed): the UI gates late responses on it.
 						generation: runGeneration,
+						// Round 3 (P1-A): the server's live-run state, from
+						// the same tracking /api/chat/stop uses. Tabs take
+						// liveness from here, never from stream continuity.
+						running: run.running,
+						turnId: run.turnId,
 						...(await historyOf(key, sid)),
 					});
 				}

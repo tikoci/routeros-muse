@@ -1435,7 +1435,7 @@ try {
 	check(
 		"t109 backtick trims and image syntax stays plain",
 		JSON.stringify(t109tickRels) === JSON.stringify(["notes.md"]),
-		JSON.stringify(t109parenRels) + " / " + JSON.stringify(t109tickRels),
+		`${JSON.stringify(t109parenRels)} / ${JSON.stringify(t109tickRels)}`,
 	);
 	const t109tickBody = (await t109tick.locator(".body").textContent()) ?? "";
 	check(

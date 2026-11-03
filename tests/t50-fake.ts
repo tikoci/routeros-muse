@@ -43,9 +43,14 @@ const log = process.env["T50_LOG"] ?? "";
 // the turn/interrupt ack while the completion still lands promptly
 // (stop-in-progress proof); FAKE_FOREIGN_SESSION=1 adds a session/list
 // entry from another workspace (P2-4).
+// Round 3: FAKE_TURN_ACK_DELAY_MS delays the turn/start ack while its
+// notifications (turn/started, approvals, questions) emit immediately —
+// the slow-ack shape for the send-buffer (P2-C) and pending-stop (P2-D)
+// proofs.
 const startDelayMs = Number(process.env["FAKE_START_DELAY_MS"] ?? "0");
 const modeDelayMs = Number(process.env["FAKE_MODE_DELAY_MS"] ?? "0");
 const interruptAckDelayMs = Number(process.env["FAKE_INTERRUPT_ACK_DELAY_MS"] ?? "0");
+const turnAckDelayMs = Number(process.env["FAKE_TURN_ACK_DELAY_MS"] ?? "0");
 function logLine(line) {
 	if (log) fs.appendFileSync(log, line + "\n");
 }
@@ -626,7 +631,16 @@ rl.on("line", (text) => {
 			process.stdout.write(frames.join("\n") + "\n");
 			return;
 		}
-		send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
+		// Round 3: with a delayed ack the notifications emit now and
+		// only the ack waits — approvals/questions travel while the
+		// server's turnStart is still pending.
+		const ackTurn = () => {
+			if (dead) return;
+			logLine("ACK_TURN turnId=" + t);
+			send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
+		};
+		if (turnAckDelayMs > 0) setTimeout(ackTurn, turnAckDelayMs);
+		else ackTurn();
 		notify("turn/started", { sessionId: params.sessionId, turnId: t });
 		let held = false;
 		// T60/T85: HOLD-OPEN stays live until turn/interrupt (409 probes).
@@ -1013,7 +1027,7 @@ export function stubT50Bin(): { bin: string; log: string } {
  * FAKE_START_DELAY_MS) ride the optional third arg, same restore.
  * Swap-review fixes add FAKE_MODE_DELAY_MS, FAKE_INTERRUPT_ACK_DELAY_MS
  * and FAKE_FOREIGN_SESSION the same way, and the stuck-turn round
- * adds FAKE_COALESCE_TURN.
+ * adds FAKE_COALESCE_TURN. Round 3 adds FAKE_TURN_ACK_DELAY_MS.
  */
 export async function withT50Env<T>(
 	log: string,
