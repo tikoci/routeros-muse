@@ -594,12 +594,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T60"
 title = "Wire Make-current resume (t3code GAP10)"
-status = "active"
+status = "done"
 detail = "The past-chat tab already renders a Make-current button with no handler; wire it to resume that session as the main chat (MSP resume support as needed); smoke-gated."
-evidence = "t3code chat review GAP10 (notes/t41-chat-inventory.md); T62 resume mechanics in notes/t62-resweep.md (shared lock, model-first-read, continuation payload)"
+evidence = "merged 52c9952 (main gate 647/0, SMOKE GREEN). Branch history: a51a102 (muse: /api/chat/new + /api/chat/resume, live session/resume capture: {history, lastTurn, pendingRequests, session, viewCursor}; unknown id -32020 sessionNotFound, malformed -32602) -> codex sol review 7 CONFIRMED (P1 stale resume profile, P1 access race, P1 queued spawn after Lock; P2 foreign-workspace resume, swap clears newer run, cross-tab, past-load race) -> round 1 9da4e4b -> re-review: stuck-turn race (completion before lastTurnId, 11/30) plus SSE-gap and late-history -> round 2 b3a4081 (+ orchestrator runGeneration seeded from Date.now() for restart) -> re-check 2 P1 + 2 P2 -> round 3 05c0167 -> re-check 4 P1 (auto-adopt stranding) + 3 P2 -> D50 developer: detect plus Load current banner, no auto-adopt -> round 4 a76a217 + orchestrator 8bf7743 (initiating tab holds its own main/changed) -> sol review FIXED all round-3 P1s/S1/S2, 4 P2 left -> orchestrator 2bd31e5 (unresolved start announced via run/state running:true and resolved by a later completion, not installed when the turn already completed; MspClient dead flag covers signal deaths; Load current compares the current stale marker; same-main SSE reopen applies server liveness under the event clock), each fail-first. Accepted residual: Date.now() generations can strand an open tab if the wall clock moves backwards across a restart. Follow-ups T121-T124."
 blocked_by = []
 agent = "muse-spark-1.3 (orch claude; paired with T85)"
-updated = "2026-11-02"
+updated = "2026-11-03"
 
 [[task]]
 id = "T61"
@@ -844,12 +844,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T85"
 title = "Offer start-new/reset for the single main session"
-status = "active"
+status = "done"
 detail = "D20 promises a fresh-session action but no UI/route exists. Provide a one-agent reset/new action using the corrected lifecycle, keep prior transcript available, and preserve unsent drafts with an explicit policy; do not require locking/restarting the app to start fresh."
-evidence = "T80 source audit: sessionStart is only called by ensureMain; no reset/new route or action. D20 outcome; coordinate T60 resume, T57 drafts, T71 stop."
+evidence = "merged 52c9952 (main gate 647/0, SMOKE GREEN). Branch history: a51a102 (muse: /api/chat/new + /api/chat/resume, live session/resume capture: {history, lastTurn, pendingRequests, session, viewCursor}; unknown id -32020 sessionNotFound, malformed -32602) -> codex sol review 7 CONFIRMED (P1 stale resume profile, P1 access race, P1 queued spawn after Lock; P2 foreign-workspace resume, swap clears newer run, cross-tab, past-load race) -> round 1 9da4e4b -> re-review: stuck-turn race (completion before lastTurnId, 11/30) plus SSE-gap and late-history -> round 2 b3a4081 (+ orchestrator runGeneration seeded from Date.now() for restart) -> re-check 2 P1 + 2 P2 -> round 3 05c0167 -> re-check 4 P1 (auto-adopt stranding) + 3 P2 -> D50 developer: detect plus Load current banner, no auto-adopt -> round 4 a76a217 + orchestrator 8bf7743 (initiating tab holds its own main/changed) -> sol review FIXED all round-3 P1s/S1/S2, 4 P2 left -> orchestrator 2bd31e5 (unresolved start announced via run/state running:true and resolved by a later completion, not installed when the turn already completed; MspClient dead flag covers signal deaths; Load current compares the current stale marker; same-main SSE reopen applies server liveness under the event clock), each fail-first. Accepted residual: Date.now() generations can strand an open tab if the wall clock moves backwards across a restart. Follow-ups T121-T124."
 blocked_by = ["T81", "T71"]
 agent = "muse-spark-1.3 (orch claude; paired with T60)"
-updated = "2026-11-02"
+updated = "2026-11-03"
 
 [[task]]
 id = "T86"
@@ -1181,3 +1181,43 @@ evidence = "Scope split from pre-2026-11-02 T100 detail after developer prioriti
 blocked_by = ["T100"]
 agent = ""
 updated = "2026-11-02"
+
+[[task]]
+id = "T121"
+title = "Keep the main session across a server restart"
+status = "needed"
+detail = "After a serve restart ensureMain starts a fresh session; the previous main only survives as a past chat. Persist the current main session id per workspace (private data home) and resume it on first use when it is still in this workspace's session/list, falling back to a fresh session honestly. Out of scope for T60/T85 by design."
+evidence = "T60/T85 child report 2026-11-02; D20 (one agent, start-new/reset)"
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T122"
+title = "Past-chat tab after Make current: close or re-badge"
+status = "needed"
+detail = "After Make current the past-chat tab for that session stays open and labelled past; re-clicking is a harmless no-op but the label is wrong. Close the tab on adopt or re-badge it as the main chat."
+evidence = "T60/T85 child sweep 2026-11-02"
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T123"
+title = "Live probes for session/resume sessionInUse and abnormalEnd"
+status = "needed"
+detail = "T60 handles both from the exported MSP schema only: sessionInUse needs a two-connection capture, abnormalEnd a crashed session. Capture both with tools/msp-capture.ts and pin the mapping (409 sessionInUse, 409 abnormal-end) to the real wire shape."
+evidence = "T60 capture notes (local out/wire-capture-t60/); docs/design/t50-t55-wire-shapes.md"
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T124"
+title = "Second tab's first paint can show an agent row without its user row"
+status = "needed"
+detail = "Pre-existing (reproduced on a51a102 and 9da4e4b with real echo): a tab whose boot history snapshot is taken before a turn completes elsewhere drops the live user row and shows only the agent reply. Merge history and stream rows by stable identity, rendering other tabs' user messages while deduplicating local optimistic rows."
+evidence = "codex sol re-review of 9da4e4b 2026-11-02, finding (b), ui.html boot history (~3293/3349 at 9da4e4b)"
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
