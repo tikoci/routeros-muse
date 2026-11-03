@@ -16,6 +16,8 @@
 // (pill targets become chips; the preamble lands in the turn input),
 // and the T107 flattened-preamble past (the host-flattened session/list
 // shape strips to prose in the past list, never the raw preamble),
+// and the T52 settings honesty (no static demo values, live
+// registry path, conn chip + agent dot follow the msp state),
 // and the T101 profile row (live :ask-me/:unrestricted on echo),
 // pre-seed list + toggle (file-backed), and access flips both ways,
 // and the T55 ui_* tools (fake-driven bridge calls: toast, opened
@@ -289,6 +291,73 @@ try {
 		(await page.locator("#set-trust-note:visible").count()) === 0,
 	);
 	await page.screenshot({ path: path.join(OUT, "38-t49-trust-on.png") });
+
+	// T52: settings honesty — the settings view holds no static
+	// demo value (Topologies block, Reconnect button, hard-coded
+	// winbox.cdb); the Device registry row shows the served CDB
+	// path; the conn chip and agent dot follow the live msp state.
+	const setHtml = (await page.locator("#rview-settings").innerHTML()) ?? "";
+	check(
+		"t52 settings view has no static demo value",
+		!setHtml.includes("Topologies") &&
+			!setHtml.includes("Reconnect") &&
+			!setHtml.includes("winbox.cdb"),
+		setHtml.slice(0, 200),
+	);
+	check(
+		"t52 default-access note appears exactly once",
+		(await page
+			.locator("#rview-settings .setnote", {
+				hasText: "New chats start at the default",
+			})
+			.count()) === 1,
+	);
+	const servedCdb: string = await page.evaluate(() =>
+		fetch("/api/auth/state")
+			.then((r) => r.json())
+			.then((j) => (typeof j.cdbFile === "string" ? j.cdbFile : "")),
+	);
+	const cdbRow: string = await page.evaluate(
+		() => document.getElementById("set-cdb")?.textContent?.trim() ?? "",
+	);
+	check(
+		"t52 registry row shows the served CDB path",
+		cdbRow !== "" && cdbRow !== "…" && cdbRow === servedCdb,
+		`row=${cdbRow.slice(0, 120) || "missing"} served=${servedCdb.slice(0, 120)}`,
+	);
+	// The MSP connects lazily after boot, so the chip may predate
+	// it: refresh the settings load, then compare against a fresh
+	// status read, retrying until the MSP state settles.
+	let chipOk = false;
+	let chipDbg = "";
+	for (let i = 0; i < 10 && !chipOk; i++) {
+		if (i > 0) await page.evaluate(() => window.__smoke?.loadStatus());
+		const mspState: string = await page.evaluate(() =>
+			fetch("/api/status")
+				.then((r) => r.json())
+				.then((j) => (typeof j.msp === "string" ? j.msp : "")),
+		);
+		const mspUp = mspState === "connected";
+		const chip = await page.evaluate(() => ({
+			text: document.getElementById("set-conn")?.textContent?.trim() ?? "",
+			warn:
+				document.getElementById("set-conn")?.classList.contains("warn") ??
+				false,
+			dotOk:
+				document.getElementById("set-dot")?.classList.contains("ok") ?? false,
+			dotWarn:
+				document.getElementById("set-dot")?.classList.contains("warn") ?? false,
+		}));
+		chipOk =
+			chip.text === (mspUp ? "connected" : mspState) &&
+			chip.warn === !mspUp &&
+			chip.dotOk === mspUp &&
+			chip.dotWarn === !mspUp;
+		chipDbg = `chip=${chip.text} warn=${chip.warn} dotOk=${chip.dotOk} dotWarn=${chip.dotWarn} msp=${mspState}`;
+		if (!chipOk) await new Promise((r) => setTimeout(r, 500));
+	}
+	check("t52 conn chip and agent dot match the msp state", chipOk, chipDbg);
+	await page.screenshot({ path: path.join(OUT, "50-t52-settings.png") });
 
 	// T101: the settings pane reports the live profile (:ask-me
 	// under Ask first on the real echo wire) and the pre-seeded
@@ -1900,6 +1969,21 @@ try {
 			"t49 trust row shows no workspace (no-ws mode)",
 			((await page.locator("#set-trust").textContent()) ?? "").trim() ===
 				"no workspace",
+		);
+		// T52: the registry row shows the served path here too
+		// (the hermetic override, or the centrs default).
+		const nwsServed: string = await page.evaluate(() =>
+			fetch("/api/auth/state")
+				.then((r) => r.json())
+				.then((j) => (typeof j.cdbFile === "string" ? j.cdbFile : "")),
+		);
+		const nwsCdb: string = await page.evaluate(
+			() => document.getElementById("set-cdb")?.textContent?.trim() ?? "",
+		);
+		check(
+			"t52 registry row shows the served path (no-workspace)",
+			nwsCdb !== "" && nwsCdb !== "…" && nwsCdb === nwsServed,
+			`row=${nwsCdb.slice(0, 120) || "missing"} served=${nwsServed.slice(0, 120)}`,
 		);
 		// T106: no-workspace mode reports the seeded ui tools
 		// (empty commands/hosts) and the toggle stays usable, so

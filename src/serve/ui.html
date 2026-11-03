@@ -375,6 +375,7 @@
   .rblock { margin-bottom: 18px; }
   .agenthead { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13px; margin-bottom: 8px; }
   .agenthead .conn { font: 600 11px var(--sans); color: var(--green); background: var(--green-dim); border: 1px solid rgba(63,185,80,.35); padding: 1px 8px; border-radius: 12px; }
+  .agenthead .conn.warn { color: var(--amber); background: var(--amber-dim); border-color: rgba(210,153,34,.35); }
   .agenthead .sp { flex: 1; }
   .pending { font: 600 10.5px var(--sans); color: var(--amber); background: var(--amber-dim); border: 1px solid rgba(210,153,34,.35); border-radius: 10px; padding: 0 7px; margin-left: auto; }
   .arow { display: flex; font-size: 12.5px; padding: 3px 2px; }
@@ -648,7 +649,7 @@
       <div class="rview" id="rview-settings">
         <div class="rblock">
           <div class="rsect">Agent · muse, local</div>
-          <div class="agenthead"><span class="dot ok"></span><span id="set-muse">muse …</span><span class="conn" id="set-conn">…</span></div>
+          <div class="agenthead"><span class="dot" id="set-dot"></span><span id="set-muse">muse …</span><span class="conn warn" id="set-conn">…</span></div>
           <div class="arow"><span class="k">Model</span><span class="v" id="set-model">…</span></div>
           <div class="arow"><span class="k">Access</span><span class="v" id="set-access">…</span></div>
           <div class="arow"><span class="k">Profile</span><span class="v" id="set-profile">…</span></div>
@@ -660,7 +661,6 @@
           <div class="setnote">New chats start at the default access and profile. Changing it never touches the live chat.</div>
           <div class="arow"><span class="k">Context</span><span class="v" id="set-ctx">…</span></div>
           <div class="arow"><span class="k">Session</span><span class="v" id="set-session">…</span></div>
-          <button class="btn rbtn" title="Drop the session and run the OAuth flow again">Reconnect</button>
           <div class="setnote">Model changes apply to the main chat after the current turn finishes.</div>
         </div>
         <div class="rblock" id="preallow-block">
@@ -680,23 +680,13 @@
           </div>
         </div>
         <div class="rblock">
-          <div class="rsect">Topologies</div>
-          <div class="setrow"><span>Office N=1 · v12</span><code>in use</code></div>
-          <div class="setrow"><span>Shop N=2 · v12</span><button class="minibtn">Switch</button></div>
-          <div class="setrow"><span>Cabin link · v9</span><button class="minibtn">Switch</button></div>
-          <button class="btn rbtn">+ New topology</button>
-          <div class="setnote">New topologies start from a template — the same list the Mode A bootstrap uses.</div>
-        </div>
-        <div class="rblock">
           <div class="rsect">This machine</div>
           <div class="setrow"><span>Workspace</span><code id="set-ws">…</code></div>
           <div class="setrow"><span>Provider</span><code id="set-prov">…</code></div>
           <div class="setrow"><span>Auth</span><code id="set-auth">…</code></div>
           <div class="setrow"><span>Workspace trust</span><code id="set-trust">…</code></div>
           <div class="setnote" id="set-trust-note" style="display:none">The workspace's AGENTS.md and skills are not loaded.</div>
-          <div class="setrow"><span>Device registry</span><code>winbox.cdb</code></div>
-          <div class="setrow"><label><input type="checkbox" checked> Ask before write-shaped runs</label></div>
-          <div class="setrow"><label><input type="checkbox" checked> Compact the main chat automatically</label></div>
+          <div class="setrow"><span>Device registry</span><code id="set-cdb">…</code></div>
           <div class="setnote">Settings live on this machine, never in the workspace.</div>
         </div>
       </div>
@@ -3389,7 +3379,13 @@
       if (!j || j.ok === false || !("workspace" in j))
         throw new Error("status unavailable");
       $("set-muse").textContent = j.muse || "muse ?";
-      $("set-conn").textContent = j.msp === "connected" ? "connected" : j.msp;
+      // T52: the agent dot and conn chip are honest — green only
+      // while the MSP is connected, amber otherwise.
+      const mspUp = j.msp === "connected";
+      $("set-conn").textContent = mspUp ? "connected" : j.msp;
+      $("set-conn").classList.toggle("warn", !mspUp);
+      $("set-dot").classList.toggle("ok", mspUp);
+      $("set-dot").classList.toggle("warn", !mspUp);
       $("set-ws").textContent = j.workspace || "no workspace";
       NO_WS = j.workspace == null || j.mode === "no-workspace";
       WSROOT = typeof j.workspace === "string" && j.workspace
@@ -4026,6 +4022,9 @@
     $("set-auth").textContent = st.state === "bypassed"
       ? (st.mode === "missing" ? "bypassed (no CDB)" : "bypassed (open CDB)")
       : "unlocked (" + st.cdb + ")";
+    // T52: the Device registry row shows the live CDB display path
+    // the auth state already carries — never a static value.
+    $("set-cdb").textContent = st.cdbFile || "…";
   }
 
   function applyMeta(m) {
