@@ -243,101 +243,115 @@ function firstExternalIPv4(): string | null {
 	return null;
 }
 
+// Environment, not guard logic: loopback-only hosts (sandboxes, some
+// CI runners) have no external IPv4 or no IPv6 loopback to bind.
+const LAN_IPV4 = firstExternalIPv4();
+const HAS_IPV6_LOOPBACK = Object.values(nodeOs.networkInterfaces()).some(
+	(list) => list?.some((a) => a.family === "IPv6" && a.address === "::1"),
+);
+
 describe("t133r3-B LAN and IPv6 origins", () => {
-	test("unit: interface origins accepted, foreign ports refused", () => {
-		const lan = firstExternalIPv4();
-		expect(lan).not.toBeNull();
-		const mk = (origin: string, host: string) =>
-			new Request("http://x/api/auth/unlock", {
-				method: "POST",
-				headers: { "content-type": "application/json", origin, host },
-			});
-		const ctx0 = { host: "0.0.0.0", port: 4321, displayHost: "127.0.0.1" };
-		expect(
-			checkSameOrigin(mk(`http://${lan}:4321`, `${lan}:4321`), ctx0),
-		).toBeNull();
-		expect(
-			checkSameOrigin(mk("http://127.0.0.1:4321", "127.0.0.1:4321"), ctx0),
-		).toBeNull();
-		const ctx6 = { host: "::1", port: 4322, displayHost: "::1" };
-		expect(
-			checkSameOrigin(mk("http://[::1]:4322", "[::1]:4322"), ctx6),
-		).toBeNull();
-		// A foreign port is refused even with a good hostname.
-		expect(
-			checkSameOrigin(mk("http://127.0.0.1:9999", "127.0.0.1:4321"), ctx0),
-		).toMatch(/origin/i);
-		// The Host header's port is checked too.
-		expect(
-			checkSameOrigin(mk("http://127.0.0.1:4321", "127.0.0.1:9999"), ctx0),
-		).toMatch(/host/i);
-		expect(
-			checkSameOrigin(mk("http://127.0.0.1:4321", "evil.example:4321"), ctx0),
-		).toMatch(/host/i);
-	});
+	test.skipIf(LAN_IPV4 === null)(
+		"unit: interface origins accepted, foreign ports refused",
+		() => {
+			const lan = LAN_IPV4;
+			const mk = (origin: string, host: string) =>
+				new Request("http://x/api/auth/unlock", {
+					method: "POST",
+					headers: { "content-type": "application/json", origin, host },
+				});
+			const ctx0 = { host: "0.0.0.0", port: 4321, displayHost: "127.0.0.1" };
+			expect(
+				checkSameOrigin(mk(`http://${lan}:4321`, `${lan}:4321`), ctx0),
+			).toBeNull();
+			expect(
+				checkSameOrigin(mk("http://127.0.0.1:4321", "127.0.0.1:4321"), ctx0),
+			).toBeNull();
+			const ctx6 = { host: "::1", port: 4322, displayHost: "::1" };
+			expect(
+				checkSameOrigin(mk("http://[::1]:4322", "[::1]:4322"), ctx6),
+			).toBeNull();
+			// A foreign port is refused even with a good hostname.
+			expect(
+				checkSameOrigin(mk("http://127.0.0.1:9999", "127.0.0.1:4321"), ctx0),
+			).toMatch(/origin/i);
+			// The Host header's port is checked too.
+			expect(
+				checkSameOrigin(mk("http://127.0.0.1:4321", "127.0.0.1:9999"), ctx0),
+			).toMatch(/host/i);
+			expect(
+				checkSameOrigin(mk("http://127.0.0.1:4321", "evil.example:4321"), ctx0),
+			).toMatch(/host/i);
+		},
+	);
 
-	test("live: 0.0.0.0 bind unlocks through its LAN IP URL", async () => {
-		const lan = firstExternalIPv4();
-		expect(lan).not.toBeNull();
-		const srv = await startServer({
-			host: "0.0.0.0",
-			noWorkspace: true,
-			provider: "echo",
-			allowOpenCdb: true,
-			cdbFile: path.join(mktmp("t133r3-blan-"), "operator.cdb"),
-			dataHome: mktmp("t133r3-blan-dh-"),
-			configHome: mktmp("t133r3-blan-cfg-"),
-			defaultWorkspaceDir: mktmp("t133r3-blan-nets-"),
-		});
-		try {
-			const r = await fetch(`${srv.url}/api/auth/lock`, {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					origin: `http://${lan}:${srv.port}`,
-				},
-				body: "{}",
+	test.skipIf(LAN_IPV4 === null)(
+		"live: 0.0.0.0 bind unlocks through its LAN IP URL",
+		async () => {
+			const lan = LAN_IPV4;
+			const srv = await startServer({
+				host: "0.0.0.0",
+				noWorkspace: true,
+				provider: "echo",
+				allowOpenCdb: true,
+				cdbFile: path.join(mktmp("t133r3-blan-"), "operator.cdb"),
+				dataHome: mktmp("t133r3-blan-dh-"),
+				configHome: mktmp("t133r3-blan-cfg-"),
+				defaultWorkspaceDir: mktmp("t133r3-blan-nets-"),
 			});
-			expect(r.status).toBe(200);
-			const evilPort = await fetch(`${srv.url}/api/auth/lock`, {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					origin: `http://${lan}:${srv.port + 1}`,
-				},
-				body: "{}",
-			});
-			expect(evilPort.status).toBe(403);
-		} finally {
-			await srv.stop();
-		}
-	});
+			try {
+				const r = await fetch(`${srv.url}/api/auth/lock`, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						origin: `http://${lan}:${srv.port}`,
+					},
+					body: "{}",
+				});
+				expect(r.status).toBe(200);
+				const evilPort = await fetch(`${srv.url}/api/auth/lock`, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						origin: `http://${lan}:${srv.port + 1}`,
+					},
+					body: "{}",
+				});
+				expect(evilPort.status).toBe(403);
+			} finally {
+				await srv.stop();
+			}
+		},
+	);
 
-	test("live: ::1 bind accepts its bracketed Origin", async () => {
-		const srv = await startServer({
-			host: "::1",
-			noWorkspace: true,
-			provider: "echo",
-			allowOpenCdb: true,
-			cdbFile: path.join(mktmp("t133r3-bip6-"), "operator.cdb"),
-			dataHome: mktmp("t133r3-bip6-dh-"),
-			configHome: mktmp("t133r3-bip6-cfg-"),
-			defaultWorkspaceDir: mktmp("t133r3-bip6-nets-"),
-		});
-		try {
-			const r = await fetch(`http://[::1]:${srv.port}/api/auth/lock`, {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					origin: `http://[::1]:${srv.port}`,
-				},
-				body: "{}",
+	test.skipIf(!HAS_IPV6_LOOPBACK)(
+		"live: ::1 bind accepts its bracketed Origin",
+		async () => {
+			const srv = await startServer({
+				host: "::1",
+				noWorkspace: true,
+				provider: "echo",
+				allowOpenCdb: true,
+				cdbFile: path.join(mktmp("t133r3-bip6-"), "operator.cdb"),
+				dataHome: mktmp("t133r3-bip6-dh-"),
+				configHome: mktmp("t133r3-bip6-cfg-"),
+				defaultWorkspaceDir: mktmp("t133r3-bip6-nets-"),
 			});
-			expect(r.status).toBe(200);
-		} finally {
-			await srv.stop();
-		}
-	});
+			try {
+				const r = await fetch(`http://[::1]:${srv.port}/api/auth/lock`, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						origin: `http://[::1]:${srv.port}`,
+					},
+					body: "{}",
+				});
+				expect(r.status).toBe(200);
+			} finally {
+				await srv.stop();
+			}
+		},
+	);
 });
 
 function writeShim(dir: string, name: string, body: string): void {

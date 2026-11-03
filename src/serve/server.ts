@@ -5170,10 +5170,19 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				// kills the full set, so a create completing during
 				// shutdown leaks nothing.
 				if (inFlightLaunches.size > 0) {
-					await Promise.race([
-						Promise.allSettled([...inFlightLaunches]),
-						new Promise((r) => setTimeout(r, STOP_LAUNCH_WAIT_MS)),
-					]);
+					// Clear the bound timer once launches settle: a
+					// pending 60 s timer would hold the event loop open.
+					let waitTimer: ReturnType<typeof setTimeout> | undefined;
+					try {
+						await Promise.race([
+							Promise.allSettled([...inFlightLaunches]),
+							new Promise((r) => {
+								waitTimer = setTimeout(r, STOP_LAUNCH_WAIT_MS);
+							}),
+						]);
+					} finally {
+						clearTimeout(waitTimer);
+					}
 				}
 				// T133 review P2: spawned workspace children die with the
 				// picker — one Ctrl-C ends the session. SIGTERM first,
