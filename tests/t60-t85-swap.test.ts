@@ -862,6 +862,44 @@ describe("main-session swap (T60 resume + T85 new)", () => {
 	);
 
 	t(
+		"fast turns never stick: /new right after send is 200 with no stop poll (stuck-turn race)",
+		async () => {
+			// The fake coalesces each plain turn's ack + completion
+			// into one stdio chunk, so the client's synchronous line
+			// pump always delivers turn/completed before the
+			// turn/start await resolves. Fifty send/new pairs with
+			// NO waitIdle/stop polling between them: every /new must
+			// be 200. A stuck turn 409s turn-running instead (and
+			// sticks every later /new too — sends still land, so
+			// the loop keeps its shape and the count is honest).
+			const { bin, log } = stubT50Bin();
+			await withT50Env(
+				log,
+				async () => {
+					const srv = await startT50Srv(bin);
+					try {
+						const stuck: number[] = [];
+						for (let i = 0; i < 50; i++) {
+							const sent = await postJson(`${srv.url}api/chat/send`, {
+								text: `STUCK-LOOP-${i}`,
+							});
+							expect(sent.status).toBe(200);
+							expect(sent.json["ok"]).toBe(true);
+							const created = await postJson(`${srv.url}api/chat/new`, {});
+							if (created.status !== 200) stuck.push(i);
+						}
+						expect(stuck).toEqual([]);
+					} finally {
+						await srv.stop();
+					}
+				},
+				{ FAKE_COALESCE_TURN: "1" },
+			);
+		},
+		120_000,
+	);
+
+	t(
 		"resume publishes the re-applied settings, never the stale snapshot (P1-1)",
 		async () => {
 			const { bin, log } = stubT50Bin();

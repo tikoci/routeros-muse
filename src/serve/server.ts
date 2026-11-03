@@ -875,6 +875,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// saw when Stop was pressed.
 	let runGeneration = 0;
 	let lastTurnId: string | null = null;
+	// Stuck-turn race: while a send's turnStart is in flight this holds
+	// the turn notifications that arrive before the ack resolves (the
+	// client's synchronous line pump can deliver a same-chunk
+	// turn/completed first). The send replays them after installing —
+	// the same early-array shape as MspClient.runTurn.
+	let turnStartBuffer: ViewEvent[] | null = null;
 	// T60/T85 lifecycle lock: send holds it from main-resolve to
 	// turn-start ack; a main swap (new/resume) holds it from the busy
 	// check through publish. One promise chain, released in finally;
@@ -1219,6 +1225,84 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		);
 	}
 
+	/**
+	 * Fold one worker notification: live-turn tracking, meter folds,
+	 * settings folds, and the SSE fan-out. The installed listener
+	 * buffers through turnStartBuffer while a send's turnStart is in
+	 * flight; the send replays the buffer through this same function
+	 * after installing, so a fast completion lands exactly like a
+	 * slow one.
+	 */
+	function handleMspNotification(ev: ViewEvent): void {
+		if (ev.method === "turn/completed") {
+			// T71: settle the live-turn tracking. Echo (verified by
+			// wire probe) always carries the turnId; hosts that do
+			// not fall back to clearing on any completion since
+			// the main session runs one turn at a time. A
+			// completion for an older turn never clears a newer one.
+			const doneId = (ev.params as Record<string, unknown>)["turnId"];
+			if (typeof doneId === "string") {
+				if (doneId === lastTurnId) lastTurnId = null;
+			} else {
+				lastTurnId = null;
+			}
+			// T39 passive OAuth flip: only authRequired is evidence.
+			const perr = (ev.params as Record<string, unknown>)["error"] as
+				| Record<string, unknown>
+				| undefined;
+			if (perr?.["kind"] === "authRequired") setMeta("absent");
+		}
+		if (ev.method === "session/contextUsage") {
+			// The wire sends used/window tokens, never a percent: compute it,
+			// and show tokens-only when the basis has no limit.
+			const p = ev.params as Record<string, unknown>;
+			contextPct = contextPercent(p["usedTokens"], p["windowTokens"]);
+			contextPressure =
+				typeof p["pressure"] === "string" ? p["pressure"] : null;
+		}
+		if (ev.method === "session/tokenUsage") {
+			const p = ev.params as Record<string, unknown>;
+			const cum = p["cumulative"] as Record<string, unknown> | undefined;
+			const total = cum?.["totalTokens"] ?? p["totalTokens"];
+			if (typeof total === "number") totalTokens = total;
+			if (typeof p["modelId"] === "string") lastModelId = p["modelId"];
+		}
+		if (ev.method === "session/approvalModeChanged") {
+			// T50: the host is the truth for the live mode (it
+			// echoes every session/start + setApprovalMode) —
+			// P1-2: scoped to the stamped session+generation.
+			const p = ev.params as Record<string, unknown>;
+			if (typeof p["mode"] === "string" && settingsCurrent(p["sessionId"]))
+				lastAccess = p["mode"];
+		}
+		if (ev.method === "session/permissionProfileChanged") {
+			// T101: same fold for the profile (every
+			// accepted setPermissionProfile commit) —
+			// P1-2: scoped to the stamped session+generation.
+			const p = ev.params as Record<string, unknown>;
+			if (typeof p["profileId"] === "string" && settingsCurrent(p["sessionId"]))
+				lastProfile = p["profileId"];
+		}
+		if (
+			(ev.method === "item/started" ||
+				ev.method === "item/updated" ||
+				ev.method === "item/completed") &&
+			(ev.params as Record<string, unknown>)["item"]
+		) {
+			// Live rows ride the same mapper as history: one shape, no drift.
+			// Textless messages map to nothing (streaming bubble keys off the raw item).
+			const rows = transcriptItems([
+				{ method: "item/completed", params: ev.params },
+			]);
+			emit({
+				method: ev.method,
+				params: { ...ev.params, row: rows[0] ?? null },
+			});
+			return;
+		}
+		emit({ method: ev.method, params: ev.params });
+	}
+
 	function ensureMsp(key: string): Promise<MspClient> {
 		if (mspPromise && mspOwner === key) return mspPromise;
 		// New owner (or first spawn): stop any previous worker, then
@@ -1257,79 +1341,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					env: workerEnv(tools, cdbFile, sessions.ctx(key)?.password ?? null),
 				});
 				client.onNotification((ev) => {
-					if (ev.method === "turn/completed") {
-						// T71: settle the live-turn tracking. Echo (verified by
-						// wire probe) always carries the turnId; hosts that do
-						// not fall back to clearing on any completion since
-						// the main session runs one turn at a time. A
-						// completion for an older turn never clears a newer one.
-						const doneId = (ev.params as Record<string, unknown>)["turnId"];
-						if (typeof doneId === "string") {
-							if (doneId === lastTurnId) lastTurnId = null;
-						} else {
-							lastTurnId = null;
-						}
-						// T39 passive OAuth flip: only authRequired is evidence.
-						const perr = (ev.params as Record<string, unknown>)["error"] as
-							| Record<string, unknown>
-							| undefined;
-						if (perr?.["kind"] === "authRequired") setMeta("absent");
-					}
-					if (ev.method === "session/contextUsage") {
-						// The wire sends used/window tokens, never a percent: compute it,
-						// and show tokens-only when the basis has no limit.
-						const p = ev.params as Record<string, unknown>;
-						contextPct = contextPercent(p["usedTokens"], p["windowTokens"]);
-						contextPressure =
-							typeof p["pressure"] === "string" ? p["pressure"] : null;
-					}
-					if (ev.method === "session/tokenUsage") {
-						const p = ev.params as Record<string, unknown>;
-						const cum = p["cumulative"] as Record<string, unknown> | undefined;
-						const total = cum?.["totalTokens"] ?? p["totalTokens"];
-						if (typeof total === "number") totalTokens = total;
-						if (typeof p["modelId"] === "string") lastModelId = p["modelId"];
-					}
-					if (ev.method === "session/approvalModeChanged") {
-						// T50: the host is the truth for the live mode (it
-						// echoes every session/start + setApprovalMode) —
-						// P1-2: scoped to the stamped session+generation.
-						const p = ev.params as Record<string, unknown>;
-						if (
-							typeof p["mode"] === "string" &&
-							settingsCurrent(p["sessionId"])
-						)
-							lastAccess = p["mode"];
-					}
-					if (ev.method === "session/permissionProfileChanged") {
-						// T101: same fold for the profile (every
-						// accepted setPermissionProfile commit) —
-						// P1-2: scoped to the stamped session+generation.
-						const p = ev.params as Record<string, unknown>;
-						if (
-							typeof p["profileId"] === "string" &&
-							settingsCurrent(p["sessionId"])
-						)
-							lastProfile = p["profileId"];
-					}
-					if (
-						(ev.method === "item/started" ||
-							ev.method === "item/updated" ||
-							ev.method === "item/completed") &&
-						(ev.params as Record<string, unknown>)["item"]
-					) {
-						// Live rows ride the same mapper as history: one shape, no drift.
-						// Textless messages map to nothing (streaming bubble keys off the raw item).
-						const rows = transcriptItems([
-							{ method: "item/completed", params: ev.params },
-						]);
-						emit({
-							method: ev.method,
-							params: { ...ev.params, row: rows[0] ?? null },
-						});
+					// While a send's turnStart is in flight, hold its
+					// notifications for the ordered replay after the
+					// install (never fold a completion against the
+					// pre-install tracking — that is the stuck turn).
+					if (turnStartBuffer) {
+						turnStartBuffer.push(ev);
 						return;
 					}
-					emit({ method: ev.method, params: ev.params });
+					handleMspNotification(ev);
 				});
 				msp = client;
 				return client;
@@ -2809,13 +2829,44 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						}
 						const client = await ensureMsp(entry.key);
 						try {
-							const { turnId } = await client.turnStart({
-								sessionId: sid,
-								input,
+							// Buffer this turn's notifications across its
+							// turnStart (the same early-array shape as
+							// MspClient.runTurn): a same-chunk
+							// turn/completed would otherwise fold against
+							// the pre-install tracking, clear nothing, and
+							// stick the completed turn as live.
+							const early: ViewEvent[] = [];
+							turnStartBuffer = early;
+							let turnId: string;
+							try {
+								({ turnId } = await client.turnStart({
+									sessionId: sid,
+									input,
+								}));
+							} catch (err) {
+								turnStartBuffer = null;
+								for (const ev of early) handleMspNotification(ev);
+								throw err;
+							}
+							turnStartBuffer = null;
+							// Reconcile before installing: a completion
+							// already buffered for this turn means it
+							// finished fast — never install it as running.
+							// An untyped completion counts (the fold below
+							// clears on any completion without a turnId).
+							const completed = early.some((ev) => {
+								if (ev.method !== "turn/completed") return false;
+								const doneId = (ev.params as Record<string, unknown>)["turnId"];
+								return typeof doneId !== "string" || doneId === turnId;
 							});
 							// T71: every started turn is a new run generation.
 							runGeneration += 1;
-							lastTurnId = turnId;
+							lastTurnId = completed ? null : turnId;
+							// Deliver the buffered notifications in order,
+							// exactly as if they had arrived after the
+							// install: the run state comes out identical
+							// to a slow completion.
+							for (const ev of early) handleMspNotification(ev);
 							return json({ ok: true, turnId, sessionId: sid });
 						} catch (err) {
 							if (err instanceof MspError) {

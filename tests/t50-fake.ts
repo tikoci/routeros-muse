@@ -601,24 +601,49 @@ rl.on("line", (text) => {
 		logLine("RECV_TURN turnId=" + t);
 		logLine("TURN_TEXT " + JSON.stringify(textIn));
 		turns.push({ id: t, text: textIn, session: params.sessionId });
+		// Stuck-turn race probe: FAKE_COALESCE_TURN=1 writes a plain
+		// turn's ack plus its turn/started, item/completed and
+		// turn/completed in ONE stdout write, so the client's
+		// synchronous line pump always sees the completion before the
+		// turn/start await resolves. Held turns keep the slow path.
+		const needsApproval = textIn.includes("NEED-APPROVAL") || textIn.includes("NEED-BOTH");
+		const needsQuestion = textIn.includes("NEED-QUESTION") || textIn.includes("NEED-BOTH");
+		const needsMulti = textIn.includes("NEED-MULTI");
+		const needsUi = textIn.includes("NEED-UI-TOOLS");
+		const heldTurn =
+			textIn.includes("HOLD-OPEN") || needsApproval || needsQuestion || needsMulti || needsUi;
+		if (process.env["FAKE_COALESCE_TURN"] === "1" && !heldTurn && !dead) {
+			const sid = params.sessionId;
+			liveTurn = null;
+			liveSession = null;
+			logLine("COMPLETE turnId=" + t + " terminal=completed");
+			const frames = [
+				JSON.stringify({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } }),
+				JSON.stringify({ jsonrpc: "2.0", method: "turn/started", params: { sessionId: sid, turnId: t } }),
+				JSON.stringify({ jsonrpc: "2.0", method: "item/completed", params: { sessionId: sid, item: { kind: "agentMessage", itemId: t + "-msg", text: "t50 done (completed)" } } }),
+				JSON.stringify({ jsonrpc: "2.0", method: "turn/completed", params: { sessionId: sid, turnId: t, terminal: "completed" } }),
+			];
+			process.stdout.write(frames.join("\n") + "\n");
+			return;
+		}
 		send({ jsonrpc: "2.0", id: id, result: { turnId: t, disposition: "started" } });
 		notify("turn/started", { sessionId: params.sessionId, turnId: t });
 		let held = false;
 		// T60/T85: HOLD-OPEN stays live until turn/interrupt (409 probes).
 		if (textIn.includes("HOLD-OPEN")) held = true;
-		if (textIn.includes("NEED-APPROVAL") || textIn.includes("NEED-BOTH")) {
+		if (needsApproval) {
 			makeApproval(t);
 			held = true;
 		}
-		if (textIn.includes("NEED-QUESTION") || textIn.includes("NEED-BOTH")) {
+		if (needsQuestion) {
 			makeQuestion(t, false);
 			held = true;
 		}
-		if (textIn.includes("NEED-MULTI")) {
+		if (needsMulti) {
 			makeQuestion(t, true);
 			held = true;
 		}
-		if (textIn.includes("NEED-UI-TOOLS")) {
+		if (needsUi) {
 			runUiTools(t, textIn);
 			held = true;
 		}
@@ -987,7 +1012,8 @@ export function stubT50Bin(): { bin: string; log: string } {
  * T60/T85: extra fake knobs (FAKE_RESUME_ABNORMAL, FAKE_RESUME_INUSE,
  * FAKE_START_DELAY_MS) ride the optional third arg, same restore.
  * Swap-review fixes add FAKE_MODE_DELAY_MS, FAKE_INTERRUPT_ACK_DELAY_MS
- * and FAKE_FOREIGN_SESSION the same way.
+ * and FAKE_FOREIGN_SESSION the same way, and the stuck-turn round
+ * adds FAKE_COALESCE_TURN.
  */
 export async function withT50Env<T>(
 	log: string,
