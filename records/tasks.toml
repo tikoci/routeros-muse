@@ -514,12 +514,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T52"
 title = "Settings/pastchat honesty: remove or wire dead demo controls"
-status = "needed"
-detail = "Rigor sweep found shipped demo data contradicting the never-demo-data rule: settings Topologies rows plus dead Switch/New-topology buttons, dead Reconnect button, static Device registry row, two unwired checkboxes, static Access row; pastchat pane demo placeholders. Remove until built for real (registry/picker is T40) or wire to live state; neutral placeholders elsewhere."
+status = "active"
+detail = "Rigor sweep found shipped demo data contradicting the never-demo-data rule. Orchestrator inventory 2026-11-02 (src/serve/ui.html settings rview, handlers grepped) with dispositions: Reconnect button (no handler) REMOVE, superseded by T85 New session plus the OAuth Recheck banner; Topologies block (3 demo rows, 2 Switch, + New topology; markup-only) REMOVE, superseded by the live Workspaces rview (T40); Device registry row hard-coded winbox.cdb WIRE to the live authCdb.displayPath already served (server.ts ~1578); 'Ask before write-shaped runs' checkbox (unwired) REMOVE, superseded by Access mode/default access; 'Compact the main chat automatically' checkbox (unwired) REMOVE, auto-compact recorded on T79 as a later option; agent-head dot plus conn chip always green WIRE to live msp state; duplicated default-access setnote REMOVE one. Pastchat pane demo placeholders belong to T60 (wiring that pane now), checked at its review. The full capability pill from T80 no longer exists in ui.html (0 matches 2026-11-02). Keep the never-demo-data rule: no static values that look live."
 evidence = "rigor sweep 2026-11-01 with screenshots in /tmp (reproducible via tour); live rows (model/ctx/session/ws/prov) stay; T40-child nit: no-workspace recents empty-state renders flush-left; T80 review: full capability pill is also static demo state (not set by live loadStatus); include it in the honesty pass. Settings placeholders confirmed in current real-browser tour."
 blocked_by = []
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 (orch claude)"
+updated = "2026-11-02"
 
 [[task]]
 id = "T53"
@@ -785,11 +785,11 @@ updated = "2026-11-01"
 id = "T79"
 title = "Context Compact action (t3code P11)"
 status = "needed"
-detail = "Meter popover gains a Compact affordance once the MSP surface is confirmed (t3code ContextWindowMeter plus /compact pipeline). Blocked on the T55 MSP-surface answer."
+detail = "Meter popover gains a Compact affordance once the MSP surface is confirmed (t3code ContextWindowMeter plus /compact pipeline). Blocked on the T55 MSP-surface answer. T52 2026-11-02: the unwired 'Compact the main chat automatically' settings checkbox is removed; automatic compaction is a later option on top of the manual Compact action (a setting, default off, once the MSP compact surface is confirmed)."
 evidence = "T62 re-sweep 2026-11-01 (notes/t62-resweep.md P11; head 1d626d02)"
 blocked_by = ["T55"]
 agent = ""
-updated = "2026-11-01"
+updated = "2026-11-02"
 
 [[task]]
 id = "T80"
