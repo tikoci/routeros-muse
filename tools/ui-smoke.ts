@@ -28,7 +28,8 @@
 // restore, past-load race, no-demo-data markup), and the SSE-reconnect
 // legs (a tab that missed main/changed while deaf adopts on reopen; a
 // turn live at reopen defers the transcript swap until it completes,
-// refusing Send meanwhile).
+// refusing Send meanwhile; late history and stale reconciles lose
+// to the adopted generation).
 // Screenshots land in out/ui-smoke/ for eyeballing.
 // The auth legs need centrs on PATH (fail-loud, never skip: an
 // unverified gate is not a green result).
@@ -5139,7 +5140,9 @@ try {
 	// the stream reopens (same adopt path); when a turn is live at
 	// reopen the transcript swap defers until it completes (pending
 	// refresh: Send refused with the adopting visual, adoption on
-	// completion, next send on the new main). Screenshots 56-58.
+	// completion, next send on the new main), and the generation-gate
+	// legs (a late history response and a stale swap response both
+	// lose to the adopted generation). Screenshots 56-60.
 	const r2 = stubT50Bin();
 	await withT50Env(r2.log, async () => {
 		const srvR = await startServer({
@@ -5201,6 +5204,10 @@ try {
 			const rMainOf = (pg: Page): Promise<unknown> =>
 				pg.evaluate(
 					() => (window as unknown as Record<string, unknown>)["__mainSession"],
+				);
+			const rMainGenOf = (pg: Page): Promise<unknown> =>
+				pg.evaluate(
+					() => (window as unknown as Record<string, unknown>)["__mainGen"],
 				);
 
 			// S1 gets its marker; B loads onto S1 (reloaded onto the
@@ -5393,6 +5400,167 @@ try {
 			);
 			await pageR.screenshot({ path: path.join(OUT, "58-r2-adopted.png") });
 			await pageR.unroute("**/api/chat/history");
+
+			// Leg 3a (late history): hold S3's history, publish S4, render
+			// S4's history, release S3's response — the tab stays on S4
+			// (id and transcript).
+			let releaseS3!: () => void;
+			const s3Gate = new Promise<void>((r) => {
+				releaseS3 = r;
+			});
+			let heldS3 = false;
+			let hitS3 = false;
+			await page.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldS3) {
+					heldS3 = true;
+					hitS3 = true;
+					await s3Gate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page.reload({ waitUntil: "load" });
+			await page.waitForFunction(
+				() => (document.getElementById("set-auth")?.textContent ?? "") !== "…",
+				undefined,
+				{ timeout: 15_000 },
+			);
+			{
+				const start = Date.now();
+				while (!hitS3) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r2 S3 history never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			await page.click("#newsession-btn");
+			await page.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await page.click("#newsession-go");
+			await page.waitForFunction(
+				() => document.querySelectorAll("#pane-chat .msg").length === 0,
+				undefined,
+				{ timeout: 15_000 },
+			);
+			await page.fill("#chatinput", "R2-S4-MARKER");
+			await page.press("#chatinput", "Enter");
+			check("r2 S4 marker lands", await rAgent(page, "R2-S4-MARKER"));
+			await rIdle(page);
+			releaseS3();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r2 late history keeps the current main id",
+				(await rMainOf(page)) === "t50-s4",
+			);
+			check(
+				"r2 late history keeps the current transcript",
+				((await page.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S4-MARKER",
+				) &&
+					!((await page.locator("#pane-chat").textContent()) ?? "").includes(
+						"R2-S3-MARKER",
+					),
+			);
+			await page.screenshot({ path: path.join(OUT, "59-r2-late-history.png") });
+			await page.unroute("**/api/chat/history");
+
+			// Leg 3b (stale reconcile): A's reconnect reconcile for S5
+			// stays held while B swaps S5->S6; A adopts S6 off the
+			// stream, then the older S5 reconcile releases and must lose
+			// (this is the applyMainChanged side of the generation gate;
+			// the reconcile discards its transcript, so only the adopt
+			// path sees the stale pair).
+			let releaseR!: () => void;
+			const rGate = new Promise<void>((r) => {
+				releaseR = r;
+			});
+			let heldR = false;
+			let hitR = false;
+			await page.route("**/api/chat/history", async (route) => {
+				const res = await route.fetch();
+				if (!heldR) {
+					heldR = true;
+					hitR = true;
+					await rGate;
+				}
+				await route.fulfill({ response: res });
+			});
+			await page.evaluate(() => window.__smoke?.dropStream());
+			await pageR.click("#newsession-btn");
+			await pageR.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await pageR.click("#newsession-go");
+			check(
+				"r2 B publishes S5 while A is deaf",
+				await rOk(
+					pageR.waitForFunction(
+						() =>
+							(window as unknown as Record<string, unknown>)[
+								"__mainSession"
+							] === "t50-s5",
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			await pageR.fill("#chatinput", "R2-S5B-MARKER");
+			await pageR.press("#chatinput", "Enter");
+			check("r2 S5B marker lands", await rAgent(pageR, "R2-S5B-MARKER"));
+			await rIdle(pageR);
+			await page.evaluate(() => window.__smoke?.reconnectStream());
+			{
+				const start = Date.now();
+				while (!hitR) {
+					if (Date.now() - start > 15_000)
+						throw new Error("r2 S5 reconcile never held");
+					await new Promise((r) => setTimeout(r, 50));
+				}
+			}
+			await pageR.click("#newsession-btn");
+			await pageR.waitForSelector("#newsession-confirm:visible", {
+				timeout: 5_000,
+			});
+			await pageR.click("#newsession-go");
+			check(
+				"r2 A adopts S6 off the stream",
+				await rOk(
+					page.waitForFunction(
+						() =>
+							(window as unknown as Record<string, unknown>)[
+								"__mainSession"
+							] === "t50-s6",
+						undefined,
+						{ timeout: 15_000 },
+					),
+				),
+			);
+			// The stale adopt self-heals its id (its own loadHistory
+			// re-reads current), so only the adopted generation betrays
+			// it: gated stays, ungated drops to the stale pair's.
+			const genBefore = await rMainGenOf(page);
+			releaseR();
+			await new Promise((r) => setTimeout(r, 750));
+			check(
+				"r2 stale reconcile keeps the adopted generation",
+				(await rMainGenOf(page)) === genBefore,
+				`gen=${await rMainGenOf(page)} before=${genBefore}`,
+			);
+			check(
+				"r2 stale reconcile keeps the current main id",
+				(await rMainOf(page)) === "t50-s6",
+			);
+			check(
+				"r2 stale reconcile keeps the current transcript",
+				!((await page.locator("#pane-chat").textContent()) ?? "").includes(
+					"R2-S5B-MARKER",
+				),
+			);
+			await page.screenshot({
+				path: path.join(OUT, "60-r2-stale-response.png"),
+			});
+			await page.unroute("**/api/chat/history");
 
 			// Quiescence before the stop (mirrors the T60 block).
 			await page.evaluate(async () => {

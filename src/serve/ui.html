@@ -2584,6 +2584,10 @@
       return;
     }
     if (sid === window.__mainSession && gen === window.__mainGen) return;
+    // One monotonic generation (the main/changed counter): events or
+    // responses older than the adopted one lose, whichever arrives
+    // first. A late swap answer never regresses a newer main.
+    if (gen < window.__mainGen) return;
     if (isTurnLive()) {
       // Don't replace the transcript mid-stream: hold the pair for a
       // pending refresh (the turn's end consumes it) and refuse Send
@@ -3372,6 +3376,10 @@
     try {
       const j = await getJSON("/api/chat/history");
       if (!j.ok) return;
+      // Same generation gate as applyMainChanged: a history response
+      // older than the adopted main is a stale snapshot — applying it
+      // would regress the id and append the wrong transcript.
+      if (typeof j.generation === "number" && j.generation < window.__mainGen) return;
       // P2-6: record which main this transcript belongs to (the boot
       // read seeds it; swaps adopt via applyMainChanged).
       if (typeof j.sessionId === "string") window.__mainSession = j.sessionId;
