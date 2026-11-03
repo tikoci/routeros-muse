@@ -219,7 +219,10 @@ describe("round 3 fix 2: fail closed on an unsafe private home", () => {
 						// Session start fails with the reason — no worker spawn.
 						const res = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello" }),
 						});
 						expect(res.status).toBe(500);
@@ -338,7 +341,10 @@ describe("round 3 fix 5: worker isolation is real", () => {
 						const priv = privateConfigHome(srv.dataHome, ws);
 						const res = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello" }),
 						});
 						expect(res.status).toBe(200);

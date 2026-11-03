@@ -623,7 +623,10 @@ describe("T49: the send route validates targets against router.toml", () => {
 			try {
 				const r = await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text, targets }),
 				});
 				expect(r.status).toBe(200);
@@ -700,7 +703,10 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 			try {
 				const r = await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text, targets }),
 				});
 				expect(r.status).toBe(200);
@@ -787,7 +793,10 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 			try {
 				const r = await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text: "status?", targets: [{ id: "gw" }] }),
 				});
 				expect(r.status).toBe(400);
@@ -851,7 +860,10 @@ describe("T49 follow-up: unforgeable data-quoted context line", () => {
 			try {
 				const r = await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({
 						text: "why is the link slow?",
 						targets: [{ id: "gw", name: "gw" }],

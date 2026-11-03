@@ -9,7 +9,6 @@ import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import { parseCli } from "../src/cli/args";
 import { decideCdb, decideTemplate } from "../src/lib/cdbSetup";
-import { registerWorkspace, registryFile } from "../src/lib/registry";
 import { have, run } from "../src/lib/run";
 import { Stop } from "../src/lib/stop";
 import { toolBinDir, toolEnv } from "../src/lib/tools";
@@ -1271,47 +1270,8 @@ describe("t133 review fixes", () => {
 		}
 	});
 
-	test("P2 open uses spawn+redirect (Retry = open)", async () => {
-		const dh = mktmp("t133-reopen-dh-");
-		const dir = path.join(dh, "retryws");
-		nodeFs.mkdirSync(dir, { recursive: true });
-		nodeFs.writeFileSync(
-			path.join(dir, "workspace.toml"),
-			'[home]\ntype = "single-copy"\ncanonical = true\n',
-		);
-		nodeFs.writeFileSync(path.join(dir, "AGENTS.md"), "# t133\n");
-		registerWorkspace(registryFile(dh), "retryws", dir);
-		const stub = Bun.serve({
-			hostname: "127.0.0.1",
-			port: 0,
-			fetch: () => Response.json({ state: "locked" }),
-		});
-		const srv = await startServer({
-			noWorkspace: true,
-			provider: "echo",
-			allowOpenCdb: true,
-			cdbFile: path.join(mktmp("t133-reopen-op-"), "operator.cdb"),
-			dataHome: dh,
-			configHome: mktmp("t133-reopen-cfg-"),
-			defaultWorkspaceDir: mktmp("t133-reopen-nets-"),
-			launchWorkspaceServer: async () => ({
-				url: `http://127.0.0.1:${stub.port}`,
-				stop: async () => {},
-			}),
-		});
-		try {
-			const origin = originOf(srv.url);
-			const r = await fetch(`${srv.url}/api/workspaces`, {
-				method: "POST",
-				headers: { "content-type": "application/json", origin },
-				body: JSON.stringify({ action: "open", name: "retryws" }),
-			});
-			const body = (await r.json()) as Record<string, unknown>;
-			expect(body["ok"]).toBe(true);
-			expect(body["url"]).toBe(`http://127.0.0.1:${stub.port}`);
-		} finally {
-			await srv.stop();
-			stub.stop();
-		}
-	});
+	// Round 3 finding E replaced the stub-child open test here with
+	// real children (tests/t133r3.test.ts "open accepts any reported
+	// auth state"): a stubbed "locked" response masked the bug where
+	// open required locked and killed valid open/missing-CDB children.
 });

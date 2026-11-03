@@ -251,14 +251,26 @@ export function pickFreePort(): Promise<number> {
 }
 
 /**
- * Same-origin guard for state-changing pre-auth routes (T133
- * review P1): every guarded POST must carry
- * `Content-Type: application/json`, an Origin that is this
- * server's own origin (scheme+host+port as served), and a Host
- * that is the bound host or a loopback name (DNS-rebinding).
- * Browsers always send Origin on these fetches; a missing or
- * foreign one is a cross-site request and is refused. Returns
- * the refusal why, or null when the request passes.
+ * Same-origin guard (T133 review P1, round 3 finding A): applied
+ * CENTRALLY, once, at the top of the /api dispatch, to every
+ * request whose method is not GET/HEAD/OPTIONS. Every guarded
+ * request must carry an Origin that is this server's own origin
+ * and a Host that is too (DNS-rebinding). Non-allowlisted routes
+ * must also carry `Content-Type: application/json` — a cross-site
+ * simple (text/plain, no-preflight) POST can neither set that
+ * header nor forge the Origin. Browsers always send Origin on
+ * these fetches; a missing or foreign one is a cross-site request
+ * and is refused. Returns the refusal why, or null when the
+ * request passes.
+ *
+ * Round 3 finding B: an Origin is accepted when its scheme is
+ * http(s), its port equals the served port, and its hostname
+ * (brackets stripped, lower-cased) is in the SAME allowed-host
+ * set the Host check uses — the bound host, the loopback names,
+ * and the local interface addresses on wildcard binds — so a
+ * --host 0.0.0.0 server unlocks through its LAN URL and a ::1
+ * bind accepts its bracketed Origin. The Host header's port is
+ * checked against the served port too.
  */
 export type SameOriginCtx = {
 	host: string;
@@ -266,17 +278,50 @@ export type SameOriginCtx = {
 	displayHost: string;
 };
 
+/** Bracket-stripped, lower-cased host for set comparison. */
+export function normalizeOriginHost(host: string): string {
+	let h = host.trim().toLowerCase();
+	if (h.startsWith("[") && h.endsWith("]")) h = h.slice(1, -1);
+	return h;
+}
+
+/** Split a Host header into its hostname and explicit port, if any. */
+function splitHostPort(header: string): {
+	host: string;
+	port: number | null;
+} {
+	const h = header.trim().toLowerCase();
+	if (h.startsWith("[")) {
+		const end = h.indexOf("]");
+		if (end < 0) return { host: h, port: null };
+		const rest = h.slice(end + 1);
+		const port =
+			rest.startsWith(":") && /^\d+$/.test(rest.slice(1))
+				? Number(rest.slice(1))
+				: null;
+		return { host: h.slice(1, end), port };
+	}
+	// A bare multi-colon value is an unbracketed IPv6 literal, not host:port.
+	if (h.indexOf(":") !== h.lastIndexOf(":")) return { host: h, port: null };
+	const idx = h.lastIndexOf(":");
+	if (idx >= 0 && /^\d+$/.test(h.slice(idx + 1)))
+		return { host: h.slice(0, idx), port: Number(h.slice(idx + 1)) };
+	return { host: h, port: null };
+}
+
 function allowedHosts(ctx: SameOriginCtx): Set<string> {
 	const out = new Set<string>();
-	out.add(ctx.displayHost.toLowerCase());
-	out.add(ctx.host.toLowerCase());
+	out.add(normalizeOriginHost(ctx.displayHost));
+	out.add(normalizeOriginHost(ctx.host));
 	for (const name of ["127.0.0.1", "localhost", "::1"]) out.add(name);
-	if (!isLoopbackHost(ctx.host)) {
+	if (!isLoopbackHost(normalizeOriginHost(ctx.host))) {
 		// LAN bind: the server answers on its interface addresses too.
 		for (const addrs of Object.values(os.networkInterfaces())) {
 			for (const a of addrs ?? []) {
-				if (a.family === "IPv4" && !a.internal) out.add(a.address);
-				if (a.family === "IPv6" && !a.internal) out.add(`[${a.address}]`);
+				if (a.family === "IPv4" && !a.internal)
+					out.add(normalizeOriginHost(a.address));
+				if (a.family === "IPv6" && !a.internal)
+					out.add(normalizeOriginHost(a.address));
 			}
 		}
 	}
@@ -309,17 +354,32 @@ export function checkSameOrigin(
 		: parsed.protocol === "https:"
 			? 443
 			: 80;
-	const hostOk =
-		parsed.hostname.toLowerCase() === ctx.displayHost.toLowerCase() ||
-		(isLoopbackHost(parsed.hostname) && isLoopbackHost(ctx.displayHost));
-	if (!hostOk || port !== ctx.port) return "refusing: foreign Origin";
-	const hostHeader = (req.headers.get("host") ?? "").toLowerCase();
-	const bare = hostHeader.includes("]")
-		? hostHeader.slice(0, hostHeader.indexOf("]") + 1) || hostHeader
-		: (hostHeader.split(":")[0] ?? "");
-	if (!allowedHosts(ctx).has(bare)) return "refusing: foreign Host";
+	if (port !== ctx.port) return "refusing: foreign Origin";
+	if (!allowedHosts(ctx).has(normalizeOriginHost(parsed.hostname)))
+		return "refusing: foreign Origin";
+	const { host: bare, port: hostPort } = splitHostPort(
+		req.headers.get("host") ?? "",
+	);
+	if (!allowedHosts(ctx).has(normalizeOriginHost(bare)))
+		return "refusing: foreign Host";
+	if (hostPort !== null && hostPort !== ctx.port)
+		return "refusing: foreign Host";
 	return null;
 }
+
+/**
+ * Finding A allowlist: the only /api POSTs the UI sends without a
+ * JSON body (bodyless POSTs — inventoried from ui.html fetch
+ * calls: twins doctor, new session, stop, oauth recheck). They keep
+ * the Origin/Host check; only the Content-Type requirement is
+ * lifted. Everything else needs application/json.
+ */
+export const BODYLESS_POST_PATHS = new Set([
+	"/api/auth/oauth-recheck",
+	"/api/twins/doctor",
+	"/api/chat/new",
+	"/api/chat/stop",
+]);
 
 /**
  * Per-path promise-chain mutex (T133 review P1): serializes
@@ -330,29 +390,35 @@ export function checkSameOrigin(
  * process) are NOT covered — atomicity there is upstream
  * (tikoci/centrs#581, need C15).
  */
-export function createCdbMutex(): <T>(
-	key: string,
-	fn: () => Promise<T>,
-) => Promise<T> {
+export type CdbMutex = {
+	<T>(key: string, fn: () => Promise<T>): Promise<T>;
+	/** In-flight key count (round 3 finding F: entries must clear). */
+	pending: () => number;
+};
+
+export function createCdbMutex(): CdbMutex {
 	const tails = new Map<string, Promise<void>>();
-	return async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+	const run = (async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
 		const prev = tails.get(key) ?? Promise.resolve();
 		let release!: () => void;
 		const tail = new Promise<void>((r) => {
 			release = r;
 		});
-		tails.set(
-			key,
-			prev.then(() => tail),
-		);
+		// The stored entry is the chained promise itself, so the
+		// finally below can recognize it: comparing against the
+		// bare tail never matches and leaks the entry (round 3 F).
+		const cur = prev.then(() => tail);
+		tails.set(key, cur);
 		await prev;
 		try {
 			return await fn();
 		} finally {
 			release();
-			if (tails.get(key) === tail) tails.delete(key);
+			if (tails.get(key) === cur) tails.delete(key);
 		}
-	};
+	}) as CdbMutex;
+	run.pending = () => tails.size;
+	return run;
 }
 
 /**
@@ -1137,6 +1203,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// every workspace child this picker spawned (orphan cleanup).
 	const cdbMutex = createCdbMutex();
 	const children = new Set<LaunchedWorkspace>();
+	// Round 3 finding D: picker shutdown. Set first in stop();
+	// launches that start after it are refused, launches in flight
+	// are awaited (bounded) and kill any child they produced.
+	let pickerStopping = false;
+	const inFlightLaunches = new Set<Promise<void>>();
+	/** stop() waits this long for in-flight launches before killing. */
+	const STOP_LAUNCH_WAIT_MS = 60_000;
 	let metaAuth: MetaAuth = "unknown";
 	const uiHtml = await Bun.file(UI_PATH).text();
 	const provider =
@@ -2296,6 +2369,22 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		authCdb.file,
 		tools,
 	);
+	// Round 3 finding C: a monotonic CDB generation. Every CDB
+	// mutation bumps it; a detection result can only write the
+	// cache when the generation hasn't changed since that
+	// detection started — so an auth-state read straddling an
+	// encrypt cannot restore a stale "open" over the fresh
+	// "encrypted" and reopen the bypass.
+	let cdbGeneration = 0;
+	function noteCdbMutation(): void {
+		cdbGeneration += 1;
+	}
+	function cacheCdbMode(
+		live: { mode: CdbMode; why?: string },
+		gen: number,
+	): void {
+		if (gen === cdbGeneration) cdbModeState = live;
+	}
 	if (provider === "echo") {
 		metaAuth = "authed";
 	}
@@ -2467,20 +2556,30 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		async fetch(req) {
 			const url = new URL(req.url);
 			const p = url.pathname;
-			// T133 review P1: the same-origin guard for every
-			// state-changing route under /api/auth/* plus the new
-			// CDB routes and /api/workspaces POST. Cross-site simple
-			// POSTs never reach a mutation.
-			const guardFail = (requireJson = true): Response | null => {
+			// Round 3 finding A: the same-origin guard runs CENTRALLY,
+			// once, at the top of the /api dispatch, on EVERY request
+			// whose method is not GET/HEAD/OPTIONS — never per-route,
+			// so no mutation route can be left unguarded. The only
+			// exemption is /api/mcp/relay (below: it 404s on this
+			// listener; the dedicated relay listener is
+			// token-authenticated for non-browser callers). JSON is
+			// required centrally too, except BODYLESS_POST_PATHS.
+			if (
+				p.startsWith("/api/") &&
+				req.method !== "GET" &&
+				req.method !== "HEAD" &&
+				req.method !== "OPTIONS" &&
+				p !== "/api/mcp/relay"
+			) {
 				if (boundPort === undefined)
 					return json({ ok: false, why: "server not bound" }, 500);
 				const why = checkSameOrigin(
 					req,
 					{ host, port: boundPort, displayHost },
-					{ requireJson },
+					{ requireJson: !BODYLESS_POST_PATHS.has(p) },
 				);
-				return why ? json({ ok: false, why }, 403) : null;
-			};
+				if (why) return json({ ok: false, why }, 403);
+			}
 			try {
 				// T106: the relay route does not exist on this listener
 				// at all (own 127.0.0.1 listener) — 404 before the auth
@@ -2542,9 +2641,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				}
 				if (p === "/api/auth/state") {
 					// Fresh detection every call: the operator may have
-					// encrypted mid-run, and the gate cache follows.
+					// encrypted mid-run, and the gate cache follows —
+					// unless a mutation landed mid-detection (finding
+					// C), in which case the cache keeps the fresher
+					// mutation result and this response stays local.
+					const gen = cdbGeneration;
 					const live = await detectCdbMode(authCdb.file, envFor(req));
-					cdbModeState = live;
+					cacheCdbMode(live, gen);
 					const state = sessions.valid(cookieToken(req))
 						? "unlocked"
 						: live.mode === "encrypted"
@@ -2571,14 +2674,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/auth/unlock" && req.method === "POST") {
-					const g = guardFail();
-					if (g) return g;
 					const body = (await req.json()) as { password?: unknown };
 					if (typeof body.password !== "string" || body.password === "") {
 						return json({ ok: false, why: "need {password}" }, 400);
 					}
+					const gen = cdbGeneration;
 					const live = await detectCdbMode(authCdb.file, envFor(req));
-					cdbModeState = live;
+					cacheCdbMode(live, gen);
 					if (live.mode !== "encrypted") {
 						return json(
 							{
@@ -2630,8 +2732,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					(p === "/api/auth/encrypt" || p === "/api/auth/create-cdb") &&
 					req.method === "POST"
 				) {
-					const g0 = guardFail();
-					if (g0) return g0;
 					if (!isLoopbackHost(host)) {
 						return json(
 							{
@@ -2658,8 +2758,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					// flips to the re-detected encrypted state and the
 					// bypass worker (if any) is stopped: anonymous
 					// routes re-gate as locked from this response on.
+					// The bump-then-write is atomic (no await between),
+					// so reads that started mid-mutation can no longer
+					// overwrite it (finding C).
 					const afterMutation = async (reported: string | null) => {
 						const live = await detectCdbMode(authCdb.file, envFor(req));
+						noteCdbMutation();
 						cdbModeState = live;
 						if (mspOwner === "bypass") await stopWorker("cdb-encrypted");
 						const scan = backupScanDir(authCdb.file, envFor(req), reported);
@@ -2678,8 +2782,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						? path.resolve(authCdb.file)
 						: "operator-default";
 					return await cdbMutex(key, async () => {
+						// Invalidate in-flight detections first: any
+						// read that started before this mutation must
+						// not write the cache after it (finding C).
+						noteCdbMutation();
 						const live = await detectCdbMode(authCdb.file, envFor(req));
-						cdbModeState = live;
+						cacheCdbMode(live, cdbGeneration);
 						if (p === "/api/auth/encrypt") {
 							if (live.mode === "encrypted") return alreadyEncrypted("encrypt");
 							if (live.mode !== "open") {
@@ -2730,8 +2838,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/auth/lock" && req.method === "POST") {
-					const gLock = guardFail();
-					if (gLock) return gLock;
 					// Worker-stop semantics (T64): revoke the token (which
 					// drops its unlock context) and stop the MSP worker
 					// bound to it. Chats resume via past sessions (T60
@@ -2753,8 +2859,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/auth/oauth-recheck" && req.method === "POST") {
-					const gOAuth = guardFail(false);
-					if (gOAuth) return gOAuth;
 					if (provider === "echo") {
 						setMeta("authed");
 						return json({ ok: true, meta: metaAuth });
@@ -2816,8 +2920,6 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					});
 				}
 				if (p === "/api/workspaces" && req.method === "POST") {
-					const gWs = guardFail();
-					if (gWs) return gWs;
 					const body = (await req.json()) as {
 						action?: unknown;
 						name?: unknown;
@@ -2847,49 +2949,89 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								provider,
 								dataHome: dataHomeDir(opts.dataHome),
 							}));
+					// Round 3 finding E: open accepts any auth state the
+					// child reports (locked, open-needs-encryption,
+					// missing, bypassed) once it answers — an older
+					// open-CDB or missing-CDB workspace still hands
+					// off to its overlay. Create keeps requiring
+					// locked: a fresh workspace must be encrypted.
+					const OPEN_READY_STATES = new Set([
+						"locked",
+						"open-needs-encryption",
+						"missing",
+						"bypassed",
+					]);
 					const launchAndTrack = async (
 						dir: string,
+						expectLocked = true,
 					): Promise<
 						{ ok: true; child: LaunchedWorkspace } | { ok: false; why: string }
 					> => {
-						let port: number;
+						// Finding D: refused once shutdown started.
+						if (pickerStopping) return { ok: false, why: "server is stopping" };
+						let flightDone!: () => void;
+						const flight = new Promise<void>((r) => {
+							flightDone = r;
+						});
+						inFlightLaunches.add(flight);
 						try {
-							port = await pickFreePort();
-						} catch (err) {
-							return {
-								ok: false,
-								why: `no free port: ${err instanceof Error ? err.message : String(err)}`,
-							};
+							let port: number;
+							try {
+								port = await pickFreePort();
+							} catch (err) {
+								return {
+									ok: false,
+									why: `no free port: ${err instanceof Error ? err.message : String(err)}`,
+								};
+							}
+							let child: LaunchedWorkspace;
+							try {
+								child = await launch(dir, port);
+							} catch (err) {
+								return {
+									ok: false,
+									why: `workspace server did not start: ${err instanceof Error ? err.message : String(err)}`,
+								};
+							}
+							// A create that completes during shutdown
+							// kills the child it just produced instead
+							// of leaking it (finding D).
+							if (pickerStopping) {
+								await child.stop().catch(() => {});
+								return { ok: false, why: "server is stopping" };
+							}
+							children.add(child);
+							const ready = await waitForChildReady(child.url);
+							if (pickerStopping) {
+								children.delete(child);
+								await child.stop().catch(() => {});
+								return { ok: false, why: "server is stopping" };
+							}
+							if (!ready.ok) {
+								children.delete(child);
+								await child.stop().catch(() => {});
+								const logs = child.logs?.();
+								return {
+									ok: false,
+									why: `${ready.why}${logs ? `: ${logs.slice(0, 500)}` : ""}`,
+								};
+							}
+							if (
+								ready.state !== "locked" &&
+								(expectLocked || !OPEN_READY_STATES.has(ready.state))
+							) {
+								children.delete(child);
+								await child.stop().catch(() => {});
+								return {
+									ok: false,
+									why: `new workspace is not locked (state: ${ready.state})`,
+								};
+							}
+							return { ok: true, child };
+						} finally {
+							flightDone();
+							inFlightLaunches.delete(flight);
 						}
-						let child: LaunchedWorkspace;
-						try {
-							child = await launch(dir, port);
-						} catch (err) {
-							return {
-								ok: false,
-								why: `workspace server did not start: ${err instanceof Error ? err.message : String(err)}`,
-							};
-						}
-						children.add(child);
-						const ready = await waitForChildReady(child.url);
-						if (!ready.ok) {
-							children.delete(child);
-							await child.stop().catch(() => {});
-							const logs = child.logs?.();
-							return {
-								ok: false,
-								why: `${ready.why}${logs ? `: ${logs.slice(0, 500)}` : ""}`,
-							};
-						}
-						if (ready.state !== "locked") {
-							children.delete(child);
-							await child.stop().catch(() => {});
-							return {
-								ok: false,
-								why: `new workspace is not locked (state: ${ready.state})`,
-							};
-						}
-						return { ok: true, child };
 					};
 					if (body.action === "create") {
 						if (typeof body.name !== "string" || !body.name) {
@@ -2992,7 +3134,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// Retry = open: the same spawn+redirect launch
 						// as create. The restart command stays as the
 						// fallback text when the launch itself fails.
-						const started = await launchAndTrack(found.path);
+						// Open takes any reported auth state (finding
+						// E); only create requires locked.
+						const started = await launchAndTrack(found.path, false);
 						if (!started.ok) {
 							return json(
 								{
@@ -5018,9 +5162,23 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		hostname: boundHost,
 		relayUrl: `http://127.0.0.1:${relay.port}/`,
 		stop: async () => {
+			// Finding D: the flag goes first, so launches that start
+			// after it are refused and in-flight ones kill the child
+			// they produced instead of tracking it as live.
+			pickerStopping = true;
 			clearInterval(hb);
 			relay.stop();
 			server.stop();
+			// In-flight launches are awaited (bounded): only once
+			// they settle is the child set complete — stop() then
+			// kills the full set, so a create completing during
+			// shutdown leaks nothing.
+			if (inFlightLaunches.size > 0) {
+				await Promise.race([
+					Promise.allSettled([...inFlightLaunches]),
+					new Promise((r) => setTimeout(r, STOP_LAUNCH_WAIT_MS)),
+				]);
+			}
 			// T133 review P2: spawned workspace children die with the
 			// picker — one Ctrl-C ends the session. SIGTERM first,
 			// then SIGKILL after the launcher's own grace.

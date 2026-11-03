@@ -489,7 +489,10 @@ describe("fail closed on an unsafe per-workspace home", () => {
 						expect(String(pre["homeError"] ?? "")).toMatch(/symlink/i);
 						const res = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello" }),
 						});
 						expect(res.status).toBe(500);
@@ -545,7 +548,10 @@ describe("spawn isolation on every path", () => {
 						expect(recheck.status).toBe(200);
 						const send = await fetch(`${srv.url}api/chat/send`, {
 							method: "POST",
-							headers: { "content-type": "application/json" },
+							headers: {
+								"content-type": "application/json",
+								origin: new URL(srv.url).origin,
+							},
 							body: JSON.stringify({ text: "hello" }),
 						});
 						expect(send.status).toBe(200);

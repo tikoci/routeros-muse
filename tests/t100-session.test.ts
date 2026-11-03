@@ -17,7 +17,10 @@ async function json(url: string, body?: unknown) {
 			? {}
 			: {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(url).origin,
+					},
 					body: JSON.stringify(body),
 				},
 	);

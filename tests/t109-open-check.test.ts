@@ -21,7 +21,10 @@ describe("POST /api/open-check hygiene", () => {
 				const raw = (body: string) =>
 					fetch(`${srv.url}api/open-check`, {
 						method: "POST",
-						headers: { "content-type": "application/json" },
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
 						body,
 					});
 				expect((await raw("{not json")).status).toBe(400);

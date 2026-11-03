@@ -268,13 +268,19 @@ describe("serve", () => {
 				expect(get.text).toContain("test-gw");
 				const badToml = await fetch(`${srv.url}api/file`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ path: "router.toml", text: "[device\nid = " }),
 				});
 				expect(badToml.status).toBe(400);
 				const goodToml = await fetch(`${srv.url}api/file`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ path: "extra.toml", text: "[a]\nb = 1\n" }),
 				});
 				expect(goodToml.status).toBe(200);
@@ -522,7 +528,10 @@ describe("serve", () => {
 				const send = (await (
 					await fetch(`${srv.url}api/chat/send`, {
 						method: "POST",
-						headers: { "content-type": "application/json" },
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
 						body: JSON.stringify({ text: "SERVE-ECHO-PROBE" }),
 					})
 				).json()) as { ok: boolean; turnId: string };
@@ -596,7 +605,10 @@ describe("serve", () => {
 				const send = (await (
 					await fetch(`${srv.url}api/chat/send`, {
 						method: "POST",
-						headers: { "content-type": "application/json" },
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
 						body: JSON.stringify({ text: "RACE-PROBE" }),
 					})
 				).json()) as { ok: boolean; why?: string };
@@ -657,19 +669,28 @@ describe("serve", () => {
 				expect(catalog.models.some((m) => m.isDefault)).toBe(true);
 				const effort = await fetch(`${srv.url}api/chat/effort`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ effort: "max" }),
 				});
 				expect(effort.status).toBe(200);
 				const badEffort = await fetch(`${srv.url}api/chat/effort`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ effort: "turbo" }),
 				});
 				expect(badEffort.status).toBe(400);
 				const access = await fetch(`${srv.url}api/chat/access`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ mode: "onRequest" }),
 				});
 				expect(access.status).toBe(200);
@@ -679,7 +700,10 @@ describe("serve", () => {
 				const model = (await (
 					await fetch(`${srv.url}api/chat/model`, {
 						method: "POST",
-						headers: { "content-type": "application/json" },
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
 						body: JSON.stringify({ modelId: firstModel.modelId }),
 					})
 				).json()) as { ok: boolean; why: string };
@@ -714,7 +738,10 @@ describe("serve", () => {
 			try {
 				await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text: "STATS-PROBE" }),
 				});
 				type ChatStats = {
@@ -759,7 +786,10 @@ describe("serve", () => {
 			try {
 				await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text: "ITEMS-PROBE" }),
 				});
 				type HistoryItem = { kind: string; role?: string; text?: string };
@@ -858,7 +888,10 @@ describe("serve", () => {
 				})();
 				const send = await fetch(`${srv.url}api/chat/send`, {
 					method: "POST",
-					headers: { "content-type": "application/json" },
+					headers: {
+						"content-type": "application/json",
+						origin: new URL(srv.url).origin,
+					},
 					body: JSON.stringify({ text: "ROW-PROBE" }),
 				});
 				expect(send.status).toBe(200);
