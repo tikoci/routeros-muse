@@ -404,12 +404,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T41"
 title = "Renderer: T3 patterns plus template-declared JS"
-status = "needed"
+status = "active"
 detail = "Port T3 transcript-UX patterns into the vanilla stack per T42 findings; template-declared JS/CSS needs manifest (markdown, mermaid, monaco first)."
 evidence = "T42 landed (notes/t42-t3-ux.md schemes); chat-window behavior inventory in notes/t41-chat-inventory.md (GAP6 reply chrome plus GAP7 work-group grouping fold into this task); T62 row-system inputs in notes/t62-resweep.md (15-kind union, grouping, stable identity; last-ready claim NOT verified, do not build on it); T80 review: D17 artifact viewer and offline topology dependency now explicit in T83; keep transcript work distinct from actual artifact display."
 blocked_by = ["T42", "T37"]
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 design pass (orch claude); code slices after T60/T85 merge"
+updated = "2026-11-02"
 
 [[task]]
 id = "T44"
@@ -594,12 +594,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T60"
 title = "Wire Make-current resume (t3code GAP10)"
-status = "needed"
+status = "active"
 detail = "The past-chat tab already renders a Make-current button with no handler; wire it to resume that session as the main chat (MSP resume support as needed); smoke-gated."
 evidence = "t3code chat review GAP10 (notes/t41-chat-inventory.md); T62 resume mechanics in notes/t62-resweep.md (shared lock, model-first-read, continuation payload)"
 blocked_by = []
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 (orch claude; paired with T85)"
+updated = "2026-11-02"
 
 [[task]]
 id = "T61"
@@ -844,12 +844,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T85"
 title = "Offer start-new/reset for the single main session"
-status = "needed"
+status = "active"
 detail = "D20 promises a fresh-session action but no UI/route exists. Provide a one-agent reset/new action using the corrected lifecycle, keep prior transcript available, and preserve unsent drafts with an explicit policy; do not require locking/restarting the app to start fresh."
 evidence = "T80 source audit: sessionStart is only called by ensureMain; no reset/new route or action. D20 outcome; coordinate T60 resume, T57 drafts, T71 stop."
 blocked_by = ["T81", "T71"]
-agent = ""
-updated = "2026-11-01"
+agent = "muse-spark-1.3 (orch claude; paired with T60)"
+updated = "2026-11-02"
 
 [[task]]
 id = "T86"
