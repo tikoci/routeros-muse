@@ -980,12 +980,12 @@ updated = "2026-11-01"
 [[task]]
 id = "T98"
 title = "File route hygiene: no symlink follow, no device.cdb, bounded reads"
-status = "needed"
-detail = "/api/file (src/lib/workspace.ts readFile path, src/serve/server.ts) serves any workspace path and follows symlinks: an internal alias -> device.cdb link returns the CDB bytes, and the tree traverses most hidden dirs. Apply the T83 artifact rule set to the editor route: lstat-walk (no symlinks inside the workspace), O_NOFOLLOW open + fstat + read-from-fd, deny device.cdb and other credential stores by name, keep the 512 KiB editor cap. Fail-first tests. T55 adds an agent-driven caller: ui_open gates the path fd-safely, but the UI then fetches doc/TOML kinds through /api/file, which resolves by pathname (a swap between gate and fetch can show an outside file; muse-wonder review 2026-11-02, CONFIRMED). Make /api/file use the T83 fd-safe walk. sol rated the ui_open doc/TOML case P1 (CONFIRMED, review of f22fa59, 2026-11-02): do the fd-safe confinement and the viewer size bound at the actual read."
-evidence = "T83 codex gpt-6.1-sol review 2026-11-01: alias.html -> device.cdb returned 200 FAKE_CDB_SECRET via /api/artifact; noted /api/file already exposes arbitrary workspace files (pre-existing, broader than T83)"
+status = "done"
+detail = "Widened 2026-11-04: harden GET/POST /api/file and GET /api/toml together. Extract resolveArtifact's lstat walk into one shared guard, deny hiddenFromFiles' credential-store rule on every component and link target, use bounded non-following fd reads (512 KiB), and refuse symlinks for writes with fd fstat before truncate/write and exclusive creation. Preserve TOML validation/editor drift protection and T97 scaffold no-clobber/ledger behavior. Read-only internal symlinks are supported because the template latest path is reachable in the UI; parent-swap race retains the T83/T97 accepted scope."
+evidence = "CLAIM 2026-11-04 codex gpt-6.1-sol, branch t98-workspace-file-guards off main 026532f (already includes T162). make -C records check -> ok: 39 needs, 169 tasks, 55 decisions, 31 concepts. Fail-first: bun test tests/t98-workspace-file-guards.test.ts -> 2 pass / 16 fail (18 tests; /tmp/t98-before.log). Failures: credential name read/write device.cdb, device.cdb.bak.123, DEVICE.CDB; credential directory component; symlink-to-CDB read/write/TOML; outside symlink read/write/TOML (write changes outside bytes on baseline); outside directory link; FIFO timeout; latest write. TOML cap and ordinary/editor behavior already passed at this HEAD (cap predates this fix). First post-fix focused run with artifact.test.ts -> 61 pass / 0 fail. Latest choice: read-only confined follow. Evidence: templates/network/observations/README.md documents latest; walkTree statSync follows directory links, listWorkspaceFiles includes observations/dev/latest/settings.toml in the real-file fixture; ui.html renderFiles/renderDoc/renderToml send those paths to /api/file and /api/toml. Regression confirms latest listed and both reads 200, write 400, capture unchanged. Additional coverage: credential link chain, new credential denial, loops, trusted root/absolute internal link and no-clobber competing create. Final tests independently exercise all three FIFO operations. Final baseline replay: git show main:src/lib/workspace.ts (026532f, imports rewritten only to run the snapshot from /tmp); bun test /tmp/t98-baseline.test.ts -> 2 pass / 22 fail, 24 tests (/tmp/t98-before-final.log). bun test tests/t98-workspace-file-guards.test.ts -> 24 pass / 0 fail, 72 assertions (/tmp/t98-after.log). PATH=node_modules/.bin:$PATH bun scratch/t98-sweep.ts -> PASS dark/light real tree to latest markdown + TOML panes, PASS console clean; screenshots out/ui-smoke/t98-latest-{doc,toml}-{dark,light}.png eyeballed. Filed T170 for the enabled Save/write-back note on a read-only alias. bun run lint -> biome 102 files clean, tsc zero; make -C records check -> ok: 39 needs, 170 tasks, 55 decisions, 31 concepts. First gate suite 809 pass / 1 fail: competing-create test added while that process had the pre-fix writer cached; fresh focused run passes. Final frozen-code gate: PATH=$PWD/node_modules/.bin:$PATH make gate -> exit 0; biome 102 files clean, tsc zero, 56 skills valid, 810 pass / 0 fail across 50 files, 480 PASS / 0 FAIL, SMOKE GREEN, zero pageerrors, expected HTTP-error console counts reconciled, tmpdir clean (/tmp/tmp.hOkrIZayuy empty). Full log /tmp/t98-gate-final.log. Whole-app screenshots inspected: shell, lock, picker, Access, settings and light device pane, plus dark/light latest doc/TOML. make -C records check -> ok: 39 needs, 170 tasks, 55 decisions, 31 concepts. SECURITY.md retains T98 with the enforcement and accepted parent-swap residual. T162-owned tools/ui-smoke.ts and src/serve/server.ts untouched."
 blocked_by = ["T83"]
-agent = ""
-updated = "2026-11-02"
+agent = "codex gpt-6.1-sol"
+updated = "2026-11-04"
 
 [[task]]
 id = "T99"
@@ -1732,5 +1732,16 @@ detail = "T162 item 2, split out. The ui_select_device relay checks ids against 
 evidence = "Filed 2026-11-04 by T162 (claude). server.ts handleRelay ui_select_device; knownDeviceIds set in the /api/devices route, deleted on remove. Smoke T55 leg waits for the card before the relay call because of this."
 acceptance = "Fail-first tests: select before any UI list succeeds for a CDB device (or refuses per D55), a failed list does not leave stale ids selectable; smoke T55 leg passes without the pre-wait; make gate and records check pass."
 blocked_by = ["D55"]
+agent = ""
+updated = "2026-11-04"
+
+[[task]]
+id = "T170"
+title = "Explain read-only symlink paths in the TOML pane"
+status = "needed"
+detail = "T98 permits confined internal symlink reads (template observations/dev/latest) but refuses every symlink write. The TOML pane still offers Save and says edits write back to the alias; the route safely refuses. Surface a path-level read-only reason and disable Save, or offer opening the canonical workspace target explicitly. Keep route enforcement independent of the UI."
+evidence = "T98 real-server browser sweep 2026-11-04: PATH=node_modules/.bin:$PATH bun scratch/t98-sweep.ts -> PASS dark/light real tree -> latest markdown + TOML panes; PASS console clean. Eyeballed out/ui-smoke/t98-latest-toml-light.png: enabled Save and edits-write-back note for observations/dev/latest/settings.toml. tests/t98-workspace-file-guards.test.ts proves the alias write is 400 and capture bytes unchanged."
+acceptance = "A TOML file opened through an internal symlink is clearly read-only; regular-path editor saves still work; browser smoke and records check pass."
+blocked_by = ["T98"]
 agent = ""
 updated = "2026-11-04"

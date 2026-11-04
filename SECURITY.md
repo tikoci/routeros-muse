@@ -187,8 +187,16 @@ mid-copy parent swap (Node has no openat).
 
 - T63: auth hardening (rate limiting, Secure cookie, durable
   sessions) — deferred past the loopback-first model.
-- T98: `/api/file` still resolves by pathname (symlink follow,
-  no `device.cdb` denial, `ui_open` swap window) — open.
+- T98: `/api/file` reads/writes and `/api/toml` now deny credential
+  names (`*.cdb` and backups) on every path component. Reads use an
+  lstat walk, `O_NOFOLLOW|O_NONBLOCK`, fstat and a bounded fd read
+  (512 KiB). Read-only symlink targets must stay inside the workspace
+  and pass the same credential checks, preserving `observations/*/latest`.
+  Writes refuse all symlinks and write through a regular-file fd;
+  new files are created exclusively. Accepted residual: a concurrent
+  parent-directory swap during the walk/open window (Node has no
+  openat), as for T83/T97. The pane fetch enforces its own checks
+  independently of `ui_open` preflight.
 - T111: no password channel into centrs MCP for encrypted CDBs
   (calls fail honestly with `cdb/password-required`) — deferred by
   D46: centrs MCP leaves the session config this phase (T112) and

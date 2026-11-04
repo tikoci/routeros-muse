@@ -103,13 +103,17 @@ export function walkTree(
 	}
 }
 
+function isCredentialStore(name: string): boolean {
+	return /\.cdb(\.|$)/i.test(name);
+}
+
 /**
  * T143: the left panel's honest file list — every workspace file
  * except dotfiles/dot-dirs (private homes, .agents) and credential
  * stores: *.cdb and their centrs backups (device.cdb.bak.*).
  */
 export function hiddenFromFiles(name: string): boolean {
-	return name.startsWith(".") || /\.cdb(\.|$)/i.test(name);
+	return name.startsWith(".") || isCredentialStore(name);
 }
 
 export function listWorkspaceFiles(root: string): TreeEntry[] {
@@ -239,25 +243,109 @@ export function listRecents(root: string, cx?: TierContext): RecentRow[] {
 
 export type FileResult = { status: number; body: unknown };
 
+type PathGuard =
+	| { ok: true; full: string; exists: boolean }
+	| { ok: false; status: number; why: string };
+
+/**
+ * Shared artifact/editor lstat walk. The root may live under a system
+ * symlink (macOS /tmp). Only editor reads follow workspace links, walking
+ * their targets again so confinement and credential checks cover every hop.
+ * Like T83/T97, a concurrent parent-directory swap remains out of scope:
+ * Node has no openat to pin directory components.
+ */
+function guardWorkspacePath(
+	root: string,
+	rel: string,
+	opts: { follow?: boolean; create?: boolean } = {},
+	hops = 0,
+): PathGuard {
+	let base: string;
+	try {
+		base = nodeFs.realpathSync(root);
+	} catch {
+		return { ok: false, status: 404, why: "no such workspace" };
+	}
+	const full = safeJoin(base, rel);
+	if (!full)
+		return { ok: false, status: 400, why: "path escapes the workspace" };
+	if (rel.split(path.sep).some(isCredentialStore))
+		return { ok: false, status: 400, why: "credential stores are private" };
+	if (hops > 40) return { ok: false, status: 400, why: "too many symlinks" };
+	const parts = path.relative(base, full).split(path.sep);
+	let cursor = base;
+	for (let i = 0; i < parts.length; i++) {
+		cursor = path.join(cursor, parts[i] as string);
+		let st: nodeFs.Stats;
+		try {
+			st = nodeFs.lstatSync(cursor);
+		} catch (err) {
+			if (opts.create && (err as NodeJS.ErrnoException).code === "ENOENT")
+				return { ok: true, full, exists: false };
+			return { ok: false, status: 404, why: "no such file" };
+		}
+		if (st.isSymbolicLink()) {
+			if (!opts.follow)
+				return { ok: false, status: 400, why: "files may not be symlinks" };
+			try {
+				const link = nodeFs.readlinkSync(cursor);
+				if (link.split(path.sep).some(isCredentialStore))
+					return {
+						ok: false,
+						status: 400,
+						why: "credential stores are private",
+					};
+				const target = path.resolve(path.dirname(cursor), link);
+				// Check this hop separately, before appending the remaining path.
+				const targetRel = path.relative(base, target);
+				const checked = guardWorkspacePath(root, targetRel, opts, hops + 1);
+				if (!checked.ok) return checked;
+				return guardWorkspacePath(
+					root,
+					path.relative(base, path.join(checked.full, ...parts.slice(i + 1))),
+					opts,
+					hops + 1,
+				);
+			} catch {
+				return { ok: false, status: 400, why: "unreadable symlink" };
+			}
+		}
+		if (i < parts.length - 1 ? !st.isDirectory() : !st.isFile()) {
+			// A followed directory target is checked by the caller's remaining walk.
+			if (opts.follow && i === parts.length - 1 && st.isDirectory())
+				return { ok: true, full, exists: true };
+			return { ok: false, status: 400, why: "not a regular file" };
+		}
+	}
+	return { ok: true, full, exists: true };
+}
+
+function fileFailure(result: { status: number; why: string }): FileResult {
+	return { status: result.status, body: { ok: false, why: result.why } };
+}
+
+function readWorkspaceText(
+	root: string,
+	rel: string,
+	follow = true,
+): { ok: true; text: string } | { ok: false; status: number; why: string } {
+	const guarded = guardWorkspacePath(root, rel, { follow });
+	if (!guarded.ok) return guarded;
+	const bytes = readFdBounded(guarded.full, MAX_FILE_BYTES);
+	if (!bytes)
+		return {
+			ok: false,
+			status: 400,
+			why: "not a regular file or file too large",
+		};
+	return { ok: true, text: bytes.toString("utf8") };
+}
+
 /** Read one workspace file (GET /api/file shape). */
 export function readWorkspaceFile(root: string, rel: string): FileResult {
-	const full = safeJoin(root, rel);
-	if (!full)
-		return {
-			status: 400,
-			body: { ok: false, why: "path escapes the workspace" },
-		};
-	let st: nodeFs.Stats;
-	try {
-		st = nodeFs.statSync(full);
-	} catch {
-		return { status: 404, body: { ok: false, why: "no such file" } };
-	}
-	if (st.isDirectory())
-		return { status: 400, body: { ok: false, why: "is a directory" } };
-	if (st.size > MAX_FILE_BYTES)
-		return { status: 400, body: { ok: false, why: "file too large" } };
-	const text = nodeFs.readFileSync(full, "utf8");
+	const result = readWorkspaceText(root, rel);
+	if (!result.ok) return fileFailure(result);
+	const text = result.text;
 	return {
 		status: 200,
 		body: {
@@ -297,12 +385,9 @@ export function writeWorkspaceFile(
 	text: string,
 	opts?: WriteOpts,
 ): FileResult {
-	const full = safeJoin(root, rel);
-	if (!full)
-		return {
-			status: 400,
-			body: { ok: false, why: "path escapes the workspace" },
-		};
+	const guarded = guardWorkspacePath(root, rel, { create: true });
+	if (!guarded.ok) return fileFailure(guarded);
+	const full = guarded.full;
 	if (rel.endsWith(".toml")) {
 		const parsed = parseToml(text);
 		if (!parsed.ok)
@@ -311,10 +396,8 @@ export function writeWorkspaceFile(
 				body: { ok: false, why: `invalid TOML: ${parsed.error}` },
 			};
 		if (opts?.fromTomlEditor === true) {
-			let oldText: string;
-			try {
-				oldText = nodeFs.readFileSync(full, "utf8");
-			} catch {
+			const original = readWorkspaceText(root, rel, false);
+			if (!original.ok) {
 				return {
 					status: 409,
 					body: {
@@ -323,6 +406,7 @@ export function writeWorkspaceFile(
 					},
 				};
 			}
+			const oldText = original.text;
 			const old = parseToml(oldText);
 			if (!old.ok) {
 				return {
@@ -401,8 +485,36 @@ export function writeWorkspaceFile(
 			}
 		}
 	}
-	nodeFs.mkdirSync(path.dirname(full), { recursive: true });
-	nodeFs.writeFileSync(full, text);
+	let fd: number | undefined;
+	try {
+		nodeFs.mkdirSync(path.dirname(full), { recursive: true });
+		const checked = guardWorkspacePath(root, rel, { create: true });
+		if (!checked.ok) return fileFailure(checked);
+		const { O_WRONLY, O_NOFOLLOW, O_NONBLOCK, O_CREAT, O_EXCL } =
+			nodeFs.constants;
+		fd = nodeFs.openSync(
+			full,
+			O_WRONLY |
+				O_NOFOLLOW |
+				O_NONBLOCK |
+				(guarded.exists ? 0 : O_CREAT | O_EXCL),
+		);
+		if (!nodeFs.fstatSync(fd).isFile())
+			return fileFailure({ status: 400, why: "not a regular file" });
+		// Truncate only after checking the opened object, never by pathname.
+		nodeFs.ftruncateSync(fd, 0);
+		nodeFs.writeFileSync(fd, text);
+	} catch {
+		return fileFailure({ status: 400, why: "cannot write workspace file" });
+	} finally {
+		if (fd !== undefined) {
+			try {
+				nodeFs.closeSync(fd);
+			} catch {
+				// The write result describes the opened object, not close cleanup.
+			}
+		}
+	}
 	return { status: 200, body: { ok: true, path: rel } };
 }
 
@@ -436,29 +548,11 @@ function typeFlips(value: string): boolean {
  * when every row is editable.
  */
 export function readTomlSections(root: string, rel: string): FileResult {
-	const full = safeJoin(root, rel);
-	if (!full || !rel.endsWith(".toml")) {
-		return {
-			status: 400,
-			body: { ok: false, why: "need a workspace .toml path" },
-		};
-	}
-	let st: nodeFs.Stats;
-	try {
-		st = nodeFs.statSync(full);
-	} catch {
-		return { status: 404, body: { ok: false, why: "no such file" } };
-	}
-	// T106: the TOML viewer reads through this path with no other
-	// cap; apply the same 512 KiB viewer limit ui_open preflights.
-	if (st.size > MAX_FILE_BYTES)
-		return { status: 400, body: { ok: false, why: "file too large" } };
-	let text: string;
-	try {
-		text = nodeFs.readFileSync(full, "utf8");
-	} catch {
-		return { status: 404, body: { ok: false, why: "no such file" } };
-	}
+	if (!rel.endsWith(".toml"))
+		return fileFailure({ status: 400, why: "need a workspace .toml path" });
+	const result = readWorkspaceText(root, rel);
+	if (!result.ok) return fileFailure(result);
+	const text = result.text;
 	const parsed = parseToml(text);
 	if (!parsed.ok)
 		return {
@@ -934,28 +1028,16 @@ export function resolveArtifact(root: string, rel: string): ArtifactResult {
 			why: "not a renderable artifact (want html/htm/svg/png/jpg/jpeg/gif/webp)",
 		};
 	}
-	const full = safeJoin(root, rel);
-	if (!full)
-		return { ok: false, status: 400, why: "path escapes the workspace" };
-	// lstat every component below the root. The root itself is not
-	// judged: it may live under a system link (macOS /tmp) that is
-	// the caller's, not the workspace's.
-	const base = path.resolve(root);
-	const relParts = path.relative(base, full).split(path.sep);
-	let cursor = base;
-	for (let i = 0; i < relParts.length; i++) {
-		cursor = path.join(cursor, relParts[i] as string);
-		let lst: nodeFs.Stats;
-		try {
-			lst = nodeFs.lstatSync(cursor);
-		} catch {
-			return { ok: false, status: 404, why: "no such artifact" };
-		}
-		if (lst.isSymbolicLink())
-			return { ok: false, status: 400, why: "artifacts may not be symlinks" };
-		if (i === relParts.length - 1 && !lst.isFile())
-			return { ok: false, status: 400, why: "not a servable artifact" };
-	}
+	const guarded = guardWorkspacePath(root, rel);
+	if (!guarded.ok)
+		return {
+			...guarded,
+			why:
+				guarded.why === "files may not be symlinks"
+					? "artifacts may not be symlinks"
+					: guarded.why,
+		};
+	const full = guarded.full;
 	const { O_NOFOLLOW, O_NONBLOCK, O_RDONLY } = nodeFs.constants;
 	let fd: number;
 	try {
