@@ -1,0 +1,167 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "message": "router rebooted",
+      "time": "2026-11-04 04:05:11",
+      "topics": "system,info"
+    },
+    {
+      "message": "lo link up",
+      "time": "2026-11-04 04:05:11",
+      "topics": "interface,info"
+    },
+    {
+      "message": "client1 on ether1 got IP address 10.0.2.15",
+      "time": "2026-11-04 04:05:16",
+      "topics": "dhcp,info"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:05:24",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "user admin logged in from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:24",
+      "topics": "system,info,account"
+    },
+    {
+      "message": "user admin logged in via api",
+      "time": "2026-11-04 04:05:24",
+      "topics": "system,info,account"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:05:25",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "login failure for user admin from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:38",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "login failure for user nobody from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:38",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "login failure for user admin from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:39",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "login failure for user nobody from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:39",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "login failure for user admin from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:40",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "login failure for user nobody from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:05:41",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:05:45",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:06:04",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "\"br-lab\" mac address changed to D6:B7:D3:00:59:BF",
+      "time": "2026-11-04 04:06:12",
+      "topics": "bridge,info"
+    },
+    {
+      "message": "device added by api:admin@:: (*3 = /interface bridge add disabled=yes name=br-lab)",
+      "time": "2026-11-04 04:06:12",
+      "topics": "system,info"
+    },
+    {
+      "message": "\"br-mgmt\" mac address changed to 36:CC:9B:39:F2:46",
+      "time": "2026-11-04 04:06:12",
+      "topics": "bridge,info"
+    },
+    {
+      "message": "device added by api:admin@:: (*4 = /interface bridge add name=br-mgmt)",
+      "time": "2026-11-04 04:06:12",
+      "topics": "system,info"
+    },
+    {
+      "message": "address added by api:admin@:: (*2 = /ip address add address=192.168.88.1/24 interface=br-mgmt)",
+      "time": "2026-11-04 04:06:13",
+      "topics": "system,info"
+    },
+    {
+      "message": "IPv6 address added by api:admin@:: (*3 = /ipv6 address add address=fd00:88::1/64 advertise=no interface=br-mgmt)",
+      "time": "2026-11-04 04:06:13",
+      "topics": "system,info"
+    },
+    {
+      "message": "muse-stats: synthetic warning for capture",
+      "time": "2026-11-04 04:06:13",
+      "topics": "script,warning"
+    },
+    {
+      "message": "dhcp client added by api:admin@:: (*2 = /ip dhcp-client add interface=br-lab)",
+      "time": "2026-11-04 04:06:13",
+      "topics": "system,info"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:06:24",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "login failure for user admin from 10.0.2.2 via rest-api",
+      "time": "2026-11-04 04:06:28",
+      "topics": "system,error,critical"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:06:41",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:06:58",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:07:15",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:07:32",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:07:50",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:08:08",
+      "topics": "ssld,error"
+    },
+    {
+      "message": "server session, sermgr, ssl: no common ciphers",
+      "time": "2026-11-04 04:08:26",
+      "topics": "ssld,error"
+    }
+  ],
+  "warnings": [],
+  "tips": []
+}

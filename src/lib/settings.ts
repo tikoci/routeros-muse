@@ -7,6 +7,9 @@
 //   [agent]
 //   default_access = "promptUnmatched" | "allowAll"
 //
+//   [devices]
+//   status_poll_seconds = 0 | 15 | 30 | 60
+//
 // Only the two selector modes are storable; anything else on disk is
 // ignored (read falls back to null, the caller applies the default).
 // Writes use line surgery, never parse-and-re-emit, so comments and
@@ -83,20 +86,33 @@ export function readAutoRouterosSkills(dataHome?: string): boolean {
 	return readAgentKey(dataHome, "auto_routeros_skills") !== false;
 }
 
-const SECTION_RE = /^\s*\[\s*(?:agent|"agent"|'agent')\s*\]\s*(?:#.*)?$/;
+/** Bare/double-quoted/single-quoted spellings of a [section] header. */
+function sectionRe(section: string): RegExp {
+	return new RegExp(
+		`^\\s*\\[\\s*(?:${section}|"${section}"|'${section}')\\s*\\]\\s*(?:#.*)?$`,
+	);
+}
 
-/** Bare/double-quoted/single-quoted spellings of an [agent] key. */
+/** Bare/double-quoted/single-quoted spellings of a key. */
 function keyRe(key: string): RegExp {
 	return new RegExp(`^(\\s*)(?:${key}|"${key}"|'${key}')(\\s*)=.*$`);
 }
 
+function readAgentKey(dataHome: string | undefined, key: string): unknown {
+	return readKey(dataHome, "agent", key);
+}
+
 /**
- * Read a raw [agent] key. Missing file, unparseable file, missing
+ * Read a raw key from one section. Missing file, unparseable file, missing
  * key, or a symlink in the chain all read as undefined (the caller
  * applies the default) — a symlinked file falls back exactly like a
  * corrupt one.
  */
-function readAgentKey(dataHome: string | undefined, key: string): unknown {
+function readKey(
+	dataHome: string | undefined,
+	section: string,
+	key: string,
+): unknown {
 	const file = settingsFile(dataHome);
 	if (chainSymlink(file) !== null) return undefined;
 	let text: string;
@@ -107,11 +123,11 @@ function readAgentKey(dataHome: string | undefined, key: string): unknown {
 	}
 	const parsed = parseToml(text);
 	if (!parsed.ok) return undefined;
-	const agent = parsed.value["agent"];
-	if (typeof agent !== "object" || agent === null || Array.isArray(agent)) {
+	const table = parsed.value[section];
+	if (typeof table !== "object" || table === null || Array.isArray(table)) {
 		return undefined;
 	}
-	return (agent as Record<string, unknown>)[key];
+	return (table as Record<string, unknown>)[key];
 }
 
 /**
@@ -192,6 +208,17 @@ function writeAgentKey(
 	rendered: string,
 	fs?: SettingsFs,
 ): void {
+	writeKey(dataHome, "agent", key, rendered, fs);
+}
+
+/** writeAgentKey for any section (same line-surgery contract). */
+function writeKey(
+	dataHome: string | undefined,
+	section: string,
+	key: string,
+	rendered: string,
+	fs?: SettingsFs,
+): void {
 	const file = settingsFile(dataHome);
 	const link = chainSymlink(file);
 	if (link !== null) throw new SettingsSymlinkError(link);
@@ -211,13 +238,14 @@ function writeAgentKey(
 	// join("\n") round-trips the untouched lines byte-identical.
 	if (hasTrailingNl && lines.length > 0) lines.pop();
 	const keyLine = keyRe(key);
+	const sectionLine = sectionRe(section);
 	let sectionAt = -1;
 	const keyAts: number[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] as string;
 		if (/^\s*\[/.test(line)) {
 			if (sectionAt !== -1) break;
-			if (SECTION_RE.test(line)) sectionAt = i;
+			if (sectionLine.test(line)) sectionAt = i;
 			continue;
 		}
 		if (sectionAt !== -1 && keyLine.test(line)) keyAts.push(i);
@@ -234,7 +262,7 @@ function writeAgentKey(
 		lines.splice(sectionAt + 1, 0, replacement);
 	} else {
 		if (lines.length > 0) lines.push("");
-		lines.push("[agent]", replacement);
+		lines.push(`[${section}]`, replacement);
 	}
 	writeFileAtomic(file, `${lines.join("\n")}\n`, fs);
 }
@@ -265,4 +293,29 @@ export function writeAutoRouterosSkills(
 	on: boolean,
 ): void {
 	writeAgentKey(dataHome, "auto_routeros_skills", on ? "true" : "false");
+}
+
+/**
+ * Device status poll interval in seconds ([devices] status_poll_seconds).
+ * 0 = off. Only the offered steps are storable; anything else reads
+ * as the default (30 s: a down router shows within half a minute, at
+ * one REST read per device per tick).
+ */
+export const DEVICE_POLL_STEPS = [0, 15, 30, 60] as const;
+export const DEVICE_POLL_DEFAULT = 30;
+
+export function isDevicePollSeconds(v: unknown): v is number {
+	return (DEVICE_POLL_STEPS as readonly unknown[]).includes(v);
+}
+
+export function readDevicePollSeconds(dataHome?: string): number {
+	const v = readKey(dataHome, "devices", "status_poll_seconds");
+	return isDevicePollSeconds(v) ? v : DEVICE_POLL_DEFAULT;
+}
+
+export function writeDevicePollSeconds(
+	dataHome: string | undefined,
+	seconds: number,
+): void {
+	writeKey(dataHome, "devices", "status_poll_seconds", String(seconds));
 }

@@ -160,6 +160,23 @@ preference, the applied value, pending changes, and delivery or catalog
 warnings. A response sequence prevents delayed status reads from
 overwriting a newer preference/catalog result in the browser.
 
+Device status (left cards + device pane) is one per-device state in
+the browser: unknown (grey), ok (green), unreachable (red when the
+transport got no answer, amber when the router answered but refused,
+e.g. a rejected login; the dot's title carries the centrs why).
+`GET /api/devices/:id/status` is one `centrs retrieve
+/system/resource` (uptime, cpu-load, version) for an id from the last
+`/api/devices` list. The browser polls it every
+`[devices] status_poll_seconds` (settings.toml; 0/15/30/60, default
+30) with at most four reads in flight, never overlapping a round,
+not while the page is hidden or locked, restarting on a device
+reload. A rejected login is not re-polled (each try writes a
+login-failure line to the router log) until Access changes or
+Refresh. `GET /api/devices/:id/stats` feeds the pane on first open and
+Refresh: seven parallel reads (resource, identity, routerboard model,
+interface, ip/ipv6 address, log), each its own section, so one failed
+read degrades only its section. Wire shapes: tests/fixtures/device-stats.
+
 `muse/routeros-muse-skills.json` records the configured source/revision
 pin and per-file SHA-256 ownership. Reconciliation updates/removes unchanged owned
 files only, preserves local edits and unrelated files, and refuses

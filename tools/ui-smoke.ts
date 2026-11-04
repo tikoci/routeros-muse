@@ -45,6 +45,12 @@ import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { chromium, type Page, type Request } from "playwright";
+import {
+	projectInterfaces,
+	projectLog,
+	projectStatus,
+	projectSystem,
+} from "../src/lib/fleet";
 import { READ_COMMANDS } from "../src/lib/preallow";
 import { registerWorkspace, registryFile } from "../src/lib/registry";
 import { readAutoRouterosSkills } from "../src/lib/settings";
@@ -385,6 +391,335 @@ try {
 	await page.click("#doc-source");
 	await page.waitForSelector("#doc-body.chatmd h2", { timeout: 10_000 });
 	await page.locator('.ctab[data-pane="pane-chat"]').click();
+	// Device status + pane (stubbed from the CHR wire fixtures): one dot
+	// state per device shared by the card and the pane, the poll's first
+	// round reads each device exactly once, nothing polls while hidden,
+	// and the pane paints system / interfaces / log sections, a failed
+	// read degrading only its own section.
+	{
+		const fx = (n: string) =>
+			JSON.parse(
+				nodeFs.readFileSync(
+					path.join(ROOT, "tests", "fixtures", "device-stats", `${n}.json`),
+					"utf8",
+				),
+			);
+		const devs = [
+			{ id: "smoke-ok", cdb: "smoke-ok", user: "admin", hasPassword: true },
+			{ id: "smoke-down", cdb: "smoke-down", user: "admin", hasPassword: true },
+			{ id: "smoke-auth", cdb: "smoke-auth", user: "ops", hasPassword: true },
+			{ id: "smoke-new", cdb: "smoke-new", user: "admin", hasPassword: true },
+		];
+		const resource = fx("resource").data;
+		const okStats = {
+			ok: true,
+			system: {
+				ok: true,
+				data: projectSystem(
+					resource,
+					{ ok: true, data: fx("identity").data },
+					{ ok: false, why: "x", code: "validation/unknown-path" },
+				),
+			},
+			interfaces: {
+				ok: true,
+				data: {
+					rows: projectInterfaces(
+						fx("interface").data,
+						fx("ip-address").data,
+						fx("ipv6-address").data,
+					),
+				},
+			},
+			log: { ok: true, data: projectLog(fx("log").data) },
+		};
+		const partialStats = {
+			...okStats,
+			log: {
+				ok: false,
+				code: "muse/deadline",
+				why: "no answer within 15s",
+			},
+		};
+		const refused = {
+			ok: false,
+			code: "transport/connection-refused",
+			why: "transport/connection-refused: Connection refused by 192.0.2.7:443 over rest-api.",
+		};
+		const statusFor: Record<string, unknown> = {
+			"smoke-ok": { ok: true, data: projectStatus(resource) },
+			"smoke-down": refused,
+			"smoke-auth": {
+				ok: false,
+				code: "transport/auth-failed",
+				why: "transport/auth-failed: RouterOS rejected the REST credentials for smoke-auth.",
+			},
+		};
+		let releaseNew: () => void = () => {};
+		const newHeld = new Promise<void>((r) => {
+			releaseNew = r;
+		});
+		const statusHits: string[] = [];
+		await page.route("**/api/devices", (route) =>
+			route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({ devices: devs, source: "cdb" }),
+			}),
+		);
+		await page.route("**/api/devices/*/status", async (route) => {
+			const id = decodeURIComponent(
+				new URL(route.request().url()).pathname.split("/")[3] ?? "",
+			);
+			statusHits.push(id);
+			if (id === "smoke-new") await newHeld;
+			// A held read may have been aborted by a poll restart (the
+			// interval change below): fulfilling it then has no taker.
+			await route
+				.fulfill({
+					contentType: "application/json",
+					body: JSON.stringify(statusFor[id] ?? { ok: false, why: "late" }),
+				})
+				.catch(() => {});
+		});
+		await page.route("**/api/devices/*/stats", (route) => {
+			const id = decodeURIComponent(
+				new URL(route.request().url()).pathname.split("/")[3] ?? "",
+			);
+			const body =
+				id === "smoke-ok"
+					? okStats
+					: id === "smoke-new"
+						? partialStats
+						: {
+								ok: false,
+								why: refused.why,
+								system: refused,
+								interfaces: refused,
+								log: refused,
+							};
+			return route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify(body),
+			});
+		});
+		// Let the boot inventory land first, or its late answer would
+		// repaint the list over the stubbed one.
+		await page.waitForFunction(
+			() =>
+				/ devices? · /.test(
+					document.getElementById("leftfoot")?.textContent ?? "",
+				),
+			undefined,
+			{ timeout: 30_000 },
+		);
+		// Hidden page: a device reload starts no poll round.
+		await page.evaluate(() => {
+			Object.defineProperty(document, "hidden", {
+				configurable: true,
+				get: () => true,
+			});
+		});
+		await page.evaluate(() =>
+			(
+				window as unknown as { __reloadDevices: () => Promise<void> }
+			).__reloadDevices(),
+		);
+		await page.waitForSelector('.dev[data-key="dev-smoke-new"]', {
+			timeout: 10_000,
+		});
+		await page.waitForTimeout(300);
+		check(
+			"dev-status hidden page polls nothing",
+			statusHits.length === 0,
+			statusHits.join(","),
+		);
+		check(
+			"dev-status cards start unknown (grey)",
+			(await page.locator("#devlist .dev .row1 .dot.unknown").count()) === 4,
+			JSON.stringify(
+				await page.$$eval("#devlist .dev", (cs) =>
+					cs.map((c) => c.querySelector(".dot")?.className),
+				),
+			),
+		);
+		await page.evaluate(() => {
+			delete (document as unknown as { hidden?: boolean }).hidden;
+			document.dispatchEvent(new Event("visibilitychange"));
+		});
+		await page.waitForFunction(
+			() =>
+				document.querySelectorAll("#devlist .dev .row1 .dot.unknown").length ===
+				1,
+			undefined,
+			{ timeout: 10_000 },
+		);
+		const dotOf = (id: string) =>
+			page
+				.locator(`.dev[data-key="dev-${id}"] .row1 .dot`)
+				.getAttribute("class");
+		check(
+			"dev-status ok card is green",
+			(await dotOf("smoke-ok")) === "dot ok",
+		);
+		check(
+			"dev-status refused card is red",
+			(await dotOf("smoke-down")) === "dot bad",
+		);
+		check(
+			"dev-status rejected login is amber",
+			(await dotOf("smoke-auth")) === "dot warn",
+		);
+		check(
+			"dev-status pending read stays grey",
+			(await dotOf("smoke-new")) === "dot unknown",
+		);
+		const okLive =
+			(await page
+				.locator('.dev[data-key="dev-smoke-ok"] .live')
+				.textContent()) ?? "";
+		check(
+			"dev-status ok card shows uptime · cpu · version",
+			/^up \S+ · cpu \d+% · 7\.25\.1$/.test(okLive),
+			okLive,
+		);
+		const downTitle =
+			(await page
+				.locator('.dev[data-key="dev-smoke-down"] .row1 .dot')
+				.getAttribute("title")) ?? "";
+		check(
+			"dev-status red dot title gives the reason",
+			downTitle.includes("connection-refused"),
+			downTitle,
+		);
+		check(
+			"dev-status first round reads each device once (no overlap)",
+			[...statusHits].sort().join(",") ===
+				"smoke-auth,smoke-down,smoke-new,smoke-ok",
+			statusHits.join(","),
+		);
+		await page
+			.locator("#devlist")
+			.screenshot({ path: path.join(OUT, "dev-status-cards-dark.png") });
+		// The pane: full sections, the pane dot agrees with the card.
+		await page.locator('.dev[data-key="dev-smoke-ok"] .name').click();
+		await page.waitForSelector("#pdev-ifs table", { timeout: 10_000 });
+		check(
+			"dev-pane dot matches the card",
+			(await page.locator("#pdev-dot").getAttribute("class")) === "dot ok",
+		);
+		const sysText = (await page.locator("#pdev-sys").textContent()) ?? "";
+		check(
+			"dev-pane system shows model, version, memory in MiB",
+			sysText.includes("CHR QEMU Standard PC") &&
+				sysText.includes("7.25.1") &&
+				sysText.includes("x86_64") &&
+				/MiB free/.test(sysText),
+			sysText.slice(0, 200),
+		);
+		check(
+			"dev-pane interfaces table has one row per interface",
+			(await page.locator("#pdev-ifs tbody tr").count()) === 4,
+		);
+		check(
+			"dev-pane log lists ten problems newest first",
+			(await page.locator("#pdev-log tbody tr").count()) === 10,
+		);
+		await page.screenshot({
+			path: path.join(OUT, "dev-pane-dark.png"),
+			fullPage: true,
+		});
+		await page.evaluate(() =>
+			(
+				document.querySelector(
+					'#themeseg button[data-theme="light"]',
+				) as HTMLButtonElement
+			).click(),
+		);
+		await page.screenshot({
+			path: path.join(OUT, "dev-pane-light.png"),
+			fullPage: true,
+		});
+		await page
+			.locator("#devlist")
+			.screenshot({ path: path.join(OUT, "dev-status-cards-light.png") });
+		// One failed read degrades only its section.
+		await page.locator('.dev[data-key="dev-smoke-new"] .name').click();
+		await page.waitForSelector("#pdev-log .dwhy", { timeout: 10_000 });
+		check(
+			"dev-pane failed log read keeps system + interfaces",
+			(await page.locator("#pdev-sys dl").count()) === 1 &&
+				(await page.locator("#pdev-ifs table").count()) === 1,
+		);
+		await page.screenshot({
+			path: path.join(OUT, "dev-pane-partial-light.png"),
+		});
+		// Every read failed: each section says why, the dot turns red.
+		await page.locator('.dev[data-key="dev-smoke-down"] .name').click();
+		await page.waitForFunction(
+			() =>
+				document.querySelectorAll("#pdev-sys .dwhy").length === 1 &&
+				document.querySelectorAll("#pane-device .dempty").length === 2,
+			undefined,
+			{ timeout: 10_000 },
+		);
+		check(
+			"dev-pane unreachable: one why in System, others not read, red dot",
+			(await page.locator("#pdev-dot").getAttribute("class")) === "dot bad",
+		);
+		await page.evaluate(() =>
+			(
+				document.querySelector(
+					'#themeseg button[data-theme="dark"]',
+				) as HTMLButtonElement
+			).click(),
+		);
+		await page.screenshot({ path: path.join(OUT, "dev-pane-down-dark.png") });
+		// Settings: the interval row saves and repaints.
+		const pollPost = page.waitForResponse(
+			(r) =>
+				new URL(r.url()).pathname === "/api/settings" &&
+				r.request().method() === "POST",
+		);
+		await page.evaluate(() =>
+			(
+				document.querySelector(
+					'#devpollseg button[data-poll="60"]',
+				) as HTMLButtonElement
+			).click(),
+		);
+		await pollPost;
+		await page.waitForSelector('#devpollseg button[data-poll="60"].on', {
+			state: "attached",
+			timeout: 5_000,
+		});
+		check(
+			"dev-poll interval saves to settings",
+			(await (await fetch(`${srv.url}api/settings`)).json())
+				.devicePollSeconds === 60,
+		);
+		await page.evaluate(() =>
+			(
+				document.querySelector(
+					'#devpollseg button[data-poll="30"]',
+				) as HTMLButtonElement
+			).click(),
+		);
+		await page.waitForSelector('#devpollseg button[data-poll="30"].on', {
+			state: "attached",
+			timeout: 5_000,
+		});
+		releaseNew();
+		await page.unroute("**/api/devices");
+		await page.unroute("**/api/devices/*/status");
+		await page.unroute("**/api/devices/*/stats");
+		await page.locator(".ctab.working .x").click();
+		await page.locator('.ctab[data-pane="pane-chat"]').click();
+		await page.evaluate(() =>
+			(
+				window as unknown as { __reloadDevices: () => Promise<void> }
+			).__reloadDevices(),
+		);
+	}
 
 	// T49/D39: workspace mode trusts by default — the Settings row
 	// says on. The panel collapses after so later shots keep their

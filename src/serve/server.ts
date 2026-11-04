@@ -14,6 +14,7 @@ import {
 	cleanPorts,
 	type Device,
 	deviceStats,
+	deviceStatus,
 	doctorTwins,
 	listCdbDevices,
 	listDevices,
@@ -51,12 +52,15 @@ import {
 import { have, run } from "../lib/run";
 import {
 	isDefaultAccess,
+	isDevicePollSeconds,
 	readAutoRouterosSkills,
 	readDefaultAccess,
+	readDevicePollSeconds,
 	readPreallowReads,
 	SettingsSymlinkError,
 	writeAutoRouterosSkills,
 	writeDefaultAccess,
+	writeDevicePollSeconds,
 	writePreallowReads,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
@@ -3277,6 +3281,24 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const res = await deviceStats(id, cdbFile, envFor(req));
 					return json(res.body, res.status);
 				}
+				// Device-card status poll: one /system/resource read. The id
+				// is checked against the list the UI last loaded (D53), so a
+				// tick never spends a CDB list spawn per device.
+				if (
+					p.startsWith("/api/devices/") &&
+					p.endsWith("/status") &&
+					req.method === "GET"
+				) {
+					const id = decodeURIComponent(
+						p.slice("/api/devices/".length, -"/status".length),
+					);
+					if (!knownDeviceIds.has(id))
+						return json(
+							{ ok: false, why: `no device ${id.slice(0, 120)}` },
+							404,
+						);
+					return json(await deviceStatus(id, cdbFile, envFor(req)));
+				}
 				// T48 set-credentials modal: thin wrappers over the fleet
 				// write helpers. GET reads the redacted record for modal
 				// context; POST writes with the requesting session's bound
@@ -4773,6 +4795,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							defaultAccess: defaultAccess(),
 							preallowReads: readPreallowReads(opts.dataHome),
 							autoRouterosSkills: readAutoRouterosSkills(opts.dataHome),
+							devicePollSeconds: readDevicePollSeconds(opts.dataHome),
 							routerosSkills: skillsState(),
 						});
 					}
@@ -4781,16 +4804,30 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							defaultAccess?: unknown;
 							preallowReads?: unknown;
 							autoRouterosSkills?: unknown;
+							devicePollSeconds?: unknown;
 						};
 						if (
 							body.defaultAccess === undefined &&
 							body.preallowReads === undefined &&
-							body.autoRouterosSkills === undefined
+							body.autoRouterosSkills === undefined &&
+							body.devicePollSeconds === undefined
 						) {
 							return json(
 								{
 									ok: false,
-									why: "need {defaultAccess}, {preallowReads}, or {autoRouterosSkills}",
+									why: "need {defaultAccess}, {preallowReads}, {autoRouterosSkills}, or {devicePollSeconds}",
+								},
+								400,
+							);
+						}
+						if (
+							body.devicePollSeconds !== undefined &&
+							!isDevicePollSeconds(body.devicePollSeconds)
+						) {
+							return json(
+								{
+									ok: false,
+									why: "need {devicePollSeconds} one of 0|15|30|60",
 								},
 								400,
 							);
@@ -4832,6 +4869,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							if (typeof body.autoRouterosSkills === "boolean") {
 								writeAutoRouterosSkills(opts.dataHome, body.autoRouterosSkills);
 							}
+							if (isDevicePollSeconds(body.devicePollSeconds)) {
+								writeDevicePollSeconds(opts.dataHome, body.devicePollSeconds);
+							}
 							if (typeof body.preallowReads === "boolean") {
 								writePreallowReads(opts.dataHome, body.preallowReads);
 								refreshPreallow(body.preallowReads);
@@ -4849,6 +4889,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							defaultAccess: defaultAccess(),
 							preallowReads: readPreallowReads(opts.dataHome),
 							autoRouterosSkills: readAutoRouterosSkills(opts.dataHome),
+							devicePollSeconds: readDevicePollSeconds(opts.dataHome),
 							routerosSkills: skillsState(),
 						});
 					}

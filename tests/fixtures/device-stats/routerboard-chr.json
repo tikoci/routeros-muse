@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "code": "validation/unknown-path",
+    "summary": "RouterOS path /system/routerboard does not expose a retrieve command."
+  },
+  "warnings": [],
+  "tips": []
+}
