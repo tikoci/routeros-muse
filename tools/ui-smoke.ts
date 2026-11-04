@@ -1745,13 +1745,18 @@ try {
 	const t109nest = page.locator("#pane-chat .msg.agent", {
 		hasText: "T109-NEST",
 	});
+	// T141: markdown semantics — the outer link is a real link (label =
+	// image alt); the interior image target is never linkified.
+	const t109nestRels = await t109nest
+		.locator("a[data-apath]")
+		.evaluateAll((els) =>
+			els.map((e) => [(e as HTMLElement).dataset["apath"], e.textContent]),
+		);
 	check(
-		"t109 nested image-in-link stays literal, interior not linkified",
-		(await t109nest.locator("a[data-apath]").count()) === 0 &&
-			(((await t109nest.locator(".body").textContent()) ?? "").includes(
-				"[![alt](notes.md)](reports/r.html)",
-			) as boolean),
-		((await t109nest.locator(".body").textContent()) ?? "").slice(0, 160),
+		"t109 nested image-in-link: outer link only, interior not linkified",
+		JSON.stringify(t109nestRels) ===
+			JSON.stringify([["reports/r.html", "alt"]]),
+		JSON.stringify(t109nestRels),
 	);
 	// T109 round 3: escaped delimiters are not delimiters — \( \) in
 	// destinations, \[ in labels.
@@ -1805,10 +1810,13 @@ try {
 		hasText: "T109-STATUS",
 	});
 	const t109statBody1 = (await t109stat.locator(".body").textContent()) ?? "";
+	// T141: pending renders markdown without links (label as text); the
+	// source survives in CHAT_SRC and the body stays unmarked.
 	check(
 		"t109 failed status leaves pending links un-consumed",
 		(await t109stat.locator("a[data-apath]").count()) === 0 &&
-			t109statBody1.includes("[notes](notes.md)"),
+			(await t109stat.locator(".chatmd:not([data-chatlinks])").count()) === 1 &&
+			t109statBody1.includes("see notes"),
 		t109statBody1.slice(0, 160),
 	);
 	await page.unroute("**/api/status");
@@ -1817,6 +1825,76 @@ try {
 		"t109 next good status linkifies the pending links",
 		(await t109stat.locator('a[data-apath="notes.md"]').count()) === 1,
 	);
+	// T141: an agent reply renders as markdown — heading, emphasis,
+	// list, inline + fenced code, table, workspace link — with raw HTML
+	// shown as text and the http link collapsed to its label.
+	const t141text = [
+		"## T141-MD status",
+		"",
+		"Router is **up**; see [notes](notes.md) and [docs](https://example.com).",
+		"",
+		"- `ether1` running",
+		"- bridge ok",
+		"",
+		"```",
+		"/ip address print",
+		"```",
+		"",
+		"| port | state |",
+		"|---|---|",
+		"| ether1 | up |",
+		"",
+		"<script>window.__t141=1</script><img src=x onerror=window.__t141=2>",
+	].join("\n");
+	await page.evaluate((text) => {
+		const box = document.querySelector("#pane-chat .msgs");
+		if (!box) throw new Error("chat transcript missing");
+		const hook = window.__smoke;
+		if (!hook) throw new Error("smoke hook missing");
+		box.appendChild(hook.renderRow({ kind: "agentMessage", text }));
+		box.scrollTop = box.scrollHeight;
+	}, t141text);
+	const t141row = page.locator("#pane-chat .msg.agent", {
+		hasText: "T141-MD",
+	});
+	const t141 = await t141row.locator(".chatmd").evaluate((el) => ({
+		h2: el.querySelector("h2")?.textContent ?? "",
+		strong: el.querySelector("strong")?.textContent ?? "",
+		lis: el.querySelectorAll("ul > li").length,
+		code: el.querySelector("li code")?.textContent ?? "",
+		pre: el.querySelector("pre code")?.textContent ?? "",
+		tds: el.querySelectorAll("table td").length,
+		links: [...el.querySelectorAll("a")].map((a) => [
+			(a as HTMLElement).dataset["apath"],
+			a.textContent,
+		]),
+		unsafe: el.querySelectorAll("script, img, [onerror]").length,
+		text: el.textContent ?? "",
+		flag: (window as unknown as { __t141?: number }).__t141 ?? 0,
+	}));
+	check(
+		"t141 reply renders markdown structure",
+		t141.h2 === "T141-MD status" &&
+			t141.strong === "up" &&
+			t141.lis === 2 &&
+			t141.code === "ether1" &&
+			t141.pre === "/ip address print\n" &&
+			t141.tds === 2,
+		JSON.stringify(t141),
+	);
+	check(
+		"t141 links follow T109 (workspace links, http label only)",
+		JSON.stringify(t141.links) === JSON.stringify([["notes.md", "notes"]]) &&
+			t141.text.includes("docs"),
+		JSON.stringify(t141.links),
+	);
+	check(
+		"t141 raw HTML stays inert text",
+		t141.unsafe === 0 && t141.flag === 0 && t141.text.includes("<script>"),
+		JSON.stringify({ unsafe: t141.unsafe, flag: t141.flag }),
+	);
+	await t141row.scrollIntoViewIfNeeded();
+	await t141row.screenshot({ path: path.join(OUT, "t141-markdown.png") });
 	await page.screenshot({ path: path.join(OUT, "t109-links.png") });
 	// Leave the center where the next leg expects it (chat tab).
 	await page.locator('.ctab[data-pane="pane-chat"]').click();

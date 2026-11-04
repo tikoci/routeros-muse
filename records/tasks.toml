@@ -1419,12 +1419,12 @@ updated = "2026-11-03"
 [[task]]
 id = "T141"
 title = "Basic markdown rendering in chat (shared safe renderer)"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: in chat, basic markdown rendering. Build one small safe markdown-to-HTML renderer (headings, emphasis, inline code, fenced code, lists, links, tables if cheap) with escaping first and no raw HTML passthrough, shared with the panel file view (T142). Links keep the T109 rules (workspace paths open in a tab, never-displayed files plain text, outside paths never links). Offline, no CDN; vendored or zero-dep per repo rules. Carved out of T41 (template-declared JS, markdown first), which stays as the larger renderer design."
-evidence = "agenda #7 (2026-11-03): developer agenda 2026-11-03. T41 detail lists markdown first; T109 link behavior done."
+evidence = "agenda #7 (2026-11-03): developer agenda 2026-11-03. T41 detail lists markdown first; T109 link behavior done. Developer 2026-11-03: marked + DOMPurify approved as direct deps (minimal-deps; both already shipped via mermaid). IMPLEMENTED 2026-11-03 (uncommitted): marked 16.4.2 + dompurify 3.4.17 pinned exact; src/serve/md.js (MuseMd.render: gfm+breaks, raw HTML escaped, images as alt text, task boxes as text, fixed tag/attr allowlist, anchors handed to a link hook); src/serve/md-bundle.ts inlines both UMD bundles + md.js into ui.html at boot (one offline page, throws if a bundle is missing). ui.html: chatRender replaces chatAppendText; T109 rules applied per anchor (chatDecodeDest+chatRelOf) and to bare paths outside pre; source kept in CHAT_SRC so streaming (rAF-batched re-render) and catch-up never re-parse output; .chatmd CSS for headings/lists/code/tables/quotes. Semantics changed on purpose: nested [![alt](a)](b) now links b with label alt (interior a still never linked); pending-status text shows labels rather than raw [x](y). Both smoke checks updated. Evidence: tests/t141-markdown.test.ts 12/0 in chromium (structure + XSS: script, block HTML, img onerror, javascript:/data:/vbscript: links, title/destination attribute injection, raw anchors/iframes, code spans); lint (biome + tsc) zero; smoke t141 legs 3/3 PASS (structure, T109 links, inert raw HTML), all T109 legs PASS; shot out/ui-smoke/t141-markdown.png plus light/dark render eyeballed. Gate (with node_modules/.bin first on PATH) red ONLY with the T155 set, reproduced identically on clean b27c211: suite 744/6 (same 6 tests fail on base), smoke RED 4 (same 4 on base). Not done until T155 lands and the gate is zero."
 acceptance = "Fail-first renderer unit tests including XSS cases (script tags, javascript: links, attribute injection); smoke leg renders a markdown reply with list/code/link; console clean; make gate and records check pass."
 blocked_by = []
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]

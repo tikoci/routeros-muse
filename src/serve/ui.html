@@ -109,6 +109,29 @@
   .msg.agent .body { background: var(--panel); border: 1px solid var(--border-soft); border-radius: 12px; padding: 10px 14px; }
   .msg .body p { margin: 0 0 8px; white-space: pre-wrap; }
   .msg .body p:last-child { margin-bottom: 0; }
+  /* T141: rendered agent markdown */
+  .chatmd { line-height: 1.5; overflow-wrap: anywhere; }
+  .chatmd > :first-child { margin-top: 0; }
+  .chatmd > :last-child { margin-bottom: 0; }
+  .msg .body .chatmd p { white-space: normal; margin: 0 0 8px; }
+  .chatmd h1, .chatmd h2, .chatmd h3, .chatmd h4, .chatmd h5, .chatmd h6 { margin: 12px 0 6px; line-height: 1.3; font-weight: 650; }
+  .chatmd h1 { font-size: 1.2em; }
+  .chatmd h2 { font-size: 1.1em; }
+  .chatmd h3, .chatmd h4, .chatmd h5, .chatmd h6 { font-size: 1em; }
+  .chatmd ul, .chatmd ol { margin: 0 0 8px; padding-left: 22px; }
+  .chatmd li { margin: 2px 0; }
+  .chatmd li > p { margin: 0; }
+  .chatmd li > ul, .chatmd li > ol { margin: 2px 0 0; }
+  .chatmd code { font: 0.9em var(--mono); color: var(--code-fg); background: var(--code-bg); border-radius: 4px; padding: 1px 5px; }
+  .chatmd pre { margin: 0 0 8px; padding: 9px 12px; background: var(--code-bg); border-radius: 8px; overflow-x: auto; }
+  .chatmd pre code { font: 11.5px/1.5 var(--mono); padding: 0; background: none; white-space: pre; }
+  .chatmd blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--border); color: var(--muted); }
+  .chatmd hr { border: 0; border-top: 1px solid var(--border-soft); margin: 10px 0; }
+  .chatmd table { border-collapse: collapse; margin: 0 0 8px; font-size: 0.95em; display: block; max-width: 100%; overflow-x: auto; }
+  .chatmd th, .chatmd td { border: 1px solid var(--border-soft); padding: 4px 9px; text-align: left; vertical-align: top; }
+  .chatmd th { background: var(--panel-2); font-weight: 600; }
+  .chatmd td[align="right"], .chatmd th[align="right"] { text-align: right; }
+  .chatmd td[align="center"], .chatmd th[align="center"] { text-align: center; }
   .msg.agent .body a { color: var(--accent); text-decoration: underline; }
   .msg.agent .body a:visited { color: var(--accent); }
   .compact { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 11.5px; padding: 2px 4px; }
@@ -803,6 +826,7 @@
     <div class="mfoot"><button class="btn" id="credcancel" type="button">Cancel</button><button class="btn primary" id="credsave" type="submit" form="credform">Save to CDB</button></div>
   </div>
 </div>
+<!--muse:markdown-->
 <script>
   // center tabs
   // LIVE: running state is driven by the chat stream (see live layer below).
@@ -2295,7 +2319,7 @@
     if (!rel || chatNeverDisplay(rel)) return null;
     return rel;
   }
-  function chatLink(p, label, rel) {
+  function chatLink(label, rel) {
     const a = document.createElement("a");
     a.href = "#";
     a.dataset.apath = rel;
@@ -2303,7 +2327,7 @@
     a.dataset.chatlink = "1";
     a.title = rel;
     a.textContent = label === "" ? rel : label;
-    p.appendChild(a);
+    return a;
   }
   function chatAppendPaths(p, seg) {
     const re = /\/[^\s"'<>\]]+/g;
@@ -2323,7 +2347,7 @@
       }
       const rel = chatRelOf(raw);
       p.appendChild(document.createTextNode(seg.slice(last, start)));
-      if (rel) chatLink(p, raw, rel);
+      if (rel) p.appendChild(chatLink(raw, rel));
       else p.appendChild(document.createTextNode(raw));
       last = start + m[0].length;
       if (trail) p.appendChild(document.createTextNode(trail));
@@ -2344,106 +2368,46 @@
     }
     return d;
   }
-  function chatAppendText(p, text) {
-    // T109 P2a: root unknown — render plain, leave unmarked for catch-up.
-    if (!WSSTATUS) {
-      p.appendChild(document.createTextNode(text ?? ""));
-      return;
-    }
-    let last = 0;
-    let i = 0;
-    while (i < text.length) {
-      const lb = text.indexOf("[", i);
-      if (lb === -1) break;
-      // T109 re-review: balanced label brackets. A nested construct
-      // (image-in-link) is rejected whole below, never interior-linked.
-      let ldepth = 1;
-      let rb = -1;
-      for (let s = lb + 1; s < text.length; s++) {
-        // Escaped brackets are label text, not delimiters.
-        if (text[s] === "\\") { s++; continue; }
-        if (text[s] === "[") ldepth++;
-        else if (text[s] === "]" && --ldepth === 0) { rb = s; break; }
-      }
-      if (rb === -1) break;
-      if (text[rb + 1] !== "(") { i = rb + 1; continue; }
-      // T109 P2c: balanced-paren destination (nested parens allowed,
-      // no whitespace). Unbalanced-to-end renders literally, safest.
-      let depth = 1;
-      let k = rb + 2;
-      let bad = false;
-      let dest = null;
-      let end = -1;
-      while (k < text.length) {
-        const c = text[k];
-        // Escaped parens are destination text, not delimiters.
-        if (c === "\\") { k += 2; continue; }
-        if (c === "(") depth++;
-        else if (c === ")") {
-          depth--;
-          if (depth === 0) { dest = text.slice(rb + 2, k); end = k + 1; break; }
-        } else if (c === " " || c === "\t" || c === "\n" || c === "\r") {
-          bad = true;
-          break;
-        }
-        k++;
-      }
-      if (dest === null) {
-        if (!bad) {
-          p.appendChild(document.createTextNode(text.slice(last)));
-          last = text.length;
-          break;
-        }
-        i = rb + 1;
-        continue;
-      }
-      if (dest === "") { i = rb + 1; continue; }
-      const label = text.slice(lb + 1, rb);
-      // T109 re-review: nested label (image-in-link) — the whole
-      // construct stays literal; its interior is never linkified.
-      // Escaped brackets in the label do not count as nesting.
-      let nested = false;
-      for (let s = 0; s < label.length; s++) {
-        if (label[s] === "\\") { s++; continue; }
-        if (label[s] === "[") { nested = true; break; }
-      }
-      if (nested) {
-        chatAppendPaths(p, text.slice(last, lb));
-        p.appendChild(document.createTextNode(text.slice(lb, end)));
-        last = end;
-        i = end;
-        continue;
-      }
-      // T109 P3a: image syntax is never a file link — alt as plain text.
-      if (text[lb - 1] === "!") {
-        chatAppendPaths(p, text.slice(last, lb - 1));
-        p.appendChild(document.createTextNode(label));
-        last = end;
-        i = end;
-        continue;
-      }
-      const decoded = chatDecodeDest(dest);
-      const rel = decoded === null ? null : chatRelOf(decoded);
-      chatAppendPaths(p, text.slice(last, lb));
-      if (rel) chatLink(p, label, rel);
-      else p.appendChild(document.createTextNode(label));
-      last = end;
-      i = end;
-    }
-    chatAppendPaths(p, text.slice(last));
-    // Mark paragraphs linkified against a known root; paragraphs built
-    // before the status landed stay unmarked for the catch-up pass.
-    p.dataset.chatlinks = "done";
+  // T141: agent messages render as markdown through MuseMd (md.js:
+  // marked + DOMPurify, raw HTML escaped, images as alt text). Every
+  // markdown link goes through the T109 rules: a displayable workspace
+  // target becomes a tab link, anything else collapses to its label.
+  // Bare absolute workspace paths in prose (not in code blocks) link
+  // too. The source text rides in CHAT_SRC so re-renders (streaming,
+  // catch-up) never re-parse rendered output.
+  const CHAT_SRC = new WeakMap();
+  function chatRender(el, text) {
+    const src = text ?? "";
+    CHAT_SRC.set(el, src);
+    // T109 P2a: root unknown — render without links, leave unmarked
+    // for the catch-up pass.
+    const linked = WSSTATUS;
+    const frag = MuseMd.render(src, {
+      link(href, label) {
+        if (!linked) return document.createTextNode(label);
+        const decoded = chatDecodeDest(href);
+        const rel = decoded === null ? null : chatRelOf(decoded);
+        return rel ? chatLink(label, rel) : document.createTextNode(label);
+      },
+      text: linked
+        ? (n) => {
+            const f = document.createDocumentFragment();
+            chatAppendPaths(f, n.data);
+            n.replaceWith(f);
+          }
+        : undefined,
+    });
+    el.replaceChildren(frag);
+    if (linked) el.dataset.chatlinks = "done";
+    else delete el.dataset.chatlinks;
   }
-  // T109 P2a/P3b: reparse original text of unmarked MESSAGE paragraphs
-  // only (.chatmd inside .msg.agent, never tool/subagent .tcard cards).
+  // T109 P2a/P3b: re-render unmarked MESSAGE bodies only (.chatmd
+  // inside .msg.agent, never tool/subagent .tcard cards).
   function chatCatchUp() {
-    for (const p of document.querySelectorAll(
-      "#chatmsgs .msg.agent:not(.tcard) .body p.chatmd:not([data-chatlinks])",
+    for (const el of document.querySelectorAll(
+      "#chatmsgs .msg.agent:not(.tcard) .body .chatmd:not([data-chatlinks])",
     )) {
-      const t = p.textContent;
-      p.textContent = "";
-      chatAppendText(p, t ?? "");
+      chatRender(el, CHAT_SRC.get(el) ?? el.textContent);
     }
   }
   function bubble(role, text, targets) {
@@ -2477,12 +2441,12 @@
       who.innerHTML = '<span class="dot"></span><span>muse · local</span>';
       const body = document.createElement("div");
       body.className = "body";
-      const p = document.createElement("p");
-      // T109 P3b: message paragraphs carry the marker the catch-up
+      const md = document.createElement("div");
+      // T109 P3b: message bodies carry the marker the catch-up
       // selects on — cards never linkify.
-      p.className = "chatmd";
-      chatAppendText(p, text);
-      body.appendChild(p);
+      md.className = "chatmd";
+      chatRender(md, text);
+      body.appendChild(md);
       wrap.appendChild(who);
       wrap.appendChild(body);
     }
@@ -3405,7 +3369,7 @@
         const wasBottom = atBottom(msgsEl());
         const el = bubble("agent", "…");
         msgsEl().appendChild(el);
-        streamItem = { id, el };
+        streamItem = { id, el, text: "", raf: 0 };
         if (wasBottom) tail();
       }
       return;
@@ -3417,9 +3381,10 @@
       if (row && (row.kind === "userMessage" || row.kind === "agentMessage")) {
         if (row.kind !== "agentMessage" || !row.text) return;
         if (streamItem && (!id || streamItem.id === id)) {
-          const pe = streamItem.el.querySelector(".body p");
-          pe.textContent = "";
-          chatAppendText(pe, row.text);
+          if (streamItem.raf) cancelAnimationFrame(streamItem.raf);
+          streamItem.raf = 0;
+          streamItem.text = row.text;
+          chatRender(streamItem.el.querySelector(".body .chatmd"), row.text);
           if (atBottom(msgsEl())) tail(); else markUnread(true);
         } else {
           appendMsg("agent", row.text);
@@ -3443,10 +3408,17 @@
       const field = p.field || "text";
       if (field === "text") {
         if (streamItem && (!p.itemId || streamItem.id === p.itemId)) {
-          const pe = streamItem.el.querySelector(".body p");
-          if (pe.textContent === "…") pe.textContent = "";
-          pe.textContent += chunk;
-          if (atBottom(msgsEl())) tail();
+          // T141: buffer the source, re-render at most once a frame.
+          const si = streamItem;
+          si.text += chunk;
+          if (!si.raf) {
+            si.raf = requestAnimationFrame(() => {
+              si.raf = 0;
+              const wasBottom = atBottom(msgsEl());
+              chatRender(si.el.querySelector(".body .chatmd"), si.text);
+              if (wasBottom) tail();
+            });
+          }
         }
         return;
       }

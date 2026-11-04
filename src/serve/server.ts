@@ -134,6 +134,7 @@ import {
 	verifyCdbPassword,
 	workerEnv,
 } from "./auth";
+import { inlineMarkdown } from "./md-bundle";
 
 export type ServeOpts = {
 	workspace?: string;
@@ -1212,7 +1213,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	/** stop() waits this long for in-flight launches before killing. */
 	const STOP_LAUNCH_WAIT_MS = 60_000;
 	let metaAuth: MetaAuth = "unknown";
-	const uiHtml = await Bun.file(UI_PATH).text();
+	const uiHtml = await inlineMarkdown(await Bun.file(UI_PATH).text());
 	const provider =
 		opts.provider ?? process.env["ROUTEROS_MUSE_PROVIDER"] ?? "meta";
 	// D39: the worker loads the workspace AGENTS.md + .agents/skills
