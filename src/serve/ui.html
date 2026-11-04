@@ -44,6 +44,8 @@
   .dev .row1 { display: flex; align-items: center; gap: 8px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .dot.ok { background: var(--green); } .dot.warn { background: var(--amber); }
+  .dot.unknown { background: var(--faint); } .dot.bad { background: var(--red); }
+  .dev .live.bad { color: var(--red); } .dev .live.warn { color: var(--amber); }
   .dev .name { font-weight: 650; }
   .dev .role { margin-left: auto; font: 500 11px var(--sans); color: var(--muted); }
   .dev .live { margin: 6px 0 0 16px; font: 11.5px var(--mono); color: var(--muted); }
@@ -423,6 +425,57 @@
   .action .src { font-size: 11px; color: var(--muted); margin-top: 3px; }
   .chatstat { display: flex; font-size: 12.5px; padding: 3px 2px; color: var(--muted); }
   .chatstat b { color: var(--text); font-weight: 600; margin-right: 6px; }
+  /* Device pane: system / interfaces / log sections (T-dev-pane). */
+  #pane-device .tomlwrap { max-width: 980px; }
+  #pane-device .tomlfoot { margin: 0 0 16px; }
+  .dsec { border: 1px solid var(--border-soft); border-radius: 10px; background: var(--panel); margin-bottom: 14px; overflow: hidden; }
+  .dsec > h2 { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 8px 14px; background: var(--panel-2); border-bottom: 1px solid var(--border-soft); font: 700 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .dsec > h2 .cnt { font: 500 11px var(--mono); color: var(--faint); text-transform: none; letter-spacing: 0; }
+  .dsec .dbody { padding: 10px 14px; }
+  .dsec .dempty { padding: 12px 14px; font-size: 12.5px; color: var(--faint); }
+  .dsec .dwhy { padding: 10px 14px; font-size: 12px; color: var(--amber); background: var(--amber-dim); }
+  .dsec .dwhy code { font: 11.5px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .dsec .dsub { padding: 6px 14px; font-size: 11.5px; color: var(--amber); border-top: 1px solid var(--border-soft); }
+  .sysgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; margin: 0; }
+  .sysgrid > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); align-items: baseline; }
+  .sysgrid dt { font-size: 12px; color: var(--faint); }
+  .sysgrid dd { margin: 0; font: 12.5px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .sysgrid dd small { font: 11.5px var(--sans); color: var(--muted); }
+  .sysgrid .wide { grid-column: 1 / -1; }
+  .usage { display: flex; align-items: center; gap: 10px; }
+  .usage meter { flex: 0 0 140px; height: 6px; }
+  meter { -webkit-appearance: none; appearance: none; background: var(--inset); border: none; border-radius: 3px; }
+  meter::-webkit-meter-bar { background: var(--inset); border: none; border-radius: 3px; height: 6px; }
+  meter::-webkit-meter-optimum-value { background: var(--green); border-radius: 3px; }
+  meter::-webkit-meter-suboptimum-value { background: var(--amber); border-radius: 3px; }
+  meter::-webkit-meter-even-less-good-value { background: var(--red); border-radius: 3px; }
+  meter::-moz-meter-bar { background: var(--green); border-radius: 3px; }
+  .dtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .dtable th { text-align: left; font: 600 10.5px var(--sans); color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; padding: 7px 10px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
+  .dtable td { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: top; font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+  .dtable tr:last-child td { border-bottom: none; }
+  .dtable th:first-child, .dtable td:first-child { padding-left: 14px; }
+  .dtable th:last-child, .dtable td:last-child { padding-right: 14px; }
+  .dtable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dtable .nowrap { white-space: nowrap; }
+  .dtable .muted { color: var(--muted); }
+  .dtable .faint { color: var(--faint); }
+  .dtable tr.off td { color: var(--faint); }
+  .dtable td.lmsg { font-family: var(--sans); font-size: 12px; overflow-wrap: anywhere; }
+  .dtable .addr { display: block; }
+  .dtable .addr small { font-family: var(--sans); color: var(--faint); margin-left: 4px; }
+  .ifst { font: 600 11px var(--sans); white-space: nowrap; }
+  .ifst.run { color: var(--green); } .ifst.down { color: var(--muted); } .ifst.off { color: var(--faint); }
+  .ltopic { display: inline-block; font: 600 10.5px var(--sans); color: var(--muted); background: var(--inset); border-radius: 4px; padding: 0 5px; margin: 0 3px 2px 0; white-space: nowrap; }
+  .ltopic.error, .ltopic.critical { color: var(--red); background: var(--red-dim); }
+  .ltopic.warning { color: var(--amber); background: var(--amber-dim); }
+  .ltopic b { font-weight: 700; color: var(--text); margin-left: 3px; }
+  .ltopic.error b, .ltopic.critical b { color: var(--red); } .ltopic.warning b { color: var(--amber); }
+  .logsum { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 4px 10px; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--border-soft); font-size: 12px; align-items: baseline; }
+  .logsum dt { color: var(--faint); }
+  .logsum dd { margin: 0; }
+  .logsub { padding: 8px 14px 0; font: 600 10.5px var(--sans); color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
+  .dsec .reading { padding: 12px 14px; font-size: 12.5px; color: var(--faint); }
   .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
   .stat { background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 7px 10px; }
   .stat .k { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
@@ -594,11 +647,12 @@
 
     <div class="cpane" id="pane-device">
       <div class="tomlwrap">
-        <div class="fn"><span class="dot ok" id="pdev-dot"></span><span id="pdev-role">…</span></div>
+        <div class="fn"><span class="dot unknown" id="pdev-dot"></span><span id="pdev-role">…</span></div>
         <h1 id="pdev-name">…</h1>
-        <div class="statgrid" id="pdev-stats">
-        </div>
         <div class="tomlfoot"><button class="btn primary" id="pdev-add" style="display:none">Add to chat</button><button class="btn" id="pdev-cred">Access</button><button class="btn" id="pdev-refresh">Refresh</button><button class="btn" id="pdev-remove" title="Remove this device from the centrs CDB">Remove</button><span class="note" id="pdev-note">…</span></div>
+        <section class="dsec" id="pdev-sys" aria-labelledby="pdev-sys-h"><h2 id="pdev-sys-h">System</h2><div class="dbody"></div></section>
+        <section class="dsec" id="pdev-ifs" aria-labelledby="pdev-ifs-h"><h2 id="pdev-ifs-h">Interfaces <span class="cnt"></span></h2><div class="dbody"></div></section>
+        <section class="dsec" id="pdev-log" aria-labelledby="pdev-log-h"><h2 id="pdev-log-h">Log <span class="cnt"></span></h2><div class="dbody"></div></section>
       </div>
     </div>
 
@@ -721,6 +775,13 @@
           <div class="arow"><span class="k">Config home</span><span class="v" id="preallow-cfg">…</span></div>
           <div class="setnote">Seeded into this workspace's private muse approval policy, tagged routeros-muse:seed. Shell, host, and MCP-tool rules cover this workspace only — an Always-allow here does not carry to other workspaces. Your own muse config is never touched.</div>
           <div class="setnote" id="preallow-warn" style="display:none"></div>
+        </div>
+        <div class="rblock" id="devpoll-block">
+          <div class="rsect">Device status</div>
+          <div class="seg" id="devpollseg">
+            <button data-poll="0">Off</button><button data-poll="15">15s</button><button data-poll="30">30s</button><button data-poll="60">60s</button>
+          </div>
+          <div class="setnote" id="devpoll-note">Reads /system/resource from each device on this interval while this page is visible, to color the device dots. Off checks only when you open a device.</div>
         </div>
         <div class="rblock">
           <div class="rsect">Appearance</div>
@@ -1249,49 +1310,356 @@
       document.getElementById("ppc-title").textContent = "unavailable: " + e.message;
     }
   }
-  async function renderDevice(id) {
+  // ---- Device status: one state per device, two readers (the card
+  // dot in the left list, the pane dot). unknown = not read yet (or
+  // polling off), ok = /system/resource answered, unreachable = it
+  // did not (tone bad: no answer at the transport; warn: answered but
+  // refused, e.g. a rejected login). The why rides the dot's title.
+  const DEV_STATUS = new Map();
+  function devStatusOf(id) { return DEV_STATUS.get(id) || { state: "unknown" }; }
+  function devStatusTone(code) {
+    if (code === "transport/auth-failed") return "warn";
+    return /^transport\/|^muse\/deadline$/.test(code || "") ? "bad" : "warn";
+  }
+  function devStatusLabel(st) {
+    if (st.state !== "unreachable") return "";
+    if (st.code === "transport/auth-failed") return "login refused";
+    return st.tone === "bad" ? "unreachable" : "can't read";
+  }
+  function devStatusSummary(s) {
+    return [s.uptime ? "up " + s.uptime : null, s.cpuLoad != null ? "cpu " + s.cpuLoad + "%" : null, s.version].filter(Boolean).join(" · ");
+  }
+  function paintDevDot(el, st) {
+    if (st.state === "ok") {
+      el.className = "dot ok";
+      el.title = "Reachable" + (st.summary ? " · " + st.summary : "") + " · checked " + new Date(st.at).toLocaleTimeString();
+    } else if (st.state === "unreachable") {
+      el.className = "dot " + st.tone;
+      el.title = devStatusLabel(st) + ": " + (st.why || "no reason given") + " · checked " + new Date(st.at).toLocaleTimeString()
+        + (st.code === "transport/auth-failed" ? " · not re-polled (each try logs a login failure on the router): fix Access or press Refresh" : "");
+    } else {
+      el.className = "dot unknown";
+      el.title = st.why || "Status not checked yet";
+    }
+  }
+  function paintDevStatus(id) {
+    const st = devStatusOf(id);
+    const card = document.querySelector('.dev[data-key="' + CSS.escape("dev-" + id) + '"]');
+    if (card) {
+      paintDevDot(card.querySelector(".row1 .dot"), st);
+      const live = card.querySelector(".live");
+      live.className = "live" + (st.state === "unreachable" ? " " + st.tone : "");
+      live.textContent = st.state === "ok" && st.summary ? st.summary
+        : st.state === "unreachable" ? devStatusLabel(st)
+        : card.dataset.base || "";
+      live.title = st.state === "unreachable" ? st.why || "" : "";
+    }
+    if (devShown === id) paintDevDot(document.getElementById("pdev-dot"), st);
+  }
+  function setDevStatus(id, st) {
+    DEV_STATUS.set(id, Object.assign({ at: Date.now() }, st));
+    paintDevStatus(id);
+  }
+  // A /status (poll) or /stats (pane) answer folded into the state.
+  function devStatusFromRead(j) {
+    if (j && j.ok) return { state: "ok", summary: devStatusSummary(j.data || {}) };
+    return { state: "unreachable", why: (j && j.why) || "no answer", code: j && j.code, tone: devStatusTone(j && j.code) };
+  }
+
+  // ---- Status poll: one /system/resource read per device every N
+  // seconds (Settings → Device status; 0 = off). Never overlaps itself
+  // (a tick that is still running defers the next), at most
+  // DEV_POLL_LANES reads in flight, nothing while the page is hidden
+  // or the lock/guidance overlay is up, and a device reload aborts the
+  // in-flight round and starts a fresh one (generation + abort).
+  const DEV_POLL_LANES = 4;
+  const DEV_POLL = { seconds: null, timer: null, running: false, again: false, gen: 0, abort: null };
+  // A rejected login is not retried by the poll: every attempt writes a
+  // login-failure line (system,error,critical) to the router's log and
+  // can trip brute-force guards. Held until the device list reloads
+  // (an Access save does that) or the pane reads it again (Refresh).
+  const DEV_POLL_HELD = new Set();
+  function devPollBlocked() {
+    return document.hidden || !DEV_POLL.seconds
+      || document.getElementById("lockscreen").classList.contains("open")
+      || document.getElementById("guidescreen").classList.contains("open");
+  }
+  function devPollSchedule() {
+    clearTimeout(DEV_POLL.timer);
+    DEV_POLL.timer = null;
+    if (devPollBlocked()) return;
+    DEV_POLL.timer = setTimeout(devPollTick, DEV_POLL.seconds * 1000);
+  }
+  async function devPollTick() {
+    clearTimeout(DEV_POLL.timer);
+    DEV_POLL.timer = null;
+    if (DEV_POLL.running) { DEV_POLL.again = true; return; }
+    if (devPollBlocked()) return;
+    DEV_POLL.running = true;
+    const gen = DEV_POLL.gen;
+    const abort = new AbortController();
+    DEV_POLL.abort = abort;
+    const ids = (window.__devices || []).map((d) => d.id);
+    let next = 0;
+    const lane = async () => {
+      while (next < ids.length && gen === DEV_POLL.gen && !devPollBlocked()) {
+        const id = ids[next++];
+        if (DEV_POLL_HELD.has(id)) continue;
+        try {
+          const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/status", { signal: abort.signal });
+          const j = await r.json();
+          if (gen !== DEV_POLL.gen) return;
+          if (j.code === "transport/auth-failed") DEV_POLL_HELD.add(id);
+          setDevStatus(id, devStatusFromRead(j));
+        } catch (e) {
+          if (gen !== DEV_POLL.gen || e.name === "AbortError") return;
+          setDevStatus(id, { state: "unknown", why: "status check failed: " + e.message });
+        }
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(DEV_POLL_LANES, ids.length) }, lane));
+    } finally {
+      DEV_POLL.running = false;
+      if (DEV_POLL.abort === abort) DEV_POLL.abort = null;
+      if (DEV_POLL.again) { DEV_POLL.again = false; devPollTick(); } else devPollSchedule();
+    }
+  }
+  // Devices reloaded (or the interval changed): drop the old round
+  // and read now. Statuses of devices that are gone are forgotten.
+  function devPollRestart() {
+    DEV_POLL.gen++;
+    if (DEV_POLL.abort) DEV_POLL.abort.abort();
+    const ids = new Set((window.__devices || []).map((d) => d.id));
+    for (const id of [...DEV_STATUS.keys()]) if (!ids.has(id)) DEV_STATUS.delete(id);
+    for (const id of [...DEV_DETAILS.keys()]) if (!ids.has(id)) DEV_DETAILS.delete(id);
+    DEV_POLL_HELD.clear();
+    devPollTick();
+  }
+  function paintDevPollSeg() {
+    document.querySelectorAll("#devpollseg button").forEach((b) => b.classList.toggle("on", Number(b.dataset.poll) === DEV_POLL.seconds));
+  }
+  // The stored interval arrives with /api/settings (after admission).
+  function devPollApply(seconds) {
+    if (typeof seconds !== "number") return;
+    const was = DEV_POLL.seconds;
+    DEV_POLL.seconds = seconds;
+    paintDevPollSeg();
+    if (was !== seconds) devPollRestart();
+  }
+  document.querySelectorAll("#devpollseg button").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const v = Number(b.dataset.poll);
+      const note = document.getElementById("devpoll-note");
+      try {
+        const r = await fetch("/api/settings", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ devicePollSeconds: v }),
+        });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.why || "request failed");
+        devPollApply(j.devicePollSeconds);
+      } catch (e) {
+        note.dataset.keep = note.dataset.keep || note.textContent;
+        note.textContent = "Not saved: " + e.message;
+        setTimeout(() => { note.textContent = note.dataset.keep; }, 4000);
+      }
+    }));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { clearTimeout(DEV_POLL.timer); DEV_POLL.timer = null; }
+    else devPollTick();
+  });
+
+  // ---- Device pane: system, interfaces and log, read on first open
+  // and on Refresh (never polled). Each section paints its own answer;
+  // a failed read says why in its own section only.
+  const DEV_DETAILS = new Map();
+  let devShown = null;
+  let devSeq = 0;
+  function fmtBytes(n) {
+    if (n == null) return "—";
+    const u = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let v = n;
+    let i = 0;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    if (i > 0 && Math.round(v) >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? String(v) : v < 10 ? v.toFixed(1) : String(Math.round(v))) + " " + u[i];
+  }
+  function fmtAge(at) {
+    const s = Math.round((Date.now() - at) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    return "at " + new Date(at).toLocaleTimeString();
+  }
+  function devSec(key) {
+    const sec = document.getElementById("pdev-" + key);
+    // The body's class changes with its state (dbody, reading, dwhy, …).
+    return { sec, body: sec.lastElementChild, cnt: sec.querySelector("h2 .cnt") };
+  }
+  function devSecWhy(key, what, read) {
+    const s = devSec(key);
+    if (s.cnt) s.cnt.textContent = "";
+    s.body.className = "dwhy";
+    s.body.innerHTML = "Couldn't read " + esc(what) + ": <code>" + esc(read.why || "no reason given") + "</code>";
+  }
+  // Every read failed: the reason shows once (System), not three times.
+  function devSecSkipped(key) {
+    const s = devSec(key);
+    if (s.cnt) s.cnt.textContent = "";
+    s.body.className = "dempty";
+    s.body.textContent = "Not read: the device did not answer (see System).";
+  }
+  function devSecState(text) {
+    for (const key of ["sys", "ifs", "log"]) {
+      const s = devSec(key);
+      if (s.cnt) s.cnt.textContent = "";
+      s.body.className = "reading";
+      s.body.textContent = text;
+    }
+  }
+  function usageRow(label, free, total) {
+    if (free == null || total == null || total <= 0)
+      return '<div class="wide"><dt>' + label + "</dt><dd>—</dd></div>";
+    const used = (total - free) / total;
+    return '<div class="wide"><dt>' + label + '</dt><dd class="usage"><meter min="0" max="1" low="0.7" high="0.9" optimum="0" value="' + used.toFixed(3) + '" title="' + Math.round(used * 100) + '% used"></meter><span>' + esc(fmtBytes(free)) + " free <small>of " + esc(fmtBytes(total)) + " · " + Math.round(used * 100) + "% used</small></span></dd></div>";
+  }
+  function paintDevSystem(read) {
+    if (!read.ok) return devSecWhy("sys", "/system/resource", read);
+    const d = read.data;
+    const s = devSec("sys");
+    const cpu = [d.cpuCount != null ? d.cpuCount + (d.cpuCount === 1 ? " core" : " cores") : null, d.cpuLoad != null ? d.cpuLoad + "% load" : null].filter(Boolean).join(" · ");
+    const model = d.model || d.boardName;
+    const modelNote = d.model && d.boardName && d.boardName !== d.model ? " <small>" + esc(d.boardName) + "</small>" : "";
+    const modelTitle = d.routerboard === "absent" ? ' title="No /system/routerboard on this device (CHR and x86 have none): board-name from /system/resource"' : "";
+    const row = (k, v) => "<div><dt>" + k + "</dt><dd>" + v + "</dd></div>";
+    s.body.className = "dbody";
+    s.body.innerHTML = '<dl class="sysgrid">'
+      + row("Identity", esc(d.identity || "—"))
+      + "<div" + modelTitle + "><dt>Model</dt><dd>" + esc(model || "—") + modelNote + "</dd></div>"
+      + row("RouterOS", esc(d.version || "—"))
+      + row("Architecture", esc(d.architecture || "—"))
+      + row("Uptime", esc(d.uptime || "—"))
+      + row("CPU", esc(cpu || "—"))
+      + usageRow("Memory", d.memFree, d.memTotal)
+      + usageRow("Disk", d.diskFree, d.diskTotal)
+      + "</dl>";
+  }
+  function paintDevInterfaces(read) {
+    if (!read.ok) return devSecWhy("ifs", "/interface", read);
+    const s = devSec("ifs");
+    const rows = read.data.rows || [];
+    s.cnt.textContent = String(rows.length);
+    if (rows.length === 0) {
+      s.body.className = "dempty";
+      s.body.textContent = "No interfaces reported.";
+      return;
+    }
+    const state = (i) => i.disabled ? '<span class="ifst off">disabled</span>' : i.running ? '<span class="ifst run">running</span>' : '<span class="ifst down">not running</span>';
+    const addrs = (i) => i.addresses.length === 0 ? '<span class="faint">—</span>'
+      : i.addresses.map((a) => '<span class="addr">' + esc(a.address) + (a.disabled ? "<small>disabled</small>" : a.invalid ? "<small>invalid</small>" : "") + "</span>").join("");
+    let html = '<table class="dtable"><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">State</th><th scope="col">MAC</th><th scope="col">Addresses</th><th scope="col" class="num">RX</th><th scope="col" class="num">TX</th></tr></thead><tbody>';
+    for (const i of rows) {
+      html += "<tr" + (i.disabled ? ' class="off"' : "") + "><td class=\"nowrap\">" + esc(i.name) + '</td><td class="muted">' + esc(i.type || "—") + "</td><td>" + state(i) + '</td><td class="nowrap muted">' + esc(i.mac || "—") + "</td><td>" + addrs(i) + '</td><td class="num">' + esc(fmtBytes(i.rxBytes)) + '</td><td class="num">' + esc(fmtBytes(i.txBytes)) + "</td></tr>";
+    }
+    html += "</tbody></table>";
+    if (read.data.addressWhy) html += '<div class="dsub">' + esc(read.data.addressWhy) + "</div>";
+    s.body.className = "";
+    s.body.innerHTML = html;
+    s.body.title = "Link-local IPv6 (fe80::/10) addresses are not listed";
+  }
+  function chip(topic, count) {
+    return '<span class="ltopic ' + esc(topic) + '">' + esc(topic) + (count != null ? "<b>" + count + "</b>" : "") + "</span>";
+  }
+  function paintDevLog(read) {
+    if (!read.ok) return devSecWhy("log", "/log", read);
+    const s = devSec("log");
+    const d = read.data;
+    s.cnt.textContent = d.total + (d.total === 1 ? " entry" : " entries");
+    if (d.total === 0) {
+      s.body.className = "dempty";
+      s.body.textContent = "The log buffer is empty.";
+      return;
+    }
+    const TOP = 12;
+    const topics = d.topics.slice(0, TOP).map((t) => chip(t.topic, t.count)).join("")
+      + (d.topics.length > TOP ? '<span class="ltopic">+' + (d.topics.length - TOP) + " more</span>" : "");
+    let html = '<dl class="logsum"><dt>Severity</dt><dd>' + (d.severities.map((t) => chip(t.topic, t.count)).join("") || '<span class="faint">—</span>')
+      + "</dd><dt>Topics</dt><dd>" + (topics || '<span class="faint">—</span>') + "</dd></dl>";
+    if (d.problems.length === 0) {
+      html += '<div class="dempty">No errors or warnings in the buffer.</div>';
+    } else {
+      html += '<div class="logsub">Latest ' + d.problems.length + " errors and warnings · newest first</div>"
+        + '<table class="dtable"><thead><tr><th scope="col">Time</th><th scope="col">Topics</th><th scope="col">Message</th></tr></thead><tbody>';
+      for (const e of d.problems) {
+        html += '<tr><td class="nowrap muted">' + esc(e.time || "—") + '</td><td class="nowrap">' + e.topics.map((t) => chip(t)).join("") + '</td><td class="lmsg">' + esc(e.message) + "</td></tr>";
+      }
+      html += "</tbody></table>";
+    }
+    s.body.className = "";
+    s.body.innerHTML = html;
+  }
+  function paintDeviceDetails(id, j, at) {
+    const noteEl = document.getElementById("pdev-note");
+    const addEl = document.getElementById("pdev-add");
+    const inChat = !!document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]');
+    addEl.style.display = inChat ? "none" : "";
+    if (!j.system) {
+      // Lookup failed before any read (no device, no link, no centrs).
+      devSecState("—");
+      noteEl.textContent = j.why || "unavailable";
+      return;
+    }
+    paintDevSystem(j.system);
+    if (j.ok) {
+      paintDevInterfaces(j.interfaces);
+      paintDevLog(j.log);
+    } else {
+      devSecSkipped("ifs");
+      devSecSkipped("log");
+    }
+    if (!j.ok) { noteEl.textContent = j.why; return; }
+    noteEl.textContent = (inChat ? "in this chat ✓ · " : "") + "read " + fmtAge(at) + " via centrs" + (inChat ? "" : " · Add marks clear intent");
+  }
+  // cached: reopen a tab from the last read (first open and Refresh read).
+  async function renderDevice(id, opts) {
     const nameEl = document.getElementById("pdev-name");
     const roleEl = document.getElementById("pdev-role");
-    const statsEl = document.getElementById("pdev-stats");
     const noteEl = document.getElementById("pdev-note");
     const addEl = document.getElementById("pdev-add");
     const credEl = document.getElementById("pdev-cred");
-    const dotEl = document.getElementById("pdev-dot");
     const device = (window.__devices || []).find((d) => d.id === id) || { id };
+    devShown = id;
     nameEl.textContent = device.id;
-    roleEl.textContent = [device.role, device.site].filter(Boolean).join(" · ") || "device";
-    statsEl.innerHTML = "";
-    noteEl.textContent = "checking…";
-    addEl.style.display = "none";
+    roleEl.textContent = [device.role, device.site].filter(Boolean).join(" · ") || (device.cdb ? "centrs device" + (device.user ? " · " + device.user : "") : "device");
     addEl.onclick = () => { addTarget(id); showPane("pane-chat"); };
     credEl.onclick = () => openCred(id, noteEl.textContent);
     document.getElementById("pdev-refresh").onclick = () => renderDevice(id);
     document.getElementById("pdev-remove").onclick = () => removeDevice(id);
+    paintDevDot(document.getElementById("pdev-dot"), devStatusOf(id));
+    // Any newer render (cached or not) wins the pane; a read that lands
+    // late still updates the cache and the status, never the pane.
+    const my = ++devSeq;
+    const cached = opts && opts.cached ? DEV_DETAILS.get(id) : null;
+    if (cached && cached.j.ok) { paintDeviceDetails(id, cached.j, cached.at); return; }
+    devSecState("reading…");
+    noteEl.textContent = "checking…";
+    addEl.style.display = "none";
     try {
       const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/stats");
       const j = await r.json();
-      if (!j.ok) {
-        dotEl.className = "dot warn";
-        statsEl.innerHTML = "";
-        noteEl.textContent = j.why;
-        addEl.style.display = "";
-        return;
+      const at = Date.now();
+      DEV_DETAILS.set(id, { j, at });
+      if (j.system && j.system.ok) {
+        DEV_POLL_HELD.delete(id);
+        setDevStatus(id, devStatusFromRead({ ok: true, data: j.system.data }));
+      } else if (j.system) {
+        if (j.system.code === "transport/auth-failed") DEV_POLL_HELD.add(id);
+        setDevStatus(id, devStatusFromRead(j.system));
       }
-      dotEl.className = "dot ok";
-      const res = j.resource || {};
-      const ident = j.identity || {};
-      const rows = [
-        ["Identity", esc(ident.name || ident.identity || id), ""],
-        ["Uptime", esc(res.uptime || "—"), ""],
-        ["CPU / Mem", esc(res["cpu-load"] != null ? res["cpu-load"] + "%" : "—"), ""],
-        ["Version", esc(res.version || "—"), ""],
-      ];
-      statsEl.innerHTML = rows.map((s) => '<div class="stat"><div class="k">' + s[0] + '</div><div class="v">' + s[1] + "</div></div>").join("");
-      const inChat = !!document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]');
-      if (inChat) { addEl.style.display = "none"; noteEl.textContent = "in this chat ✓ · via centrs · just now"; }
-      else { addEl.style.display = ""; noteEl.textContent = "via centrs · just now · Add marks clear intent"; }
+      if (my === devSeq) paintDeviceDetails(id, j, at);
     } catch (e) {
-      dotEl.className = "dot warn";
+      if (my !== devSeq) return;
+      devSecState("—");
       noteEl.textContent = "unavailable: " + e.message;
       addEl.style.display = "";
     }
@@ -1520,7 +1888,7 @@
     const key = b.dataset.key || b.dataset.path || id;
     const name = b.dataset.title || (b.querySelector(".dn") ? b.querySelector(".dn").textContent : id);
     if (key.indexOf("past-") === 0) renderPastChat(key.slice(5));
-    else if (key.indexOf("dev-") === 0) renderDevice(key.slice(4));
+    else if (key.indexOf("dev-") === 0) renderDevice(key.slice(4), { cached: true });
     else if (b.dataset.path && isArtifact(b.dataset.path)) {
       const hint = b.dataset.tier === "scripts" ? "render-job" : null;
       renderArtifact(b.dataset.path, false, hint);
@@ -3576,6 +3944,7 @@
             ? "No devices in the centrs CDB."
             : "No devices in router.toml.";
         box.innerHTML = '<div class="wsempty"><p>' + esc(empty) + "</p></div>";
+        devPollRestart();
         return;
       }
       for (const d of window.__devices) {
@@ -3584,13 +3953,13 @@
         card.dataset.goto = "pane-device";
         card.dataset.key = "dev-" + d.id;
         card.dataset.title = d.id;
-        card.title = "Click for the stats tab";
+        card.title = "Open the device: system, interfaces, log";
         const role = [d.role, d.site].filter(Boolean).join(" · ") || (d.cdb ? "centrs device" : "device");
-        card.innerHTML = '<div class="row1"><span class="dot warn"></span><span class="name"></span><span class="role"></span></div>'
+        card.innerHTML = '<div class="row1"><span class="dot unknown"></span><span class="name"></span><span class="role"></span></div>'
           + '<div class="live"></div><div class="chat"><button class="minibtn access">Access</button><span class="chatstate"></span></div>';
         card.querySelector(".name").textContent = d.id;
         card.querySelector(".role").textContent = role;
-        card.querySelector(".live").textContent = d.cdb ? "cdb " + d.cdb + (d.user ? " · " + d.user : "") : d.host ? d.host : "no device linked";
+        card.dataset.base = d.cdb ? "cdb " + d.cdb + (d.user ? " · " + d.user : "") : d.host ? d.host : "no device linked";
         const acc = card.querySelector(".access");
         if (d.hasPassword === false) {
           acc.classList.add("need");
@@ -3601,7 +3970,9 @@
         acc.addEventListener("click", (e) => { e.stopPropagation(); openCred(d.id, null); });
         cardChatState(card, d.id, false);
         box.appendChild(card);
+        paintDevStatus(d.id);
       }
+      devPollRestart();
       const n = window.__devices.length;
       const src = j.source === "cdb" ? "centrs CDB" : "router.toml";
       $("leftfoot").textContent = n + " device" + (n === 1 ? "" : "s") + " · " + src;
@@ -4240,6 +4611,7 @@
       const j = await getJSON("/api/settings");
       if (j.ok && j.defaultAccess) paintDefaultAccess(j.defaultAccess);
       if (j.ok) paintRouterosSkills(j.routerosSkills);
+      if (j.ok) devPollApply(j.devicePollSeconds);
     } catch { /* the row keeps its placeholder */ }
   }
 

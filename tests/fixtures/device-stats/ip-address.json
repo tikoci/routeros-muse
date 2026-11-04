@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "address": "10.0.2.15/24",
+      "disabled": "false",
+      "interface": "ether1",
+      "invalid": "false"
+    },
+    {
+      "address": "192.168.88.1/24",
+      "disabled": "false",
+      "interface": "br-mgmt",
+      "invalid": "false"
+    }
+  ],
+  "warnings": [],
+  "tips": []
+}

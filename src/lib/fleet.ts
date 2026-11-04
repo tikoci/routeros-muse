@@ -72,6 +72,9 @@ export function readDevices(root: string): Device[] {
 	return out;
 }
 
+/** Per-read knobs: a projected attribute set and the per-request timeout. */
+export type RetrieveOpts = { attributes?: string[]; timeout?: string };
+
 /**
  * centrs retrieve argv for a device (T38, D23): the cdb link wins, the
  * legacy host is break-glass, neither is null (caller stays honest).
@@ -81,8 +84,11 @@ export function centrsRetrieveArgs(
 	device: Pick<Device, "cdb" | "host">,
 	rosPath: string,
 	cdbFile: string | null,
+	opts?: RetrieveOpts,
 ): string[] | null {
-	const tail = ["--format", "json", "--timeout", "10s"];
+	const tail = ["--format", "json", "--timeout", opts?.timeout ?? "10s"];
+	if (opts?.attributes?.length)
+		tail.push("--attributes", opts.attributes.join(","));
 	if (cdbFile) tail.push("--cdb-file", cdbFile);
 	if (device.cdb) return ["retrieve", device.cdb, rosPath, ...tail];
 	if (device.host) return ["retrieve", "--host", device.host, rosPath, ...tail];
@@ -211,60 +217,401 @@ export async function listDevices(
 export type StatsResult = { status: number; body: unknown };
 
 /**
- * Live stats for one device: identity + resource via centrs retrieve
- * under the caller's env (which carries the unlock binding). The
- * device is looked up in the CDB, like listDevices (D53).
+ * One device read: data on success, a short why (+ centrs code) on
+ * failure. Pane sections carry these so one failed read degrades only
+ * its own section.
+ */
+export type Read<T> =
+	| { ok: true; data: T }
+	| { ok: false; why: string; code?: string };
+
+/**
+ * One centrs retrieve, parsed. The run deadline sits above centrs' own
+ * per-request --timeout so centrs reports its own timeout envelope;
+ * the kill is the backstop for a hung spawn.
+ */
+async function retrieve(
+	device: Pick<Device, "cdb" | "host">,
+	rosPath: string,
+	cdbFile: string | null,
+	env: Record<string, string>,
+	opts: RetrieveOpts & { deadlineMs: number },
+): Promise<Read<unknown>> {
+	const args = centrsRetrieveArgs(device, rosPath, cdbFile, opts);
+	if (!args) return { ok: false, why: "device has no cdb link nor host" };
+	const r = await run(["centrs", ...args], {
+		timeoutMs: opts.deadlineMs,
+		env,
+	});
+	if (r.timedOut)
+		return {
+			ok: false,
+			why: `no answer within ${Math.round(opts.deadlineMs / 1000)}s`,
+			code: "muse/deadline",
+		};
+	try {
+		const parsed = JSON.parse(centrsOut(r)) as Record<string, unknown>;
+		if (parsed["ok"] !== true) {
+			const code = centrsCode(parsed);
+			return {
+				ok: false,
+				why: centrsWhy(parsed),
+				...(code ? { code } : {}),
+			};
+		}
+		return { ok: true, data: parsed["data"] };
+	} catch {
+		return { ok: false, why: "centrs output unreadable" };
+	}
+}
+
+/** REST answers every scalar as a string ("2", "true"): read them back. */
+function num(v: unknown): number | null {
+	if (typeof v === "number" && Number.isFinite(v)) return v;
+	if (typeof v !== "string" || !/^-?[0-9]+(\.[0-9]+)?$/.test(v)) return null;
+	return Number(v);
+}
+function bool(v: unknown): boolean {
+	return v === true || v === "true";
+}
+function str(v: unknown): string | null {
+	return typeof v === "string" && v !== "" ? v : null;
+}
+function rec(v: unknown): Record<string, unknown> {
+	return v && typeof v === "object" && !Array.isArray(v)
+		? (v as Record<string, unknown>)
+		: {};
+}
+function rows(v: unknown): Record<string, unknown>[] {
+	if (Array.isArray(v)) return v.map(rec);
+	return v && typeof v === "object" ? [rec(v)] : [];
+}
+
+/** The status poll's one-line summary (projection of /system/resource). */
+export type DeviceStatus = {
+	uptime: string | null;
+	cpuLoad: number | null;
+	version: string | null;
+};
+
+export const STATUS_ATTRIBUTES = ["uptime", "cpu-load", "version"];
+
+export function projectStatus(resource: unknown): DeviceStatus {
+	const r = rec(resource);
+	return {
+		uptime: str(r["uptime"]),
+		cpuLoad: num(r["cpu-load"]),
+		version: str(r["version"]),
+	};
+}
+
+export type DeviceSystem = {
+	identity: string | null;
+	/** /system/routerboard model; null on CHR/x86 (no such menu). */
+	model: string | null;
+	boardName: string | null;
+	/** present = routerboard read; absent = no menu (CHR/x86); unread = failed. */
+	routerboard: "present" | "absent" | "unread";
+	architecture: string | null;
+	version: string | null;
+	uptime: string | null;
+	cpuCount: number | null;
+	cpuLoad: number | null;
+	memFree: number | null;
+	memTotal: number | null;
+	diskFree: number | null;
+	diskTotal: number | null;
+};
+
+/**
+ * Wire facts (CHR 7.25.1 capture, tests/fixtures/device-stats): every
+ * resource value is a string; CHR answers /system/routerboard with
+ * centrs `validation/unknown-path` (the menu does not exist), which is
+ * "absent", not a failure.
+ */
+export function projectSystem(
+	resource: unknown,
+	identity: Read<unknown> | null,
+	routerboard: Read<unknown> | null,
+): DeviceSystem {
+	const r = rec(resource);
+	const rbState: DeviceSystem["routerboard"] = !routerboard
+		? "unread"
+		: routerboard.ok
+			? "present"
+			: routerboard.code === "validation/unknown-path"
+				? "absent"
+				: "unread";
+	return {
+		identity: identity?.ok ? str(rec(identity.data)["name"]) : null,
+		model:
+			routerboard?.ok === true ? str(rec(routerboard.data)["model"]) : null,
+		boardName: str(r["board-name"]),
+		routerboard: rbState,
+		architecture: str(r["architecture-name"]),
+		version: str(r["version"]),
+		uptime: str(r["uptime"]),
+		cpuCount: num(r["cpu-count"]),
+		cpuLoad: num(r["cpu-load"]),
+		memFree: num(r["free-memory"]),
+		memTotal: num(r["total-memory"]),
+		diskFree: num(r["free-hdd-space"]),
+		diskTotal: num(r["total-hdd-space"]),
+	};
+}
+
+export type DeviceAddress = {
+	address: string;
+	family: 4 | 6;
+	disabled: boolean;
+	invalid: boolean;
+};
+
+export type DeviceInterface = {
+	name: string;
+	type: string | null;
+	running: boolean;
+	disabled: boolean;
+	/** null for the all-zero MAC (loopback) and MAC-less types. */
+	mac: string | null;
+	addresses: DeviceAddress[];
+	rxBytes: number | null;
+	txBytes: number | null;
+};
+
+export const INTERFACE_ATTRIBUTES = [
+	"name",
+	"type",
+	"running",
+	"disabled",
+	"mac-address",
+	"rx-byte",
+	"tx-byte",
+];
+export const ADDRESS_ATTRIBUTES = [
+	"address",
+	"interface",
+	"disabled",
+	"invalid",
+];
+
+/** fe80::/10 — every IPv6 interface has one; noise in a compact table. */
+function linkLocal6(address: string): boolean {
+	return /^fe[89ab][0-9a-f]?:/i.test(address);
+}
+
+/**
+ * /interface rows joined with /ip/address and /ipv6/address by
+ * interface name. Either address list may be null (its read failed):
+ * the rows still render, without those addresses.
+ */
+export function projectInterfaces(
+	interfaces: unknown,
+	ipv4: unknown,
+	ipv6: unknown,
+): DeviceInterface[] {
+	const byIf = new Map<string, DeviceAddress[]>();
+	const add = (list: unknown, family: 4 | 6) => {
+		for (const a of rows(list)) {
+			const address = str(a["address"]);
+			const iface = str(a["interface"]);
+			if (!address || !iface) continue;
+			if (family === 6 && linkLocal6(address)) continue;
+			const list2 = byIf.get(iface) ?? [];
+			list2.push({
+				address,
+				family,
+				disabled: bool(a["disabled"]),
+				invalid: bool(a["invalid"]),
+			});
+			byIf.set(iface, list2);
+		}
+	};
+	add(ipv4, 4);
+	add(ipv6, 6);
+	const out: DeviceInterface[] = [];
+	for (const i of rows(interfaces)) {
+		const name = str(i["name"]);
+		if (!name) continue;
+		const mac = str(i["mac-address"]);
+		out.push({
+			name,
+			type: str(i["type"]),
+			running: bool(i["running"]),
+			disabled: bool(i["disabled"]),
+			mac: mac && !/^(00:){5}00$/.test(mac) ? mac : null,
+			addresses: byIf.get(name) ?? [],
+			rxBytes: num(i["rx-byte"]),
+			txBytes: num(i["tx-byte"]),
+		});
+	}
+	return out;
+}
+
+export type LogEntry = { time: string; topics: string[]; message: string };
+export type DeviceLog = {
+	/** Entries in the buffer read. */
+	total: number;
+	/** Last N error/warning/critical entries, newest first. */
+	problems: LogEntry[];
+	/** Count per severity topic present in the buffer. */
+	severities: { topic: string; count: number }[];
+	/** Count per facility topic (system, dhcp, …), most first. */
+	topics: { topic: string; count: number }[];
+};
+
+export const LOG_ATTRIBUTES = ["time", "topics", "message"];
+const SEVERITIES = ["critical", "error", "warning", "info", "debug"];
+const PROBLEM = new Set(["critical", "error", "warning"]);
+
+/**
+ * /log (oldest first, as RouterOS answers) to the pane's log section.
+ * topics is RouterOS' comma list ("system,error,critical"): severity
+ * words count apart from facility words.
+ */
+export function projectLog(entries: unknown, limit = 10): DeviceLog {
+	const all = rows(entries).map((e) => ({
+		time: str(e["time"]) ?? "",
+		topics: (str(e["topics"]) ?? "").split(",").filter(Boolean),
+		message: str(e["message"]) ?? "",
+	}));
+	const sev = new Map<string, number>();
+	const fac = new Map<string, number>();
+	for (const e of all) {
+		for (const t of e.topics) {
+			const m = SEVERITIES.includes(t) ? sev : fac;
+			m.set(t, (m.get(t) ?? 0) + 1);
+		}
+	}
+	const problems = all
+		.filter((e) => e.topics.some((t) => PROBLEM.has(t)))
+		.slice(-limit)
+		.reverse();
+	return {
+		total: all.length,
+		problems,
+		severities: SEVERITIES.filter((t) => sev.has(t)).map((topic) => ({
+			topic,
+			count: sev.get(topic) as number,
+		})),
+		topics: [...fac.entries()]
+			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+			.map(([topic, count]) => ({ topic, count })),
+	};
+}
+
+export type DeviceDetails = {
+	system: Read<DeviceSystem>;
+	interfaces: Read<{ rows: DeviceInterface[]; addressWhy?: string }>;
+	log: Read<DeviceLog>;
+};
+
+/** Each pane read's own deadline (centrs --timeout, then the kill). */
+const DETAIL_READ = { timeout: "8s", deadlineMs: 15_000 } as const;
+const STATUS_READ = { timeout: "5s", deadlineMs: 10_000 } as const;
+
+type Lookup =
+	| { ok: true; device: Device }
+	| { ok: false; status: number; why: string };
+
+/** The device as the CDB lists it (D53), linked, with centrs present. */
+async function lookupDevice(
+	id: string,
+	cdbFile: string | null,
+	env: Record<string, string>,
+): Promise<Lookup> {
+	const listed = await listCdbDevices(cdbFile ?? undefined, env);
+	if (!listed.ok) return { ok: false, status: 200, why: listed.why };
+	const device = listed.devices.find((s) => s.id === id);
+	if (!device) return { ok: false, status: 404, why: `no device ${id}` };
+	if (!centrsRetrieveArgs(device, "/system/resource", cdbFile))
+		return {
+			ok: false,
+			status: 200,
+			why: `device ${id} has no cdb link nor host yet (add cdb = "<centrs-device>" to its [device])`,
+		};
+	return { ok: true, device };
+}
+
+/**
+ * The device pane (first open + Refresh, never polled): system,
+ * interfaces and log, gathered as seven independent reads in
+ * parallel. A failed read degrades its own section; only when every
+ * section failed is the whole answer ok:false (the device is
+ * unreachable, and the why says how).
  */
 export async function deviceStats(
 	id: string,
 	cdbFile: string | null,
 	env: Record<string, string>,
 ): Promise<StatsResult> {
-	const listed = await listCdbDevices(cdbFile ?? undefined, env);
-	if (!listed.ok) return { status: 200, body: { ok: false, why: listed.why } };
-	const device = listed.devices.find((s) => s.id === id);
-	if (!device)
-		return { status: 404, body: { ok: false, why: `no device ${id}` } };
-	const argsFor = (rosPath: string) =>
-		centrsRetrieveArgs(device as Device, rosPath, cdbFile);
-	if (!argsFor("/system/identity")) {
-		return {
-			status: 200,
-			body: {
-				ok: false,
-				why: `device ${id} has no cdb link nor host yet (add cdb = "<centrs-device>" to its [device])`,
-			},
-		};
-	}
 	if (!have("centrs", env))
 		return { status: 200, body: { ok: false, why: "centrs not on PATH" } };
-	const [idr, res] = await Promise.all([
-		run(["centrs", ...(argsFor("/system/identity") as string[])], {
-			timeoutMs: 30_000,
-			env,
-		}),
-		run(["centrs", ...(argsFor("/system/resource") as string[])], {
-			timeoutMs: 30_000,
-			env,
-		}),
+	const found = await lookupDevice(id, cdbFile, env);
+	if (!found.ok)
+		return { status: found.status, body: { ok: false, why: found.why } };
+	const read = (rosPath: string, attributes?: string[]) =>
+		retrieve(found.device, rosPath, cdbFile, env, {
+			...DETAIL_READ,
+			...(attributes ? { attributes } : {}),
+		});
+	const [res, ident, rb, ifs, v4, v6, log] = await Promise.all([
+		read("/system/resource"),
+		read("/system/identity"),
+		// model only: the routerboard menu also carries the serial (D1).
+		read("/system/routerboard", ["model"]),
+		read("/interface", INTERFACE_ATTRIBUTES),
+		read("/ip/address", ADDRESS_ATTRIBUTES),
+		read("/ipv6/address", ADDRESS_ATTRIBUTES),
+		read("/log", LOG_ATTRIBUTES),
 	]);
-	try {
-		const ident = JSON.parse(centrsOut(idr)) as Record<string, unknown>;
-		const resource = JSON.parse(centrsOut(res)) as Record<string, unknown>;
-		if (ident["ok"] !== true)
-			return { status: 200, body: { ok: false, why: centrsWhy(ident) } };
-		if (resource["ok"] !== true)
-			return { status: 200, body: { ok: false, why: centrsWhy(resource) } };
-		return {
-			status: 200,
-			body: { ok: true, identity: ident["data"], resource: resource["data"] },
-		};
-	} catch {
-		return {
-			status: 200,
-			body: { ok: false, why: "centrs output unreadable" },
-		};
-	}
+	const addressWhy = [
+		v4.ok ? null : `IPv4 addresses: ${v4.why}`,
+		v6.ok ? null : `IPv6 addresses: ${v6.why}`,
+	]
+		.filter(Boolean)
+		.join(" · ");
+	const details: DeviceDetails = {
+		system: res.ok
+			? { ok: true, data: projectSystem(res.data, ident, rb) }
+			: res,
+		interfaces: ifs.ok
+			? {
+					ok: true,
+					data: {
+						rows: projectInterfaces(
+							ifs.data,
+							v4.ok ? v4.data : null,
+							v6.ok ? v6.data : null,
+						),
+						...(addressWhy ? { addressWhy } : {}),
+					},
+				}
+			: ifs,
+		log: log.ok ? { ok: true, data: projectLog(log.data) } : log,
+	};
+	if (!res.ok && !ifs.ok && !log.ok)
+		return { status: 200, body: { ok: false, why: res.why, ...details } };
+	return { status: 200, body: { ok: true, ...details } };
+}
+
+/**
+ * The status poll's one read: /system/resource, three attributes.
+ * The caller vouches for the id (D53: the id is the CDB target, and
+ * serve checks it against the list the UI last loaded), so a poll
+ * tick costs one centrs spawn per device, not a list + a read.
+ */
+export async function deviceStatus(
+	id: string,
+	cdbFile: string | null,
+	env: Record<string, string>,
+): Promise<Read<DeviceStatus>> {
+	if (!have("centrs", env)) return { ok: false, why: "centrs not on PATH" };
+	const r = await retrieve({ cdb: id }, "/system/resource", cdbFile, env, {
+		...STATUS_READ,
+		attributes: STATUS_ATTRIBUTES,
+	});
+	return r.ok ? { ok: true, data: projectStatus(r.data) } : r;
 }
 
 export type TwinsResult =

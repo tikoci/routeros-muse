@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "address": "::1/128",
+      "disabled": "false",
+      "interface": "lo",
+      "invalid": "false"
+    },
+    {
+      "address": "fe80::34:a0ff:fe16:2cd2/64",
+      "disabled": "false",
+      "interface": "ether1",
+      "invalid": "false"
+    },
+    {
+      "address": "fd00:88::1/64",
+      "disabled": "false",
+      "interface": "br-mgmt",
+      "invalid": "false"
+    },
+    {
+      "address": "fe80::34cc:9bff:fe39:f246/64",
+      "disabled": "false",
+      "interface": "br-mgmt",
+      "invalid": "false"
+    }
+  ],
+  "warnings": [],
+  "tips": []
+}

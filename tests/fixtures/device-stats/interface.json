@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "disabled": "false",
+      "mac-address": "02:34:A0:16:2C:D2",
+      "name": "ether1",
+      "running": "true",
+      "rx-byte": "172247",
+      "tx-byte": "138468",
+      "type": "ether"
+    },
+    {
+      "disabled": "true",
+      "mac-address": "D6:B7:D3:00:59:BF",
+      "name": "br-lab",
+      "running": "false",
+      "rx-byte": "0",
+      "tx-byte": "0",
+      "type": "bridge"
+    },
+    {
+      "disabled": "false",
+      "mac-address": "36:CC:9B:39:F2:46",
+      "name": "br-mgmt",
+      "running": "true",
+      "rx-byte": "0",
+      "tx-byte": "5906",
+      "type": "bridge"
+    },
+    {
+      "disabled": "false",
+      "mac-address": "00:00:00:00:00:00",
+      "name": "lo",
+      "running": "true",
+      "rx-byte": "0",
+      "tx-byte": "0",
+      "type": "loopback"
+    }
+  ],
+  "warnings": [],
+  "tips": []
+}

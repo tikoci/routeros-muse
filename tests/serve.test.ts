@@ -499,9 +499,71 @@ describe("serve", () => {
 			try {
 				const stats = (await (
 					await fetch(`${srv.url}api/devices/192.0.2.1/stats`)
-				).json()) as { ok: boolean; why: string };
+				).json()) as {
+					ok: boolean;
+					why: string;
+					system: { ok: boolean; code?: string };
+					interfaces: { ok: boolean };
+					log: { ok: boolean };
+				};
 				expect(stats.ok).toBe(false);
 				expect(stats.why).toContain("transport/timeout");
+				// Every pane section carries its own failure.
+				expect(stats.system.ok).toBe(false);
+				expect(stats.system.code).toBe("transport/timeout");
+				expect(stats.interfaces.ok).toBe(false);
+				expect(stats.log.ok).toBe(false);
+			} finally {
+				await srv.stop();
+			}
+		},
+		90_000,
+	);
+
+	tc(
+		"status poll: listed ids only, one honest read, interval setting",
+		async () => {
+			const ws = makeWorkspace();
+			await seedWorkspaceCdb(ws, [{ target: "192.0.2.1" }]);
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				workspace: ws,
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				// Before the UI lists devices, no id is known.
+				const early = await fetch(`${srv.url}api/devices/192.0.2.1/status`);
+				expect(early.status).toBe(404);
+				await (await fetch(`${srv.url}api/devices`)).json();
+				const unknown = await fetch(`${srv.url}api/devices/nope/status`);
+				expect(unknown.status).toBe(404);
+				const st = (await (
+					await fetch(`${srv.url}api/devices/192.0.2.1/status`)
+				).json()) as { ok: boolean; code: string; why: string };
+				expect(st.ok).toBe(false);
+				expect(st.code).toBe("transport/timeout");
+				const post = (body: unknown) =>
+					fetch(`${srv.url}api/settings`, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							origin: new URL(srv.url).origin,
+						},
+						body: JSON.stringify(body),
+					});
+				const got = (await (await fetch(`${srv.url}api/settings`)).json()) as {
+					devicePollSeconds: number;
+				};
+				expect(got.devicePollSeconds).toBe(30);
+				const set = (await (await post({ devicePollSeconds: 15 })).json()) as {
+					devicePollSeconds: number;
+				};
+				expect(set.devicePollSeconds).toBe(15);
+				expect((await post({ devicePollSeconds: 7 })).status).toBe(400);
+				expect((await post({ devicePollSeconds: "30" })).status).toBe(400);
 			} finally {
 				await srv.stop();
 			}
