@@ -21,7 +21,7 @@ plus the Muse agent from <https://dev.meta.ai> (`muse login` once to
 sign in; `routeros-muse code` checks and offers the installer). Then:
 
 ```sh
-bunx @tikoci/routeros-muse start   # web UI on 127.0.0.1 by default; opens your browser
+bunx @tikoci/routeros-muse@next start   # web UI on 127.0.0.1 by default; opens your browser
 ```
 
 From a checkout, `bun install` once, then `bun run start` does the
