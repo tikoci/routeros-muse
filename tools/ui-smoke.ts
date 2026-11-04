@@ -512,6 +512,12 @@ try {
 			undefined,
 			{ timeout: 30_000 },
 		);
+		// …and the stored interval (it arrives with /api/settings and
+		// restarts the poll), so no boot round lands in this leg's count.
+		await page.waitForSelector("#devpollseg button.on", {
+			state: "attached",
+			timeout: 30_000,
+		});
 		// Hidden page: a device reload starts no poll round.
 		await page.evaluate(() => {
 			Object.defineProperty(document, "hidden", {
@@ -519,6 +525,7 @@ try {
 				get: () => true,
 			});
 		});
+		statusHits.length = 0;
 		await page.evaluate(() =>
 			(
 				window as unknown as { __reloadDevices: () => Promise<void> }
