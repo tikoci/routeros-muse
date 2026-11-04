@@ -1701,3 +1701,25 @@ acceptance = "Live freeText settles answered and reaches the model; t50 multi sm
 blocked_by = []
 agent = "claude"
 updated = "2026-11-04"
+
+[[task]]
+id = "T167"
+title = "Twins panel stays stale and lacks Refresh"
+status = "active"
+detail = "Developer 2026-11-04: twins do not update and no update button exists. Replace the first-show-only fetch with refresh on each opening, visible-panel polling, and a manual Refresh control. Clear stale totals on failure and use quickchr status for running state."
+evidence = "Implemented 2026-11-04: Refresh (disabled while loading), each reopen and every 15 seconds while visible/unlocked, single-flight reads, no-store fetch, reset totals/badge on failure, quickchr status-aware rendering. Bundled quickchr list --json confirmed status=running/stopped (running entry also has pid); no router writes or VM lifecycle operations. tools/twins-smoke.ts wired early into the full smoke, plus scratch/t167.ts focused real-server runner: PASS refresh, status transitions, polling, collapse, reopen, no overlap, failure/unavailable/recovery, locked pause and unlock reload, dark/light; shots out/ui-smoke/t167-twins-{dark,light}.png eyeballed. make lint and records make check zero. make smoke reaches T167 PASS then stops at the known T162 dev-smoke-gw selector timeout. Full surface sweep therefore incomplete. Final PATH=node_modules/.bin:$PATH make gate -> exit 2: suite 768 pass / 15 fail across 49 files; T167 browser checks PASS again; whole smoke stops at T162; tmpdir check reports one t101-cfg directory left by the failed fixture. Log /tmp/muse-t167-gate.log. Known T155 set plus T168; work remains active until the required gate and sweep pass."
+acceptance = "Browser regression covers refresh, reopen, polling, failures and recovery; make gate and records check pass."
+blocked_by = ["T155", "T162", "T168"]
+agent = "codex"
+updated = "2026-11-04"
+
+[[task]]
+id = "T168"
+title = "Additional Mac gate failures: approval SSE and status/auth fixtures"
+status = "needed"
+detail = "Found while gating T167. tests/t-r3-server.test.ts P2-C approval-before-ack receives approvalAt=-1: the expected approval is not observed by the assertion deadline. Reproduced in a targeted run without the full UI smoke. Investigate the event timing/fixture; do not suppress the assertion."
+evidence = "PATH=node_modules/.bin:$PATH make gate -> /tmp/muse-t167-gate.log P2-C failed (approvalAt -1). PATH=node_modules/.bin:$PATH bun test tests/t-r3-server.test.ts tests/t49.test.ts -> /tmp/muse-t167-recheck.log same P2-C failure. Targeted rerun: 38 pass, 6 fail, 5 errors; five additional T49 status/auth fixture tests time out (5000 ms), with post-timeout assertions receiving null versions or 401. Full gate also times out in four T101 pre-seed fixtures (toggle/no-workspace/unknown schema/symlink). T106 initialize-cleanup tests also fail (hung initialize, instantly exiting child, SIGTERM-ignoring child); investigate along with the fixture timing/auth failures. Final gate: 768 pass / 15 fail; one t101-cfg directory survives the failed tests and trips the tmpdir-leak gate. See /tmp/muse-t167-gate.log for complete failure output. No server/MSP code changed by T167."
+acceptance = "Reproduce, fix the cause, and pass the P2-C regression plus full gate on macOS."
+blocked_by = []
+agent = ""
+updated = "2026-11-04"

@@ -755,7 +755,9 @@
       <div class="rview" id="rview-twins">
         <div class="rblock">
           <div class="rsect">Twins · this box</div>
-          <div id="twinlist"></div>
+          <button class="btn rbtn" id="twinsrefresh">Refresh</button>
+          <div class="setnote">Updates every 15 seconds while this panel is visible.</div>
+          <div id="twinlist" aria-live="polite"></div>
           <div class="setnote">via quickchr · KVM · the agent proves claims here before touching a real device</div>
         </div>
         <div class="rblock">
@@ -4436,10 +4438,24 @@
     }
   }
 
+  let twinsLoading = false;
+  let twinsTimer = null;
+  function twinsVisible() {
+    return !document.hidden && $("rightpanel").style.display !== "none"
+      && $("rview-twins").classList.contains("active")
+      && !$("lockscreen").classList.contains("open")
+      && !$("guidescreen").classList.contains("open");
+  }
   async function loadTwins() {
+    if (twinsLoading || !twinsVisible()) return;
+    twinsLoading = true;
+    clearTimeout(twinsTimer);
+    const refresh = $("twinsrefresh");
+    refresh.disabled = true;
+    refresh.textContent = "Refreshing…";
     const box = $("twinlist");
     try {
-      const j = await getJSON("/api/twins");
+      const j = await getJSON("/api/twins", { cache: "no-store" });
       if (!j.available) {
         box.innerHTML = '<div class="setnote">' + esc(j.why || "quickchr unavailable") + "</div>";
         $("qc-defined").textContent = "—";
@@ -4451,7 +4467,7 @@
       box.innerHTML = "";
       let running = 0;
       for (const t of twins) {
-        const isRun = t.running === true || (typeof t.pid === "number" && t.pid > 0);
+        const isRun = typeof t.status === "string" ? t.status === "running" : t.running === true || (typeof t.pid === "number" && t.pid > 0);
         if (isRun) running++;
         const div = document.createElement("div");
         div.className = "twin";
@@ -4472,7 +4488,14 @@
       $("twinbadge").hidden = false;
     } catch {
       $("twinbadge").hidden = true;
-      box.innerHTML = '<div class="setnote">twins unavailable.</div>';
+      box.innerHTML = '<div class="setnote">Twins unavailable. Press Refresh to retry.</div>';
+      $("qc-defined").textContent = "—";
+      $("qc-running").textContent = "—";
+    } finally {
+      twinsLoading = false;
+      refresh.disabled = false;
+      refresh.textContent = "Refresh";
+      if (twinsVisible()) twinsTimer = setTimeout(loadTwins, 15000);
     }
   }
 
@@ -5443,7 +5466,7 @@
     loadRecents();
     loadTree();
     loadAlerts();
-    // No loadTwins(): the Twins tab fetches on first show (T38 on-demand).
+    // Twins stay on-demand: visibility starts their refresh loop.
     loadPast();
     loadHistory(true).then(() => { refreshStatpop(); recoverPending(); loadRouterosSkills(); });
     connectStream();
@@ -5459,16 +5482,21 @@
   wireRouterosSkills();
   wireWorkspaces();
   wireAuth();
-  // Twins are on-demand (T38): quickchr is optional, so the tab fetches
-  // on first show instead of at boot. (This listener lives in the LIVE
-  // layer because loadTwins is scoped here, not in the static wiring.)
-  let twinsLoaded = false;
-  document.querySelector('.rbar button[data-rview="rview-twins"]').addEventListener("click", () => {
-    if (!twinsLoaded) {
-      twinsLoaded = true;
-      loadTwins();
-    }
-  });
+  // Observe actual visibility: the rail, tabs, collapse and auth all
+  // change it. Only start a quickchr read while the panel is visible.
+  let twinsWasVisible = false;
+  function syncTwinsVisibility() {
+    const visible = twinsVisible();
+    if (!visible) clearTimeout(twinsTimer);
+    if (visible && !twinsWasVisible) loadTwins();
+    twinsWasVisible = visible;
+  }
+  const twinsObserver = new MutationObserver(syncTwinsVisibility);
+  for (const id of ["rightpanel", "rview-twins", "lockscreen", "guidescreen"]) {
+    twinsObserver.observe($(id), { attributes: true, attributeFilter: ["class", "style"] });
+  }
+  document.addEventListener("visibilitychange", syncTwinsVisibility);
+  $("twinsrefresh").addEventListener("click", loadTwins);
   bootAfterAuth();
   // Smoke hook (T43): expose the transcript renderer to scripted browser
   // checks. Local-only prototype surface, not a public API.

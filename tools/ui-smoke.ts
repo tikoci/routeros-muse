@@ -60,6 +60,7 @@ import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
 import { stubT50Bin, withT50Env } from "../tests/t50-fake";
 import { pollT71Log, stubT71Bin, withT71Env } from "../tests/t71-fake";
+import { checkTwinsRefresh } from "./twins-smoke";
 
 type SmokeHook = {
 	renderRow: (row: unknown) => HTMLElement;
@@ -303,6 +304,13 @@ try {
 		undefined,
 		{ timeout: 15_000 },
 	);
+	const twinsPage = await browser.newPage();
+	await twinsPage.goto(srv.url);
+	await twinsPage.waitForFunction(
+		() => (document.getElementById("set-auth")?.textContent ?? "…") !== "…",
+	);
+	await checkTwinsRefresh(twinsPage, OUT);
+	await twinsPage.close();
 	check(
 		"page loads with chat + brand",
 		await page.locator(".brand").isVisible(),
