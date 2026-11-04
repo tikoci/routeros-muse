@@ -1,6 +1,8 @@
-# router.toml — devices (minimal scaffold). Uncomment and fill
-# one [device] per box. cdb names the centrs device record (the source
-# of truth for reachability + access); host is break-glass only.
+# router.toml — per-device intent (minimal scaffold). Optional:
+# uncomment and fill one [device] per box for site/role notes. The
+# device list itself is the CDB (centrs), mirrored read-only in
+# devices.toml; cdb names the record (the source of truth for
+# reachability + access); host is break-glass only.
 #
 # [device]
 # id = "office-gw"

@@ -8,8 +8,9 @@ tested: none
 # `add-device` skill (check → dialog → verify)
 
 The password never enters chat, prompts, tool calls, or the terminal.
-The owner types it in the UI dialog; the server writes `router.toml`
-and the CDB record. An agent that asks for the password in chat —
+The owner types it in the UI dialog; the server writes the CDB
+record (the only device list) and regenerates `devices.toml`, its
+read-only text mirror. An agent that asks for the password in chat —
 or seeds the CDB from a terminal — is doing it wrong.
 
 ## Part 1 — The checklist (check-dialog-verify)
@@ -28,17 +29,18 @@ owner's dialog), never ask for a password at any step.
   work goes through the CLI, not MCP tools; it is in the
   seeded read set, so it runs without a prompt): if the host
   is already a target, stop and open that card instead of
-  adding. Same rule for `router.toml`: a `[device]` with that
-  host or id means it is already registered.
+  adding. `grep` on `devices.toml` answers the same question
+  without a spawn (generated from the CDB; it can lag a change
+  made outside the UI until the next device list).
 - Reads only. No writes, no password prompts, no `devices add`
   from the terminal — the CDB write happens through the UI save
   (step 2), never from your shell.
 
 ### 1. Open the dialog (prefilled, password-free)
 
-- Call `ui_add_device` with `host` and `user` (plus `id` only
-  when the owner names one; otherwise the server derives the
-  slug from the host). This opens the UI Add-device dialog
+- Call `ui_add_device` with `host` and `user`. The device id is
+  the host itself (the CDB target); there is no separate slug.
+  This opens the UI Add-device dialog
   with the user prefilled and the host shown read-only.
 - NEVER ask for or accept a password in chat — not in prose,
   not in a prompt, not as a tool argument. If the owner offers
@@ -50,8 +52,7 @@ owner's dialog), never ask for a password at any step.
 ### 2. Hand off to the owner (then wait)
 
 - Tell the owner the Add device dialog is open for the host,
-  that saving adds it to `router.toml` plus creates the CDB
-  record, and that typing the password there keeps it out of
+  that saving creates the CDB record, and that typing the password there keeps it out of
   chat and out of process arguments.
 - Then wait. Do not poll, do not re-call the tool, do not
   guess whether they saved. The next step runs after they act.
@@ -68,11 +69,9 @@ owner's dialog), never ask for a password at any step.
   switch to the `first-contact` skill (sandbox check, probe,
   transport select, non-default ports). Do not stop at a failed
   default REST read.
-- If the save failed with an encrypted CDB, say so plainly
-  (creation on encrypted CDBs waits on upstream
-  `tikoci/centrs#558`) and use the card's Set credentials
-  affordance as the recovery — never work around it from the
-  terminal.
+- If the save failed, say so plainly with the reason the
+  dialog showed, and use the card's Access button as the
+  recovery — never work around it from the terminal.
 
 ### Trigger
 
@@ -103,9 +102,11 @@ get you a password securely.
 
 ### Outputs
 
-- A `[device]` block in `router.toml` (`id`, `host`,
-  `cdb = "<host>"`) in workspace mode; a CDB record keyed by
-  the host in both modes.
+- A CDB record keyed by the host (every mode), and in workspace
+  mode a regenerated `devices.toml` (never edit it).
+- Optional, yours to write: per-device intent (site, role,
+  `[expect]`) in `router.toml` or `inventory/<id>.toml`, linked
+  by `cdb = "<host>"`. Never copy credentials there.
 
 ### Verification
 
@@ -115,14 +116,13 @@ get you a password securely.
 ### Recovery
 
 - Dialog cancelled: nothing was written; re-offer when ready.
-- Save failed on the CDB half: the `router.toml` entry stays;
-  recover through the card's Set credentials affordance.
+- Save failed: nothing usable was written; retry in the
+  dialog, or fix an existing record through the card's Access
+  button.
 - Duplicate-host refusal: open the existing card instead.
 
 ### Limits
 
 - One device per dialog. Bulk import is out of scope.
-- Encrypted-CDB creation may fail until `tikoci/centrs#558`
-  lands upstream: surface it, do not work around it.
 - The dialog cannot fix a wrong host: re-call with the right
   one rather than editing config by hand.

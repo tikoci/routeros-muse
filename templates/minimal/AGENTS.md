@@ -2,8 +2,9 @@
 
 Minimal workspace scaffold: the full template (START-HERE.md,
 conventions, skills, checks) ships at templates/network. Read
-`workspace.toml` + `router.toml`, check capability before promising
-execution, leave evidence.
+`workspace.toml` + `router.toml` (devices themselves live in
+`device.cdb`, mirrored read-only in `devices.toml`), check capability
+before promising execution, leave evidence.
 
 ## What you are
 

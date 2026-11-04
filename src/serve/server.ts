@@ -19,14 +19,17 @@ import {
 	listCdbDevices,
 	listDevices,
 	listTwins,
+	type MirrorRow,
 	removeCdbDevice,
 	setCdbCredentials,
 	showCdbDevice,
 } from "../lib/fleet";
+import { writeDevicesMirror } from "../lib/mirror";
 import {
 	checkServerPid,
 	ensurePreallowReads,
 	ensurePrivateHome,
+	normalizeHosts,
 	privateConfigHome,
 	READ_COMMANDS,
 	workspaceHosts,
@@ -1222,6 +1225,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	let metaAuth: MetaAuth = "unknown";
 	/** D53: device ids (CDB targets) from the last /api/devices list. */
 	let knownDeviceIds = new Set<string>();
+	// D53/T148: the workspace CDB targets, from the last good list.
+	// They join router.toml hosts in this workspace's network rules.
+	let cdbHosts: string[] = [];
 	const uiHtml = await inlineMarkdown(await Bun.file(UI_PATH).text());
 	const provider =
 		opts.provider ?? process.env["ROUTEROS_MUSE_PROVIDER"] ?? "meta";
@@ -1517,7 +1523,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			warnings.push(homeError);
 			console.error(`private muse home unsafe, seeding skipped: ${homeError}`);
 		}
-		const hosts = enabled && !noWs ? workspaceHosts(root) : [];
+		const hosts =
+			enabled && !noWs
+				? normalizeHosts([...workspaceHosts(root), ...cdbHosts])
+				: [];
 		if (homeError === null) {
 			try {
 				const res = ensurePreallowReads({
@@ -1563,6 +1572,27 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 		stashHomeWarnings(home.warnings);
 	}
 	refreshPreallow(readPreallowReads(opts.dataHome));
+	/**
+	 * D53/T148: after a good CDB list (workspace mode only), rewrite
+	 * the devices.toml mirror and, when the CDB hosts changed, re-seed
+	 * this workspace's network rules. Never throws: a refused mirror
+	 * write is logged and the list still answers.
+	 */
+	function syncFromCdb(mirror: MirrorRow[]): void {
+		if (noWs) return;
+		const wrote = writeDevicesMirror(root, mirror);
+		if ("why" in wrote) console.error(`devices.toml not written: ${wrote.why}`);
+		const hosts = normalizeHosts(mirror.map((m) => m.id));
+		if (hosts.join("\n") === cdbHosts.join("\n")) return;
+		cdbHosts = hosts;
+		refreshPreallow(readPreallowReads(opts.dataHome));
+	}
+	/** Re-list after an owner write (add, Access, remove), then sync. */
+	async function resyncFromCdb(env: Record<string, string>): Promise<void> {
+		if (noWs) return;
+		const listed = await listCdbDevices(cdbFile ?? undefined, env, true);
+		if (listed.ok) syncFromCdb(listed.mirror);
+	}
 	// T100: the preference is machine-wide; these files belong only to
 	// this private worker home. POST saves it without touching a live chat.
 	let skillsBundle: SkillsBundle | undefined;
@@ -3268,9 +3298,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json(res.body, res.status);
 				}
 				if (p === "/api/devices") {
-					const listed = await listDevices(cdbFile, envFor(req));
-					if (!listed.why)
+					const { mirror, ...listed } = await listDevices(cdbFile, envFor(req));
+					if (!listed.why) {
 						knownDeviceIds = new Set(listed.devices.map((d) => d.id));
+						if (mirror) syncFromCdb(mirror);
+					}
 					return json(listed);
 				}
 				// Remove one device from the CDB (owner click + confirm).
@@ -3302,7 +3334,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							400,
 						);
 					const res = await removeCdbDevice(cdbFile, id, env);
-					if (res.ok) knownDeviceIds.delete(id);
+					if (res.ok) {
+						knownDeviceIds.delete(id);
+						await resyncFromCdb(env);
+					}
 					return json(res);
 				}
 				if (p.startsWith("/api/devices/") && p.endsWith("/stats")) {
@@ -3425,6 +3460,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								res.code === "cdb/stale-write-refused" ? 400 : 200,
 							);
 						}
+						await resyncFromCdb(envFor(req));
 						return json({
 							ok: true,
 							action: res.action,
@@ -3441,7 +3477,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				// the documented existing residual). D53: CDB-only in
 				// every mode — the record (with any centrs#618 service
 				// port keys) is the whole device; router.toml is never
-				// written.
+				// written. The devices.toml mirror is regenerated from the
+				// CDB after the save (T148).
 				if (p === "/api/devices/add" && req.method === "POST") {
 					const body = (await req.json()) as {
 						host?: unknown;
@@ -3525,6 +3562,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						{ missing: true },
 					);
 					if (created.ok) {
+						await resyncFromCdb(envFor(req));
 						return json({ ok: true, id, action: created.action });
 					}
 					if ("conflict" in created) {
@@ -3562,6 +3600,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								created.current,
 							);
 							if (retried.ok) {
+								await resyncFromCdb(envFor(req));
 								return json({ ok: true, id, action: retried.action });
 							}
 							if ("conflict" in retried) {

@@ -1,7 +1,9 @@
 # inventory/ — grows past N=1
 
 At N=1 the inventory IS `router.toml` at the root: one file, one box,
-zero ceremony.
+zero ceremony. It holds intent (identity, role, expectations), not
+access: addresses, users and ports live in `device.cdb`, mirrored
+read-only in `devices.toml`.
 
 When the second box appears:
 

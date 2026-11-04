@@ -28,6 +28,8 @@ owner docs, it does not replace them.
 ## Where things live
 
 - Plan: `router.toml`, `inventory/`. Reality: `observations/`.
+- Devices (addresses, users, ports): `device.cdb` through `centrs`,
+  mirrored read-only in `devices.toml` for grep. Never edit the mirror.
 - Work: `operations/` (proposals with owner + definition of done).
 - Generated code/projects: `work/` (see `work/README.md`).
 - Proof: `checks/`, `reports/`, `decisions.md`.

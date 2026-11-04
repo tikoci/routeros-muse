@@ -95,10 +95,11 @@ The setting does not change the session's approval mode or profile.
 `sandboxRestartRequired`; Settings explains the scope and requires a full
 server stop/start to apply a change, including restoring the sandbox.
 `src/serve/server.ts` bridges chat (send/history/SSE stream;
-tree, recents, files (TOML validate-before-save), devices (router.toml
-devices; live stats need a bound host), twins, alerts, and past chats;
+tree, recents, files (TOML validate-before-save), devices (the CDB is
+the only device list in every mode, D53; live stats need a bound host),
+twins, alerts, and past chats;
 chat send carries the composer's device pills as validated targets
-(ids checked against router.toml — the CDB in no-workspace mode —
+(ids checked against the CDB device list —
 with one `[routeros-muse context]` line per known device prepended
 to the turn text, stripped back out of history; the UI shows chips
 on the sent bubble, never the raw preamble);
@@ -342,22 +343,36 @@ The same credentials modal in add mode: the agent calls the
 validated like the route, `ok:true` means the dialog opened, never
 that the device was added), the server emits `ui/add-device`, and
 the UI opens the modal titled `Add device · <host>` with the user
-prefilled, the host display-only (never an editable field), and a
-context line stating the save adds the `[device]` block to
-`router.toml` (workspace mode) plus creates the CDB record. The
-owner types the password there; the modal POSTs `POST
-/api/devices/add`, which re-validates, appends the block
-(idempotent on same id+host+cdb, 409 when the id or host belongs
-elsewhere, refuses on unparseable `router.toml` without writing),
-then creates the record through the T48 `{missing:true}` path —
-retrying under its own snapshot only when the existing record
-carries the same user, never overwriting a stranger's
-credentials. A CDB failure leaves the `router.toml` entry in
-place (the card's Set credentials is the recovery) and answers
-`ok:false` with the stage and device id. No-workspace mode skips
-`router.toml` and creates the CDB record only. On success the
-modal clears its fields first, closes, reloads the device list,
-and renders the new card.
+prefilled and the host display-only. The Add device button on
+the Devices tab opens the same modal with an editable host (T136).
+The owner types the password there; the modal POSTs `POST
+/api/devices/add`, which re-validates and creates the CDB record
+through the T48 `{missing:true}` path — retrying under its own
+snapshot only when the existing record carries the same user,
+never overwriting a stranger's credentials. D53: the record is the
+whole device (id = host, plus any service port keys);
+`router.toml` is never written. A CDB failure answers `ok:false`
+with the stage and device id; the card's Access button is the
+recovery. On success the modal clears its fields first, closes,
+reloads the device list, and renders the new card.
+
+## devices.toml mirror and host seeding (T148)
+
+In workspace mode every good CDB list (`GET /api/devices`, and a
+re-list after Add, Access saves and Remove) rewrites
+`devices.toml` at the workspace root (`src/lib/mirror.ts`): one
+`[[device]]` per CDB target with `id`, `user`, the service port
+keys and the WebFig URL. Only those fields are copied
+(`cdbRowsToMirror` in `src/lib/fleet.ts`), so no password, key or
+secret reaches the file. It is a read-only projection for grep and
+file-reading agents: line 1 is the `GENERATED` marker, a
+`devices.toml` without it is never overwritten, an unchanged file
+is not rewritten, and the write goes through the T98-safe writer.
+The same list feeds this workspace's network allow rules: the CDB
+targets join any `router.toml` hosts (D45, no cross-workspace
+union), re-seeded only when the set changes. No-workspace mode
+writes no mirror. A locked encrypted CDB lists nothing, so the
+mirror and the CDB hosts refresh after unlock, when the UI lists.
 
 ## Gaps (unrun on purpose, pending)
 

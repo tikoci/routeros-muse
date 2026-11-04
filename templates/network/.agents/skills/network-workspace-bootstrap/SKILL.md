@@ -64,6 +64,7 @@ From conventions.md + workspace-schema.md (writer/sync rules):
 | Directory class | Writer | Direction |
 |---|---|---|
 | Agent-owned (`router.toml`, `inventory/`, `operations/`, `.agents/skills/`, `reports/`, `decisions.md`, docs) | this workspace | canonical here; edit freely |
+| Generated (`devices.toml`) | routeros-muse, from `device.cdb` | one way; never edit — change the CDB |
 | Router-owned (pulls under `observations/`) | the pull recipe | pull only; never edit a pull — re-pull or fix the router |
 | Second copies of anything | nobody (reference) | age manifests; never sync back, never merge |
 

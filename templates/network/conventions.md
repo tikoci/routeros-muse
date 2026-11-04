@@ -4,6 +4,9 @@
 
 - Agent-owned (`router.toml`, `inventory/`, `operations/`, `work/`,
   `.agents/skills/`, `reports/`, `decisions.md`, docs): canonical HERE. Edit freely.
+- Generated (`devices.toml`): routeros-muse rewrites it from
+  `device.cdb` (hosts, users, service ports; never secrets). Read it,
+  grep it, never edit it: change devices in the CDB (UI or `centrs`).
 - Router-owned (pulls under `observations/`): read-only evidence.
   Never edit a pull — re-pull, or fix the router.
 - One home is canonical (`workspace.toml`). Second copies carry age

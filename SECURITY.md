@@ -2,20 +2,21 @@
 
 Preview document: concise, factual, and every claim grounded in a
 source in this repo (file path or `records/` ID inline). It grows as
-we learn. A full audit happens before GitHub (D34).
+we learn. No full independent audit has been done; reviews so far
+are per change (the records name them).
 
 ## 1. Scope and status
 
 routeros-muse is a local-first RouterOS network workspace plus web UI,
-currently in **preview** and **not yet published** (D34: public
-GitHub waits for a final local sweep plus real test turns, on the
-developer's trigger). The threat model is loopback-first: one owner on
-their own machine (T63 defers hardening past that).
+published as a **preview** (0.x: interfaces and defaults may still
+change). The threat model is loopback-first: one owner on their own
+machine (T63 defers hardening past that).
 
 ## 2. Reporting a vulnerability
 
-Until the repo is public, report privately to the maintainer; GitHub
-private advisories once published.
+Report privately through GitHub private vulnerability reporting:
+<https://github.com/tikoci/routeros-muse/security/advisories/new>.
+Never in a public issue, discussion or pull request.
 
 ## 3. The boundary statement
 
@@ -123,8 +124,9 @@ Under the Settings toggle, each workspace's policy seeds (T101,
 - `centrs retrieve`, `quickchr list`, `quickchr doctor` — two-word
   argv prefixes scoped to the workspace's absolute root (`centrs
   execute` stays unlisted: `--yes` cannot be excluded).
-- Network allow rules for this workspace's `router.toml` device hosts
-  only (no cross-workspace union).
+- Network allow rules for this workspace's own device hosts only: the
+  targets in its `device.cdb` (refreshed on every good device list,
+  T148) plus any `router.toml` hosts; no cross-workspace union.
 - `tool_action` rules for the four `ui_*` MCP tools (`ui_notify`,
   `ui_open`, `ui_select_device`, `ui_add_device`).
 - `tool_action` rules for rosetta's local-read MCP tools (T105,

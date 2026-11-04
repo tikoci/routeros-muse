@@ -4,6 +4,8 @@
 # cdb names the centrs device record for this device (the source of
 # truth for reachability + access); the server points centrs at the
 # workspace device.cdb when it exists. host is break-glass only.
+# Addresses, users and ports live in the CDB, mirrored read-only in
+# devices.toml (generated; never edit it).
 
 [device]
 id = "demo-office-gw"

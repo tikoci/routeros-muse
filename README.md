@@ -41,7 +41,9 @@ workspace, and `doctor` runs the same checks print-only.
 ## The workspace idea
 
 A workspace is one folder that holds everything about a network:
-`workspace.toml` (what this network is), `router.toml` (its devices),
+`workspace.toml` (what this network is), `device.cdb` (its devices:
+the centrs registry, mirrored read-only into `devices.toml` so plain
+text tools see hosts and ports), `router.toml` (per-device intent),
 `operations/` and `inbox/` (pending work and handoffs), plus
 observations, reports, and history. The agent reads the workspace;
 the workspace records what the agent did.

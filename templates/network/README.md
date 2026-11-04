@@ -28,6 +28,8 @@ only when a second box or a second human appears.
 - `workspace.toml` + `workspace-schema.md` — what this setup is.
 - `conventions.md` — ownership, drift, capture boundary, branching.
 - `router.toml` — the one box (N=1). `inventory/` — grows past N=1.
+- `device.cdb` — the device registry (centrs; addresses, users,
+  secrets). `devices.toml` — its generated, read-only text mirror.
 - `observations/` — pulls + redacted summaries. Raw is local-only.
 - `operations/` — proposals, drift list, deployment log.
 - `work/` — agent-generated code/projects, one dir each, linked.

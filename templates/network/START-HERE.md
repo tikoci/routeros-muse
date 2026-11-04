@@ -33,7 +33,9 @@ evidence.
 
 ## Where things live
 
-Plan: `router.toml`, `inventory/`. Reality: `observations/`. Work:
+Plan: `router.toml`, `inventory/`. Devices (addresses, users, ports):
+`device.cdb`, mirrored read-only in `devices.toml`. Reality:
+`observations/`. Work:
 `operations/` (proposals) and `work/` (agent-built code/projects).
 Proof: `checks/`, `reports/`, `decisions.md`. Guides: `.agents/skills/`
 (your agent loads these on demand — start with the one matching

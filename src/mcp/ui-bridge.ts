@@ -62,13 +62,14 @@ const TOOLS: ToolDef[] = [
 	{
 		name: "ui_select_device",
 		description:
-			"Set the target chip in the routeros-muse UI to a router.toml device id, so follow-up chat is about that device.",
+			"Set the target chip in the routeros-muse UI to a device id (a CDB target, as in the device list or devices.toml), so follow-up chat is about that device.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				id: {
 					type: "string",
-					description: "Device id from the workspace router.toml.",
+					description:
+						"Device id: the CDB target (see devices.toml or centrs devices list).",
 				},
 			},
 			required: ["id"],

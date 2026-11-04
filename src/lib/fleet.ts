@@ -125,8 +125,47 @@ export function centrsCode(parsed: unknown): string | null {
 }
 
 export type CdbListResult =
-	| { ok: true; devices: Device[] }
+	| { ok: true; devices: Device[]; mirror: MirrorRow[] }
 	| { ok: false; why: string };
+
+/**
+ * One CDB record as the devices.toml mirror sees it (D53): only the
+ * fields named here, so a password, key or secret column in the centrs
+ * row can never reach the file. id is the CDB target (the address
+ * centrs connects to).
+ */
+export type MirrorRow = {
+	id: string;
+	user?: string;
+	ports: Record<string, string>;
+	webfigUrl?: string;
+};
+
+/** Picks the mirror fields out of centrs devices list rows. */
+export function cdbRowsToMirror(data: unknown): MirrorRow[] {
+	const rows = Array.isArray(data)
+		? data
+		: data && typeof data === "object"
+			? [data]
+			: [];
+	const out: MirrorRow[] = [];
+	for (const row of rows) {
+		const rec = row as Record<string, unknown>;
+		const t = rec["target"];
+		if (typeof t !== "string" || !t.trim() || t.trim() === "__default__")
+			continue;
+		const m: MirrorRow = {
+			id: t.trim(),
+			ports: portsOf(rec["comment"], rec["commentMirror"]),
+		};
+		const u = rec["user"];
+		if (typeof u === "string" && u.trim()) m.user = u.trim();
+		const webfigUrl = deviceWebfigUrl(m.id, m.ports["www-port"] ?? "80");
+		if (webfigUrl) m.webfigUrl = webfigUrl;
+		out.push(m);
+	}
+	return out;
+}
 
 /** Explicit demo HTTP origin from the record name and saved www port. */
 export function deviceWebfigUrl(name: string, port = "80"): string | undefined {
@@ -198,6 +237,7 @@ export async function listCdbDevices(
 		const parsed = JSON.parse(centrsOut(r)) as Record<string, unknown>;
 		if (parsed["ok"] !== true) return { ok: false, why: centrsWhy(parsed) };
 		const devices = cdbRowsToDevices(parsed["data"]);
+		const mirror = cdbRowsToMirror(parsed["data"]);
 		if (passwords && env) {
 			await Promise.all(
 				devices.map(async (device) => {
@@ -208,13 +248,18 @@ export async function listCdbDevices(
 							device.id,
 							seen.details.ports?.["www-port"] ?? "80",
 						);
+						const row = mirror.find((m) => m.id === device.id);
+						if (row && seen.details.ports) {
+							row.ports = { ...seen.details.ports };
+							row.webfigUrl = device.webfigUrl;
+						}
 					} else if (seen.code === "cdb/not-found-target") {
 						device.hasPassword = false;
 					}
 				}),
 			);
 		}
-		return { ok: true, devices };
+		return { ok: true, devices, mirror };
 	} catch {
 		return { ok: false, why: "centrs devices output unreadable" };
 	}
@@ -224,6 +269,8 @@ export type DevicesResult = {
 	devices: Device[];
 	source: "cdb";
 	why?: string;
+	/** Server-side only (devices.toml): never sent to the browser. */
+	mirror?: MirrorRow[];
 };
 
 /**
@@ -238,7 +285,7 @@ export async function listDevices(
 ): Promise<DevicesResult> {
 	const listed = await listCdbDevices(cdbFile ?? undefined, env, true);
 	if (!listed.ok) return { devices: [], source: "cdb", why: listed.why };
-	return { devices: listed.devices, source: "cdb" };
+	return { devices: listed.devices, source: "cdb", mirror: listed.mirror };
 }
 
 export type StatsResult = { status: number; body: unknown };
