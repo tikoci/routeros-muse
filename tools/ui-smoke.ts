@@ -1406,6 +1406,10 @@ try {
 			)
 			.then(() => true)
 			.catch(() => false);
+	// The double-send leg above returns on its echo, before its
+	// turn/completed: wait for idle so L1's "idles the composer" sees
+	// this leg's state, not the previous turn still running.
+	await t56Idle();
 	// Pill for the restore legs (the card's Add to Chat → pill).
 	await addToChat(page, "smoke-gw");
 
