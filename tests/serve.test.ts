@@ -221,10 +221,12 @@ describe("serve", () => {
 				const r = await fetch(srv.url);
 				expect(r.status).toBe(200);
 				const html = await r.text();
-				expect(html).toContain("RouterOS Muse");
 				expect(html).toContain('id="chatmsgs"');
-				// T35: real MikroTik symbol, no placeholder plusmark.
-				expect(html).toContain('viewBox="0 0 41.83 44.62"');
+				// TIKOCI brand: wordmark + monospace name, linking to the
+				// tikoci.dev redirect (not GitHub); no placeholder plusmark.
+				expect(html).toContain('href="https://tikoci.dev/r/routeros-muse"');
+				expect(html).toContain('<span class="tkmark">TIKOCI</span>');
+				expect(html).toContain('<span class="bname">routeros-muse</span>');
 				expect(html).not.toContain('plusmark">⊕<');
 				// T45: reconnect chip present (hidden until a stream drop).
 				expect(html).toContain('id="ssestate"');

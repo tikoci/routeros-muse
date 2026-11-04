@@ -3,7 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Concept B (v10) — Ops deck, stats popover + target controls</title>
+<title>routeros-muse</title>
+<script>
+  // tikoci.github.io brand gradients (shared.js): one per page load.
+  (() => {
+    const g = [["#C33366", "#692878"], ["#EE9B01", "#EE4F01"], ["#3660B9", "#5F2965"], ["#3BB5B6", "#44DE95"], ["#582D7C", "#1FC8DB"], ["#CF0F14", "#EE4F01"], ["#1F417A", "#87D3DB"], ["#015EA4", "#3BB5B6"], ["#017C65", "#A3D16E"], ["#692878", "#1FC8DB"]];
+    const p = g[Math.floor(Math.random() * g.length)];
+    document.documentElement.style.setProperty("--brand-gradient", "linear-gradient(135deg, " + p[0] + ", " + p[1] + ")");
+  })();
+</script>
 <style>
   :root {
     --bg: #0b0e13; --panel: #11161e; --panel-2: #0d1219; --inset: #161d28;
@@ -33,7 +41,11 @@
   .app { display: flex; height: 100vh; min-width: 1180px; }
 
   .left { width: 344px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-  .brand { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; font-size: 14px; font-weight: 650; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 14px 16px 10px; color: var(--text); text-decoration: none; }
+  .brand:hover, .brand:visited { color: var(--text); text-decoration: none; }
+  /* tikoci.github.io brand-reverse: TIKOCI on a gradient picked per load */
+  .tkmark { background: var(--brand-gradient, linear-gradient(135deg, #3660B9, #5F2965)); color: #fff; font: 800 11px/1 var(--sans); letter-spacing: 0.06em; padding: 4px 6px; border-radius: 5px; }
+  .bname { font: 600 13.5px var(--mono); letter-spacing: -0.01em; }
   .sect { padding: 8px 16px 6px; font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
   .sect.split { display: flex; align-items: center; justify-content: space-between; padding-right: 10px; }
   .scroll { overflow-y: auto; }
@@ -263,6 +275,7 @@
   .runstat { display: flex; align-items: center; gap: 6px; font: 11.5px var(--mono); color: var(--muted); margin-right: 8px; }
   .ssestate { font: 10.5px var(--mono); color: var(--muted); margin-right: 8px; }
   .rdot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.2s infinite; }
+  .mstat:empty { display: none; }
   .mstat { width: 14px; display: flex; justify-content: center; align-items: center; }
   .mstat .mdot { width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: pulse 1.2s infinite; }
   .ctab.main:not(.active) .mstat .mdot { background: var(--green); }
@@ -272,8 +285,6 @@
   .ctab.main:not(.active) .unread { background: var(--amber-dim); color: var(--amber); }
   .tailbar { display: none; margin: 8px 20px 0; padding: 5px; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; cursor: pointer; }
   .tailbar:hover { color: var(--text); border-color: var(--accent); }
-  .marks { display: flex; align-items: center; gap: 8px; color: var(--text); }
-  .plusmark { color: var(--faint); font-size: 14px; }
   .morelink { display: block; width: calc(100% - 20px); margin: 2px 10px 6px; background: none; border: none; cursor: pointer; color: var(--faint); font: 600 11.5px var(--sans); text-align: left; padding: 4px 10px; border-radius: 6px; }
   .morelink:hover { color: var(--text); background: var(--inset); }
   /* workspace file tree (T143) */
@@ -286,7 +297,7 @@
   #wslist .frow.dir.open .tw::before { transform: rotate(45deg); }
   #wslist .frow.dir .fn { color: var(--muted); font-weight: 600; }
   .left.expanded .devsect { display: none; }
-  .wsempty { margin: 4px 10px; padding: 16px 10px; text-align: center; color: var(--faint); font-size: 12px; }
+  .wsempty { margin: 4px 10px; padding: 16px 10px; text-align: center; color: var(--faint); font-size: 12px; overflow-wrap: anywhere; }
   .wsempty p { margin: 0 0 10px; }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
   .overlay.open { display: flex; }
@@ -340,8 +351,11 @@
   .abub .ah { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13px; margin-bottom: 4px; }
   .abub .ah button { margin-left: auto; }
   .abub p { margin: 0; font-size: 12px; color: var(--muted); }
-  .upzone { border: 1px dashed var(--border); border-radius: 10px; padding: 22px 14px; text-align: center; color: var(--muted); font-size: 12.5px; }
-  .upzone input { margin-top: 10px; }
+  .upzone { display: flex; flex-direction: column; align-items: center; gap: 10px; border: 1px dashed var(--border); border-radius: 10px; padding: 26px 16px; text-align: center; color: var(--muted); font-size: 12.5px; }
+  .upzone.over { border-color: var(--accent); background: var(--accent-dim); }
+  .upzone p { margin: 0; }
+  .upzone .upname { font: 12px var(--mono); color: var(--text); min-height: 18px; }
+  .upzone .uprow { display: flex; gap: 8px; }
   .alert { display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: var(--green-dim); border-bottom: 1px solid rgba(63,185,80,.3); font-size: 12.5px; flex: none; }
   .alert .adot { width: 18px; height: 18px; flex: none; border-radius: 50%; background: var(--green); color: #fff; font: 700 11px/18px var(--sans); text-align: center; }
   html[data-theme="light"] .alert .adot { color: #fff; }
@@ -368,6 +382,19 @@
   .pastwrap { flex: 1; overflow-y: auto; padding: 22px 28px; max-width: 680px; }
   .pastwrap h1 { font-size: 16px; font-weight: 650; margin: 0 0 4px; }
   .pastwrap .lede { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; max-width: 560px; }
+  /* file viewer (read-only): markdown shares the chat renderer */
+  #pane-doc .pastwrap { max-width: 860px; }
+  #pane-doc .fn { font: 12px var(--mono); color: var(--faint); margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  #pane-doc .fn .sp { flex: 1; }
+  #pane-doc h1 { margin-bottom: 14px; }
+  .docbody { background: var(--panel); border: 1px solid var(--border-soft); border-radius: 10px; padding: 18px 22px; font-size: 13px; }
+  .docbody.chatmd { line-height: 1.6; }
+  .docbody.chatmd p { margin: 0 0 10px; }
+  .docbody.chatmd h1 { font-size: 1.35em; }
+  .docbody.chatmd h2 { font-size: 1.15em; padding-bottom: 4px; border-bottom: 1px solid var(--border-soft); }
+  .docbody a { color: var(--accent); text-decoration: underline; }
+  .docbody .docpre { margin: 0; font: 12px/1.55 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .docbody .docnote { color: var(--faint); font-size: 12.5px; }
   .lockchip { font: 600 10.5px var(--sans); color: var(--faint); border: 1px solid var(--border); border-radius: 5px; padding: 0 6px; flex: none; }
   .lockbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); margin-bottom: 6px; }
   #pane-pastchat .pastwrap { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
@@ -485,13 +512,13 @@
 <body>
 <div class="app">
   <aside class="left">
-    <div class="brand"><span class="marks" title="RouterOS Muse"><svg width="14" height="15" viewBox="0 0 41.83 44.62"><path d="M41.83,13.83c0-1.77-.96-3.4-2.5-4.26L23.3.62c-1.48-.83-3.28-.83-4.76,0L2.5,9.57c-1.54.86-2.5,2.49-2.5,4.26v17.08c0,1.78.97,3.42,2.53,4.28l16.04,8.82c1.46.81,3.24.81,4.7,0l16.04-8.82c1.56-.86,2.53-2.5,2.53-4.28V13.83ZM12.03,30.78c0,.4-.43.65-.78.46l-2.68-1.48c-.56-.31-.9-.89-.9-1.53v-8.07c0-.4.43-.65.78-.46l2.95,1.63c.39.21.63.62.63,1.07v8.38ZM34.16,28.19c0,.63-.34,1.22-.9,1.53l-2.68,1.48c-.35.19-.78-.06-.78-.46v-10.32c0-.4-.43-.65-.78-.46l-4.95,2.73c-.56.31-.9.89-.9,1.53v10.55c0,.32-.17.61-.45.76l-1.01.56c-.52.29-1.16.29-1.69,0l-.94-.52c-.28-.15-.45-.45-.45-.76v-10.66c0-.63-.34-1.22-.9-1.53l-9.81-5.42c-.17-.09-.27-.27-.27-.46v-.42c0-.63.34-1.22.9-1.53l1.4-.77c.52-.29,1.16-.29,1.69,0l8.48,4.69c.52.29,1.16.29,1.69,0l3.81-2.11c.36-.2.36-.72,0-.92l-8.51-4.7c-.36-.2-.36-.72,0-.92l2.9-1.6c.52-.29,1.16-.29,1.69,0l11.55,6.38c.56.31.9.89.9,1.53v11.81Z" fill="currentColor"/></svg><svg width="20" height="15" viewBox="0 0 24 18"><path d="M18.6 6.6c-2 0-3.6 2.5-4.9 4.4-.5.8-1.1 1.7-1.7 2.4-.6-.7-1.2-1.6-1.7-2.4-1.3-1.9-2.9-4.4-4.9-4.4-2.7 0-4.4 2.2-4.4 4.9s1.7 4.9 4.4 4.9c2 0 3.6-2.5 4.9-4.4.5-.8 1.1-1.7 1.7-2.4.6.7 1.2 1.6 1.7 2.4 1.3 1.9 2.9 4.4 4.9 4.4 2.7 0 4.4-2.2 4.4-4.9s-1.7-4.9-4.4-4.9z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span></div>
+    <a class="brand" href="https://tikoci.dev/r/routeros-muse" target="_blank" rel="noopener" title="routeros-muse by TIKOCI"><span class="tkmark">TIKOCI</span><span class="bname">routeros-muse</span></a>
     <div class="scroll">
       <div class="devsect">
-      <div class="sect split"><span>Devices · live via centrs</span><button class="minibtn" id="adddevice" title="Add a device to the centrs CDB">Add Device</button></div>
+      <div class="sect split"><span>Devices</span><button class="minibtn" id="adddevice" title="Add a device to the centrs CDB">Add Device</button></div>
       <div id="devlist"></div>
       </div>
-      <div class="sect split"><span>Workspace · files</span><button class="minibtn" id="wsadd" title="Open a workspace file…">Open File</button></div>
+      <div class="sect split"><span>Files</span><button class="minibtn" id="wsadd" title="Open a workspace file, or attach one to the chat">Open…</button></div>
       <div id="wslist">
       </div>
       <button class="morelink" id="wsmore" style="display:none">Show more ↓</button>
@@ -503,7 +530,7 @@
   <main class="center">
     <div class="tabbar">
       <div class="ctab main active" data-pane="pane-chat" title="The main chat — pinned, always here">
-        <span class="mstat" id="mainstat"></span><span class="ssestate" id="ssestate" style="display:none">live updates reconnecting…</span><span class="t">RouterOS Muse</span><span class="unread" id="mainunread" style="display:none">Unread ↓</span>
+        <span class="mstat" id="mainstat"></span><span class="ssestate" id="ssestate" style="display:none">live updates reconnecting…</span><span class="t">Main Chat</span><span class="unread" id="mainunread" style="display:none">Unread ↓</span>
       </div>
 
     </div>
@@ -550,8 +577,8 @@
         <button class="sel" id="sel-effort-btn">Effort <b id="seleffort">…</b><span class="car">▾</span></button>
         <button class="sel" id="sel-access-btn">Access <b id="selaccess">…</b><span class="car">▾</span></button>
         <div class="selmenu" id="selmenu"></div>
-        <button class="sel" id="newsession-btn" title="Start a new session">+ New session</button>
-        <span id="newsession-confirm" class="nsconfirm" style="display:none"><span>Start a new session? This chat moves to Past chats.</span><button class="minibtn" id="newsession-go">Start new</button><button class="minibtn" id="newsession-cancel">Cancel</button></span>
+        <button class="sel" id="newsession-btn" title="Start a fresh chat; the main chat moves to Past chats">New Side Chat</button>
+        <span id="newsession-confirm" class="nsconfirm" style="display:none"><span>Start a side chat? The main chat moves to Past chats.</span><button class="minibtn" id="newsession-go">Start</button><button class="minibtn" id="newsession-cancel">Cancel</button></span>
         <span class="sp"></span>
         <span class="runstat" id="runstat" title="Agent is idle" style="display:none"><span class="rdot"></span><span id="runtime">0:00</span></span>
         <span class="ctx" id="ctxbtn" title="Session stats">
@@ -571,9 +598,9 @@
 
     <div class="cpane" id="pane-doc">
       <div class="pastwrap">
+        <div class="fn"><span class="kchip md" id="doc-kind">MD</span> <span id="doc-lede">…</span><span class="sp"></span><button class="minibtn" id="doc-source" hidden title="Toggle between rendered markdown and its source">Source</button></div>
         <h1 id="doc-title">…</h1>
-        <p class="lede" id="doc-lede">…</p>
-        <div class="msg agent" style="align-self:stretch;max-width:none"><div class="body" id="doc-body" style="white-space:pre-wrap;font-size:12.5px"></div></div>
+        <article class="docbody" id="doc-body"></article>
       </div>
     </div>
 
@@ -772,7 +799,7 @@
 </div>
 <div class="lockscreen" id="lockscreen">
   <div class="lockcard">
-    <h1>Unlock RouterOS Muse</h1>
+    <h1>Unlock routeros-muse</h1>
     <p class="locksub" id="locksub">CDB password</p>
     <form id="lockform">
       <input type="password" id="lockpw" autocomplete="current-password" placeholder="CDB password" aria-label="CDB password">
@@ -796,8 +823,8 @@
   </div>
 </div>
 <div class="overlay" id="picker">
-  <div class="modal" role="dialog" aria-label="Open file">
-    <div class="mhead">Open file<button class="x" id="pickerx" title="Close">×</button></div>
+  <div class="modal" role="dialog" aria-label="Files">
+    <div class="mhead">Files<button class="x" id="pickerx" title="Close">×</button></div>
     <div class="mtabs">
       <button class="mtab on" data-mview="mview-topology">Topology</button>
       <button class="mtab" data-mview="mview-agentic">Agentic</button>
@@ -812,7 +839,12 @@
         <div class="abub"><div class="ah">operations/drift.md<button class="minibtn" data-apath="operations/drift.md">Open</button></div><p>Open drift items with pull evidence. Clearing one needs a twin proof or a box read.</p></div>
       </div>
       <div class="mview" id="mview-upload">
-        <div class="upzone">Drop a capture, export, or screenshot here — or pick one:<br><input type="file" id="upfile"><br><br><button class="btn primary" id="upattach">Attach to chat</button></div>
+        <div class="upzone" id="upzone">
+          <p>Drop a capture, export, or screenshot here.</p>
+          <p class="upname" id="upname">Images and text files up to 64 KB.</p>
+          <div class="uprow"><label class="btn" for="upfile">Choose file…</label><button class="btn primary" id="upattach">Attach to chat</button></div>
+          <input type="file" id="upfile" hidden>
+        </div>
       </div>
     </div>
     <div class="mfoot"><button class="btn" id="pickercancel">Cancel</button><button class="btn primary" id="pickeropen">Open</button></div>
@@ -886,7 +918,7 @@
     const nb = document.getElementById("newsession-btn");
     if (nb) {
       nb.disabled = running;
-      nb.title = running ? "Stop the running turn first" : "Start a new session";
+      nb.title = running ? "Stop the running turn first" : "Start a fresh chat; the main chat moves to Past chats";
     }
     const mc = document.getElementById("makecurrent-btn");
     if (mc) {
@@ -1094,17 +1126,72 @@
   // keys are router.toml device ids.
   const DEVCACHE = {};
   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-  async function renderDoc(path) {
+  // Read-only file viewer: markdown renders through the chat's
+  // renderer (MuseMd + T109 link rules, relative links resolve from the
+  // file's own folder); everything else shows as monospace text.
+  function isMarkdown(p) { return /\.(md|markdown)$/i.test(p || ""); }
+  function docKind(p) {
+    const m = /\.([^.\/]+)$/.exec(p || "");
+    return m ? m[1].toUpperCase().slice(0, 4) : "TXT";
+  }
+  let docBase = "";
+  function docShow(kind, text) {
+    const body = document.getElementById("doc-body");
+    body.className = "docbody";
+    if (kind === "note") {
+      const p = document.createElement("p");
+      p.className = "docnote";
+      p.textContent = text;
+      body.replaceChildren(p);
+    } else if (kind === "md") {
+      body.classList.add("chatmd");
+      window.__renderMarkdown(body, text, docBase);
+    } else {
+      const pre = document.createElement("pre");
+      pre.className = "docpre";
+      pre.textContent = text;
+      body.replaceChildren(pre);
+    }
+  }
+  function docHead(path, sub, kind) {
     document.getElementById("doc-title").textContent = path.split("/").pop();
-    document.getElementById("doc-lede").textContent = path;
-    document.getElementById("doc-body").textContent = "loading…";
+    document.getElementById("doc-lede").textContent = sub;
+    const chip = document.getElementById("doc-kind");
+    chip.textContent = kind;
+    chip.className = "kchip " + (kind === "MD" ? "md" : "dir");
+  }
+  // Markdown files the owner flipped to source view (per file, kept
+  // across reopen); the toggle re-paints from the last fetched text.
+  const DOC_RAW = new Set();
+  let docOpen = null;
+  function docPaint() {
+    const src = document.getElementById("doc-source");
+    if (!docOpen) { src.hidden = true; return; }
+    const raw = DOC_RAW.has(docOpen.path);
+    src.hidden = !docOpen.md;
+    src.textContent = raw ? "Rendered" : "Source";
+    docShow(docOpen.md && !raw ? "md" : "text", docOpen.text);
+  }
+  async function renderDoc(path) {
+    const md = isMarkdown(path);
+    docOpen = null;
+    document.getElementById("doc-source").hidden = true;
+    docHead(path, path, md ? "MD" : docKind(path));
+    docBase = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    docShow("note", "Loading…");
     try {
       const r = await fetch("/api/file?path=" + encodeURIComponent(path));
       const j = await r.json();
-      if (!j.ok) { document.getElementById("doc-body").textContent = "unavailable: " + j.why; return; }
-      document.getElementById("doc-body").textContent = j.text;
-    } catch (e) { document.getElementById("doc-body").textContent = "unavailable: " + e.message; }
+      if (!j.ok) { docShow("note", "Unavailable: " + j.why); return; }
+      docOpen = { path, md, text: j.text };
+      docPaint();
+    } catch (e) { docShow("note", "Unavailable: " + e.message); }
   }
+  document.getElementById("doc-source").addEventListener("click", () => {
+    if (!docOpen) return;
+    if (DOC_RAW.has(docOpen.path)) DOC_RAW.delete(docOpen.path); else DOC_RAW.add(docOpen.path);
+    docPaint();
+  });
   // Artifact viewer (T83, D17/D19): renderable files open framed,
   // never as source text. Static is the default; scripts run only
   // for verified render jobs or the owner's explicit toggle.
@@ -1205,14 +1292,15 @@
     });
   }
   async function renderArtifactSource(path) {
-    document.getElementById("doc-title").textContent = path.split("/").pop();
-    document.getElementById("doc-lede").textContent = path + " · source";
-    document.getElementById("doc-body").textContent = "loading…";
+    docOpen = null;
+    document.getElementById("doc-source").hidden = true;
+    docHead(path, path + " · source", docKind(path));
+    docShow("note", "Loading…");
     try {
       const r = await fetch("/api/artifact?path=" + encodeURIComponent(path));
-      if (!r.ok) { document.getElementById("doc-body").textContent = "unavailable: " + r.status; return; }
-      document.getElementById("doc-body").textContent = await r.text();
-    } catch (e) { document.getElementById("doc-body").textContent = "unavailable: " + e.message; }
+      if (!r.ok) { docShow("note", "Unavailable: HTTP " + r.status); return; }
+      docShow("text", await r.text());
+    } catch (e) { docShow("note", "Unavailable: " + e.message); }
   }
   // P2-7: past-load sequence (a stale response never renders) plus
   // the loading flag refreshSwapButtons reads: Make current is enabled,
@@ -2447,9 +2535,19 @@
   // too. The source text rides in CHAT_SRC so re-renders (streaming,
   // catch-up) never re-parse rendered output.
   const CHAT_SRC = new WeakMap();
-  function chatRender(el, text) {
+  const CHAT_BASE = new WeakMap();
+  // Relative targets from a file viewer resolve against the file's
+  // folder (base); chat passes no base (workspace root). In-page
+  // anchors (#…) have no tab to open and stay plain.
+  function chatWithBase(dest, base) {
+    if (dest.startsWith("#")) return null;
+    if (!base || dest[0] === "/" || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(dest)) return dest;
+    return base + "/" + dest;
+  }
+  function chatRender(el, text, base) {
     const src = text ?? "";
     CHAT_SRC.set(el, src);
+    CHAT_BASE.set(el, base);
     // T109 P2a: root unknown — render without links, leave unmarked
     // for the catch-up pass.
     const linked = WSSTATUS;
@@ -2457,7 +2555,8 @@
       link(href, label) {
         if (!linked) return document.createTextNode(label);
         const decoded = chatDecodeDest(href);
-        const rel = decoded === null ? null : chatRelOf(decoded);
+        const dest = decoded === null ? null : chatWithBase(decoded, base);
+        const rel = dest === null ? null : chatRelOf(dest);
         return rel ? chatLink(label, rel) : document.createTextNode(label);
       },
       text: linked
@@ -2472,13 +2571,15 @@
     if (linked) el.dataset.chatlinks = "done";
     else delete el.dataset.chatlinks;
   }
+  window.__renderMarkdown = chatRender;
   // T109 P2a/P3b: re-render unmarked MESSAGE bodies only (.chatmd
-  // inside .msg.agent, never tool/subagent .tcard cards).
+  // inside .msg.agent, never tool/subagent .tcard cards), plus a
+  // markdown file open in the doc tab.
   function chatCatchUp() {
     for (const el of document.querySelectorAll(
-      "#chatmsgs .msg.agent:not(.tcard) .body .chatmd:not([data-chatlinks])",
+      "#chatmsgs .msg.agent:not(.tcard) .body .chatmd:not([data-chatlinks]), #doc-body.chatmd:not([data-chatlinks])",
     )) {
-      chatRender(el, CHAT_SRC.get(el) ?? el.textContent);
+      chatRender(el, CHAT_SRC.get(el) ?? el.textContent, CHAT_BASE.get(el));
     }
   }
   function bubble(role, text, targets) {
@@ -2749,14 +2850,14 @@
       try { j = await r.json(); } catch { j = null; }
       disarmNewSession();
       if (!r.ok || !j || j.ok !== true) {
-        showToast("New session failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
+        showToast("New side chat failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
         return;
       }
       await applyMainChanged(j.sessionId, j.generation, stamp);
-      showToast("New session started — this chat moved to Past chats.", "info");
+      showToast("Side chat started — the previous main chat moved to Past chats.", "info");
     } catch (e) {
       disarmNewSession();
-      showToast("New session failed: " + e.message, "alert");
+      showToast("New side chat failed: " + e.message, "alert");
     } finally {
       ADOPTING -= 1;
       settleHeldMain();
@@ -4434,6 +4535,19 @@
   }
 
   function wireUpload() {
+    const zone = $("upzone");
+    const showName = () => {
+      const f = $("upfile").files && $("upfile").files[0];
+      $("upname").textContent = f ? f.name : "Images and text files up to 64 KB.";
+    };
+    $("upfile").addEventListener("change", showName);
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      zone.classList.remove("over");
+      if (e.dataTransfer && e.dataTransfer.files.length) { $("upfile").files = e.dataTransfer.files; showName(); }
+    });
     $("upattach").addEventListener("click", () => {
       const f = $("upfile").files && $("upfile").files[0];
       if (!f) return;

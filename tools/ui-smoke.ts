@@ -186,11 +186,12 @@ async function killPort(port: number): Promise<boolean> {
 	return false;
 }
 
+const SMOKE_WS = makeWorkspace();
 const srv = await startServer({
 	dataHome: SMOKE_DATA_HOME,
 	configHome: SMOKE_CONFIG_HOME,
 	allowOpenCdb: true,
-	workspace: makeWorkspace(),
+	workspace: SMOKE_WS,
 	provider: "echo",
 	museHome: makeHome(),
 });
@@ -320,6 +321,70 @@ try {
 		),
 	);
 	await page.screenshot({ path: path.join(OUT, "1-load.png") });
+
+	// T142: a workspace .md opens rendered (chat renderer: headings,
+	// lists, code, folder-relative links), Source flips to the raw text
+	// and back, and the choice sticks per file across a reopen.
+	nodeFs.mkdirSync(path.join(SMOKE_WS, "notes"), { recursive: true });
+	nodeFs.writeFileSync(
+		path.join(SMOKE_WS, "notes", "t142.md"),
+		"# T142 notes\n\n## Findings\n\n- one **bold**\n- two\n\n```\n/ip address print\n```\n\nSee [router](../router.toml).\n",
+	);
+	await page.evaluate(() =>
+		(
+			window as unknown as { __reloadFiles: () => Promise<void> }
+		).__reloadFiles(),
+	);
+	await page.locator("#wslist .frow.dir", { hasText: "notes/" }).click();
+	await page.locator('#wslist [data-path="notes/t142.md"]').click();
+	// Links land once the workspace root is known (T109 catch-up).
+	await page.waitForSelector('#doc-body.chatmd[data-chatlinks="done"] h2', {
+		timeout: 10_000,
+	});
+	const t142 = await page.evaluate(() => {
+		const b = document.getElementById("doc-body");
+		return {
+			h1: b?.querySelector("h1")?.textContent ?? "",
+			li: b?.querySelectorAll("li").length ?? 0,
+			pre: b?.querySelector("pre")?.textContent ?? "",
+			link: b?.querySelector("a")?.getAttribute("data-apath") ?? "",
+			srcBtn: !(document.getElementById("doc-source") as HTMLButtonElement)
+				.hidden,
+		};
+	});
+	check(
+		"t142 markdown file renders headings, list, code",
+		t142.h1 === "T142 notes" &&
+			t142.li === 2 &&
+			t142.pre.includes("/ip address print"),
+		JSON.stringify(t142),
+	);
+	check(
+		"t142 relative link resolves from the file's folder",
+		t142.link === "router.toml",
+		t142.link,
+	);
+	check("t142 source toggle shown for markdown", t142.srcBtn);
+	await page.screenshot({ path: path.join(OUT, "t142-doc-rendered.png") });
+	await page.click("#doc-source");
+	const t142raw =
+		(await page.locator("#doc-body pre.docpre").textContent()) ?? "";
+	check(
+		"t142 source view shows the raw markdown",
+		t142raw.includes("## Findings") &&
+			(await page.locator("#doc-body h2").count()) === 0,
+		t142raw.slice(0, 60),
+	);
+	await page.locator('#wslist [data-path="router.toml"]').click();
+	await page.locator('#wslist [data-path="notes/t142.md"]').click();
+	await page.waitForSelector("#doc-body pre.docpre", { timeout: 10_000 });
+	check(
+		"t142 source choice sticks per file across reopen",
+		((await page.locator("#doc-source").textContent()) ?? "") === "Rendered",
+	);
+	await page.click("#doc-source");
+	await page.waitForSelector("#doc-body.chatmd h2", { timeout: 10_000 });
+	await page.locator('.ctab[data-pane="pane-chat"]').click();
 
 	// T49/D39: workspace mode trusts by default — the Settings row
 	// says on. The panel collapses after so later shots keep their
@@ -5186,7 +5251,7 @@ try {
 				"t60 new session asks inline with the past-chats note",
 				(
 					(await page.locator("#newsession-confirm").textContent()) ?? ""
-				).includes("Start a new session? This chat moves to Past chats."),
+				).includes("Start a side chat? The main chat moves to Past chats."),
 			);
 			await page.screenshot({
 				path: path.join(OUT, "48-t60-new-confirm.png"),
