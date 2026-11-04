@@ -1013,13 +1013,13 @@
   let NO_WS = false;
   function idlePlaceholder() { return NO_WS ? "Ask about your devices (no workspace attached)…" : "Ask about this network…"; }
   let META_AUTH = "unknown";
-  // Open question prompts (set by updateWaiting). While one waits, a
-  // typed message is only queued: muse delivers it after the prompt is
-  // answered or declined, so the composer says so instead of inviting
-  // a reply that seems to go nowhere.
+  // Open question prompts (set by updateWaiting). While one waits, the
+  // composer answers it (T166: typed text goes as freeText for every
+  // unpicked question); a plain chat send would only queue behind the
+  // prompt (muse inbox), never answer it.
   let QUESTIONS_PENDING = 0;
   function composerPlaceholder() {
-    if (QUESTIONS_PENDING > 0) return "Answer the question above first — messages typed here wait until then…";
+    if (QUESTIONS_PENDING > 0) return "Type your answer to the question above, or pick an option…";
     return AGENT_RUNNING ? "Reply or steer while it runs…" : composerIdlePlaceholder();
   }
   function composerIdlePlaceholder() { return META_AUTH === "absent" ? "Meta login required — run `muse login`, then Recheck…" : idlePlaceholder(); }
@@ -3187,6 +3187,7 @@
     // snapshot so the draft stays exactly as typed. A stale main
     // refuses the same way (Load current first).
     if (ADOPTING > 0 || MAIN_STALE !== null) return;
+    if (await answerFromComposer(text)) return;
     // T69: capture + clear the payload atomically (no await above this
     // line): text-only double-sends were already safe via the input
     // clear, but images cleared only after ack, so a second dispatch
@@ -3229,7 +3230,7 @@
       if (typeof j.turnId === "string") {
         LIVE_TURN = j.turnId;
       }
-      if (queuedBehindQuestion) showToast("Queued — the agent reads this after you answer or decline the question above.", "warn");
+      if (queuedBehindQuestion) showToast("Queued — the agent reads this after the question above is answered or declined.", "warn");
     } catch (e) {
       failSend(saved, optimistic, (e && e.message) || String(e), null);
     }
@@ -3747,8 +3748,8 @@
       const heads = open.map((st) => st.header).filter(Boolean);
       state.needEl.hidden = ok || state.resolved;
       state.needEl.textContent = state.picks.size > 1
-        ? "Still to answer: " + (heads.join(", ") || open.length + " question" + (open.length === 1 ? "" : "s")) + " ↑"
-        : "Pick an option to answer";
+        ? "Still to answer: " + (heads.join(", ") || open.length + " question" + (open.length === 1 ? "" : "s")) + " ↑ — or type an answer below"
+        : "Pick an option, or type an answer below";
       state.needEl.disabled = state.picks.size <= 1;
     }
   }
@@ -3763,6 +3764,52 @@
       else answers.push({ questionId: q.id, selectedLabel: [...st.set][0] });
     }
     return answers;
+  }
+
+  // T166: the composer answers the oldest open prompt. Questions the
+  // owner picked keep their pick; every unpicked one gets the typed
+  // text as freeText (grounded live: muse settles it answered and the
+  // model reads {id, free_text}). Falls through to a normal (queued)
+  // send when nothing is open to answer, images are staged, or the
+  // text is over the 500-character answer cap.
+  const FREE_TEXT_MAX = 500;
+  async function answerFromComposer(text) {
+    if (!text || pendingImages.length > 0) return false;
+    const rec = [...pendingQuestions.values()].find((r) => !r.resolved && !r.busy && r.el && r.el.isConnected);
+    if (!rec) return false;
+    const open = [...rec.picks.values()].filter((st) => !questionPicked(st));
+    if (open.length === 0) return false;
+    if (text.length > FREE_TEXT_MAX) {
+      showToast("Too long to answer the question (" + FREE_TEXT_MAX + " characters max) — shorten it or pick an option.", "warn");
+      return true;
+    }
+    const answers = [];
+    for (const q of Array.isArray(rec.params.questions) ? rec.params.questions : []) {
+      const st = rec.picks.get(q.id);
+      if (!st) continue;
+      if (!questionPicked(st)) answers.push({ questionId: q.id, freeText: text });
+      else if (st.multi) answers.push({ questionId: q.id, selectedLabels: [...st.set] });
+      else answers.push({ questionId: q.id, selectedLabel: [...st.set][0] });
+    }
+    $("chatinput").value = "";
+    fitInput();
+    setQuestionBusy(rec, true);
+    try {
+      const r = await fetch("/api/chat/question/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userInputId: rec.params.userInputId, answers }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.why || "request failed");
+      // Affirmed: the card settles (showing the typed answer) when
+      // userInput/settled arrives.
+    } catch (e) {
+      setQuestionBusy(rec, false);
+      if (!$("chatinput").value) { $("chatinput").value = text; fitInput(); }
+      holdError(rec.el, "not answered: " + e.message);
+    }
+    return true;
   }
 
   function setQuestionBusy(state, busy) {

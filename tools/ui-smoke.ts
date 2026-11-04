@@ -4624,10 +4624,10 @@ try {
 			check("t50 Decline cancels the prompt", true);
 			await pollT71Log(t50.log, /CANCEL userInputId=t50-q2/, 15_000);
 			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
-			// Two questions (the stuck-prompt case): picking only the
-			// second leaves Answer off and names the open one; its jump
-			// flashes it; the composer says typed messages queue behind
-			// the prompt, and a send then toasts Queued.
+			// Two questions (the stuck-prompt case, T165/T166): picking
+			// only the second leaves Answer off and names the open one;
+			// its jump flashes it; typing then answers the open question
+			// as freeText (the pick is kept), with no chat bubble.
 			await page.fill("#chatinput", "NEED-MULTI smoke two");
 			await page.click("#sendbtn");
 			await page.waitForSelector(".q-card.hold-pending .q-need", {
@@ -4635,16 +4635,10 @@ try {
 			});
 			const qm = page.locator(".q-card.hold-pending").first();
 			check(
-				"t50 multi: composer says messages wait for the answer",
+				"t50 multi: composer invites a typed answer",
 				(
 					(await page.locator("#chatinput").getAttribute("placeholder")) ?? ""
-				).startsWith("Answer the question above first"),
-			);
-			check(
-				"t50 multi: the send that started the run is not 'Queued'",
-				(await page
-					.locator("#toasts .toast", { hasText: "Queued" })
-					.count()) === 0,
+				).startsWith("Type your answer"),
 			);
 			await qm.locator(".q-q").nth(1).locator(".q-opt").first().click();
 			const qmNeed = (await qm.locator(".q-need").textContent()) ?? "";
@@ -4652,14 +4646,9 @@ try {
 				"t50 multi: one open question keeps Answer off and is named",
 				(await qm.locator(".q-answer").isDisabled()) &&
 					qmNeed.startsWith("Still to answer: ") &&
-					!qmNeed.includes(","),
+					qmNeed.includes("type an answer below"),
 				qmNeed,
 			);
-			await page.fill("#chatinput", "T50-QUEUED-STEER");
-			await page.keyboard.press("Enter");
-			await page.waitForSelector('#toasts .toast:has-text("Queued")', {
-				timeout: 10_000,
-			});
 			await page.screenshot({ path: path.join(OUT, "32b-t50-multi-open.png") });
 			await qm.locator(".q-need").click();
 			check(
@@ -4668,24 +4657,30 @@ try {
 					(await qm.locator(".q-q").first().getAttribute("class")) ?? ""
 				).includes("q-flash"),
 			);
-			await qm.locator(".q-q").first().locator(".q-opt").first().click();
-			check(
-				"t50 multi: Answer arms once every question is picked",
-				!(await qm.locator(".q-answer").isDisabled()) &&
-					(await qm.locator(".q-need").isHidden()),
+			const qmBubbles = await page.locator("#chatmsgs .msg.user").count();
+			await page.fill("#chatinput", "T166 typed answer");
+			await page.keyboard.press("Enter");
+			await pollT71Log(
+				t50.log,
+				/ANSWER .*"freeText":"T166 typed answer"/,
+				15_000,
 			);
-			await qm.locator(".q-answer").click();
 			await page.waitForFunction(
-				() =>
-					!document.querySelector(".q-card.hold-pending") &&
-					!(
-						(document.getElementById("chatinput") as HTMLTextAreaElement)
-							?.placeholder ?? ""
-					).startsWith("Answer the question"),
+				() => !document.querySelector(".q-card.hold-pending"),
 				undefined,
 				{ timeout: 15_000 },
 			);
-			check("t50 multi: answering restores the composer", true);
+			check(
+				"t50 multi: typed answer settles the card, no chat bubble",
+				(await page.locator("#chatmsgs .msg.user").count()) === qmBubbles &&
+					(
+						(await page
+							.locator(".q-card.hold-resolved .q-resolved")
+							.last()
+							.textContent()) ?? ""
+					).includes("T166 typed answer"),
+			);
+			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
 			await page.waitForSelector("#sendbtn:visible", { timeout: 15_000 });
 			// Waiting strip + interrupt: NEED-BOTH counts 2, a strip
 			// click scrolls to the card, Stop resolves both as interrupt.
