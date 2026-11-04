@@ -1,9 +1,12 @@
 // T109 re-review: POST /api/open-check request-shape hygiene.
 // Malformed/null JSON and oversized paths are 400s, never 500s.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
+import { cleanupTmpdirs } from "./helpers/tmp";
 import { startT50Srv, stubT50Bin, withT50Env } from "./t50-fake";
+
+afterAll(cleanupTmpdirs);
 
 const t109 = process.platform === "win32" ? test.skip : test;
 

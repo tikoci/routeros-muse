@@ -1269,17 +1269,27 @@ try {
 	await page.screenshot({ path: path.join(OUT, "43-t101-ask-first.png") });
 	await page.click("#collapsebtn");
 
-	// Real chat roundtrip through the actual composer.
+	// Real chat roundtrip through the actual composer. The first turn
+	// pays every cold cost at once (worker spawn, session, skill
+	// verification, MCP children), so it gets the long bound; a
+	// timeout dumps the server run state instead of failing silent.
 	await page.fill("#chatinput", "SMOKE-PROBE-UI");
 	await page.click("#sendbtn");
-	await page.waitForFunction(
-		() =>
-			[...document.querySelectorAll("#pane-chat .msg.agent .body p")].some(
-				(p) => (p.textContent ?? "").includes("SMOKE-PROBE-UI"),
-			),
-		undefined,
-		{ timeout: 30_000 },
-	);
+	try {
+		await page.waitForFunction(
+			() =>
+				[...document.querySelectorAll("#pane-chat .msg.agent .body p")].some(
+					(p) => (p.textContent ?? "").includes("SMOKE-PROBE-UI"),
+				),
+			undefined,
+			{ timeout: 60_000 },
+		);
+	} catch (err) {
+		const stats = await fetch(`${srv.url}api/chat/stats`).then((r) => r.text());
+		console.log(`FIRST-CHAT-TIMEOUT stats=${stats.slice(0, 300)}`);
+		await page.screenshot({ path: path.join(OUT, "2-chat-TIMEOUT.png") });
+		throw err;
+	}
 	check("echo roundtrip renders in chat", true);
 	await page.screenshot({ path: path.join(OUT, "2-chat.png") });
 

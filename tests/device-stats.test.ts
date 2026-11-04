@@ -3,7 +3,7 @@
 // against a disposable CHR 7.25.1 x86 under quickchr; envelopes cut to
 // ok/data/error/warnings/tips, meta dropped). The fixtures were read
 // with the same --attributes sets the server requests.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
 import {
@@ -24,7 +24,9 @@ import {
 	settingsFile,
 	writeDevicePollSeconds,
 } from "../src/lib/settings";
-import { mktmp } from "./helpers/tmp";
+import { cleanupTmpdirs, mktmp } from "./helpers/tmp";
+
+afterAll(cleanupTmpdirs);
 
 const FIX = path.join(import.meta.dir, "fixtures", "device-stats");
 type Envelope = {
