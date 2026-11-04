@@ -10,6 +10,7 @@ Local git repo for the RouterOS network workspace + web UI.
    (validate before claiming an update). needs/tasks/decisions/concepts TOML.
 3. `docs/internals.md` — how the pieces fit; `docs/design/` — design notes.
 4. `SECURITY.md` — security facts and known gaps (grows as we learn).
+5. `CONTRIBUTING.md` — issues vs records, PR/merge rules, releasing.
 
 ## Conventions (binding)
 

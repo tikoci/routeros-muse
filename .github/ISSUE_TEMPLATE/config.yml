@@ -1,0 +1,11 @@
+# Blank issues are off so every issue picks a template and lands with a
+# label and a Done-when. records/*.toml stays the plan of record; see
+# CONTRIBUTING.md "Tracking work" for how an issue and a record relate.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem privately
+    url: https://github.com/tikoci/routeros-muse/security/advisories/new
+    about: Never in a public issue. See SECURITY.md for the threat model.
+  - name: How work is tracked (issues vs records)
+    url: https://github.com/tikoci/routeros-muse/blob/main/CONTRIBUTING.md#tracking-work
+    about: Where open work, decisions and history each live.

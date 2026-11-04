@@ -1,0 +1,149 @@
+name: Release
+run-name: Release • ${{ inputs.channel }}${{ inputs.dry-run && ' (dry run)' || '' }} • ${{ github.ref_name }}
+
+# One-button npm publish of @tikoci/routeros-muse from main:
+#
+#   gh workflow run release.yml                      # @next (default)
+#   gh workflow run release.yml -f channel=latest    # stable, no tag (`npm i` gets it)
+#   gh workflow run release.yml -f dry-run=true      # every gate, publish nothing
+#
+#   next:   <base>-next.<run_number> on npm tag `next`. <base> is package.json's
+#           version minus any suffix (0.1.0-dev.0 → 0.1.0); if <base> already
+#           shipped as a plain version, the patch is bumped. The version is set
+#           in the runner only: no commit, no git tag, no GitHub Release.
+#   latest: the committed plain X.Y.Z on npm tag `latest`, `next` moved onto it
+#           (so @next is never older than @latest), git tag vX.Y.Z and a GitHub
+#           Release with generated notes. Commit the version bump first.
+#
+# Gate: ci.yml (lint, records, skills, tests, UI smoke) on the commit being
+# published. Requires secret NPM_TOKEN (npm automation token with publish
+# rights on @tikoci/routeros-muse), as a repo secret or a tikoci org secret
+# shared with this repo.
+#
+# Injection safety: workflow values reach `run:` blocks via `env:` only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "next = <base>-next.<run_number> on npm tag next; latest = the committed version"
+        type: choice
+        options: [next, latest]
+        default: next
+      dry-run:
+        description: "Run every gate and `npm publish --dry-run`; publish and tag nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never two releases at once; never cancel one mid-flight.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  plan:
+    name: Plan version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Plan
+        id: plan
+        env:
+          REF: ${{ github.ref }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -eo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Releases run from main only (got $REF)"; exit 1
+          fi
+          if [ "$(jq -r '.private // false' package.json)" = "true" ]; then
+            echo "::error::package.json has \"private\": true — npm refuses to publish it"; exit 1
+          fi
+          NAME=$(jq -r .name package.json)
+          COMMITTED=$(jq -r .version package.json)
+          published() { npm view "$NAME@$1" version --registry https://registry.npmjs.org >/dev/null 2>&1; }
+          if [ "$CHANNEL" = "latest" ]; then
+            case "$COMMITTED" in *-*)
+              echo "::error::latest publishes the committed version; commit a plain X.Y.Z first (got $COMMITTED)"; exit 1 ;;
+            esac
+            if published "$COMMITTED"; then
+              echo "::error::$NAME@$COMMITTED is already on npm; bump package.json"; exit 1
+            fi
+            VERSION=$COMMITTED
+          else
+            BASE=${COMMITTED%%-*}
+            if published "$BASE"; then
+              IFS=. read -r MAJ MIN PAT <<< "$BASE"
+              BASE="$MAJ.$MIN.$((PAT + 1))"
+            fi
+            VERSION="$BASE-next.$GITHUB_RUN_NUMBER"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "- \`$NAME@$VERSION\` → npm tag \`$CHANNEL\`" >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish to npm
+    needs: [ci, plan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release create (latest)
+      id-token: write # npm --provenance
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      CHANNEL: ${{ inputs.channel }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # Never committed: the tarball's package.json carries the planned
+      # version, so `routeros-muse --version` names the exact build.
+      - name: Set the package version
+        run: npm pkg set "version=$VERSION"
+      # Checked on a dry run too, so a dispatch proves the secret is wired.
+      - name: NPM_TOKEN reaches this runner
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN is not set: add it as a repo secret, or share the tikoci org secret with this repo"; exit 1
+          fi
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -eo pipefail
+          NAME=$(jq -r .name package.json)
+          if [ "$DRY_RUN" = "true" ]; then
+            npm publish --dry-run --access public --tag "$CHANNEL"
+            echo "- dry run: would publish \`$NAME@$VERSION\` → \`$CHANNEL\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          npm publish --access public --provenance --tag "$CHANNEL"
+          if [ "$CHANNEL" = "latest" ]; then
+            npm dist-tag add "$NAME@$VERSION" next
+          fi
+          echo "- published \`$NAME@$VERSION\` → \`$CHANNEL\`" >> "$GITHUB_STEP_SUMMARY"
+      # After publish: if this fails the version is already on npm and a
+      # re-dispatch is refused, so run the same gh command by hand.
+      - name: Tag + GitHub Release (latest only)
+        if: ${{ inputs.channel == 'latest' && !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes

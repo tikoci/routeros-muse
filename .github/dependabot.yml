@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # Sibling packages ride the `next` dist-tag on purpose (AGENTS.md:
+      # fix upstream, consume via @next pins); bump the lockfile by hand.
+      - dependency-name: "@tikoci/*"
+      # Types track the Bun pinned in .bun-version; bump them together.
+      - dependency-name: "@types/bun"
+    groups:
+      bun:
+        patterns: ["*"]

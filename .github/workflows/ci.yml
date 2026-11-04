@@ -1,0 +1,134 @@
+name: CI
+run-name: CI • ${{ github.event_name }} • ${{ github.ref_name }}
+
+# The `make gate` stages as three parallel jobs, so one red shows next to the
+# others instead of hiding them:
+#
+#   checks  — biome + tsc (`make lint`), records check, skill gate
+#   test    — `bun test` (hermetic: temp workspace/home, fake muse provider)
+#   smoke   — tools/ui-smoke.ts in playwright chromium (`make smoke`)
+#
+# test and smoke run under a fresh TMPDIR and fail on leftovers (T94), as the
+# gate does. release.yml calls this file (workflow_call) on the commit it
+# publishes.
+#
+# Every `… | tee` step runs under `set -eo pipefail`: without it tee's exit
+# code masks a bun failure and the step reports green.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# github.workflow is the caller's name under workflow_call, so a release's
+# CI run never cancels (or is cancelled by) the push run on the same commit.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, records, skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Biome + tsc
+        run: bun run lint
+      - name: Records check
+        run: make -C records check
+      # Four network-template skill self-tests drive a browser; the runner
+      # image ships google-chrome on PATH.
+      - name: Skill gate
+        run: bun tools/check-skills.ts
+
+  test:
+    name: Test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Fresh TMPDIR
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          echo "TMPDIR=$RUNNER_TEMP/gate" >> "$GITHUB_ENV"
+      - name: bun test
+        run: |
+          set -eo pipefail
+          bun test 2>&1 | tee "$RUNNER_TEMP/test.log"
+      - name: Nothing left behind in TMPDIR
+        if: always()
+        run: TMPDIR=/tmp bun tools/check-tmpdir.ts "$RUNNER_TEMP/gate"
+      - name: Failing tests to job summary
+        if: failure()
+        run: |
+          {
+            echo "## ❌ Failing tests"
+            echo '```'
+            grep -E '\(fail\)' "$RUNNER_TEMP/test.log" | head -60 || echo "(no (fail) lines — crash, hang or timeout; see the log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: UI smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Playwright chromium
+        run: bunx playwright install --with-deps chromium
+      # The auth legs run centrs from PATH; use the locked copy (T155).
+      - name: Bundled bins first on PATH
+        run: echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Fresh TMPDIR
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          echo "TMPDIR=$RUNNER_TEMP/gate" >> "$GITHUB_ENV"
+      - name: UI smoke
+        run: |
+          set -eo pipefail
+          bun tools/ui-smoke.ts 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+      - name: Nothing left behind in TMPDIR
+        if: always()
+        run: TMPDIR=/tmp bun tools/check-tmpdir.ts "$RUNNER_TEMP/gate"
+      - name: Smoke tail to job summary
+        if: failure()
+        run: |
+          {
+            echo "## ❌ UI smoke"
+            echo '```'
+            tail -40 "$RUNNER_TEMP/smoke.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-smoke-screenshots
+          path: out/ui-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
