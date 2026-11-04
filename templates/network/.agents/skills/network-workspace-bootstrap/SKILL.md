@@ -20,7 +20,8 @@ reading only the tree, reaches working state without asking you
 anything — §3 is that test.
 
 1. Lay out the starter tree (§0): copy the template subset the home
-   needs, fill workspace.toml + router.toml, no empties for show.
+   needs, fill workspace.toml, register devices in the CDB (UI Add
+   device), optional intent in router.toml, no empties for show.
 2. Draw the writer/sync map (§1): every directory gets one writer
    and one direction; second copies get age manifests, never merge-back.
 3. Wire memory and handoff (§2): per-session summaries in-tree,
@@ -35,8 +36,9 @@ anything — §3 is that test.
 From the template README (layout rules):
 
 - Copy the template tree to the new home, then instantiate ONLY
-  what is useful: one `router.toml` plus one `observations/` folder
-  is a complete N=1 workspace. Empty dirs to "look complete" are
+  what is useful: a device in `device.cdb` (UI Add device), one
+  `router.toml` for its intent, and one `observations/` folder is a
+  complete N=1 workspace. Empty dirs to "look complete" are
   not progress (home-single-copy §1).
 - Git homes lay the fuller skeleton (home-private-git §1):
   `START-HERE`, `AGENTS.md`, `workspace.toml`, `inventory/

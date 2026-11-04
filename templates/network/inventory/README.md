@@ -1,9 +1,10 @@
 # inventory/ — grows past N=1
 
-At N=1 the inventory IS `router.toml` at the root: one file, one box,
-zero ceremony. It holds intent (identity, role, expectations), not
-access: addresses, users and ports live in `device.cdb`, mirrored
-read-only in `devices.toml`.
+At N=1, optional intent lives in `router.toml` at the root: one file,
+one box, zero ceremony. It holds intent (identity, role,
+expectations), not access: the device list itself is the CDB
+(`device.cdb`: addresses, users, ports), mirrored read-only in
+`devices.toml`.
 
 When the second box appears:
 

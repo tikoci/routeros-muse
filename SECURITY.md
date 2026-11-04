@@ -30,8 +30,8 @@ sessions a restricted RouterOS account. (T102, C19.)
 This is load-bearing, not boilerplate: a seeded `centrs retrieve`
 rule trusts centrs's read/write split, and the fragment-path bug that
 rebooted a disposable CHR without `--yes` is an upstream bug
-([centrs#586](https://github.com/tikoci/centrs/issues/586), C19; fixed
-on centrs main, not yet in the bundled 0.1.9-next.24), not a policy
+([centrs#586](https://github.com/tikoci/centrs/issues/586), C19; the
+locked centrs 0.1.9 source carries the path guard), not a policy
 failure. Anyone who needs "never reboot" needs
 the restricted account.
 
@@ -219,9 +219,9 @@ mid-copy parent swap (Node has no openat).
   stale-secret protection is an interim modal note until the
   upstream secret-safe revision contract lands.
 - C19 ([centrs#586](https://github.com/tikoci/centrs/issues/586)):
-  fragment-path non-read dispatch — fixed on centrs main, awaiting a
-  centrs publish and our bump; until then the bundled build still
-  has it. See §3.
+  fragment-path non-read dispatch — the guard is in the locked
+  centrs 0.1.9 source; a live CHR re-probe is still owed before
+  C19 closes. See §3.
 - C1 ([centrs#542](https://github.com/tikoci/centrs/issues/542)):
   secret-bearing values reach the transcript through seeded reads
   when the account has the `sensitive` policy. Mitigation is the

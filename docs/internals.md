@@ -258,9 +258,9 @@ registry entries with liveness, open-in-place, prune, and
 create-at-default. New workspaces land in `~/Networks` — one
 predictable path on every OS (no user-dirs parsing, no per-OS
 special cases), and machine-managed network trees stay out of the
-documents clutter. Opening is a restart: serve binds its root at
-boot, so the picker prints the exact `serve` line instead of
-pretending to switch live. Creation scaffolds from the template
+documents clutter. Serve binds its root at boot, so opening or
+creating a workspace starts its own server on a free loopback port
+and the browser navigates there (T133). Creation scaffolds from the template
 select (minimal default, network full) with the form password,
 stamps `[template]` provenance, writes `device.cdb` via `centrs
 devices init --encrypt`, then spawns `routeros-muse start <dir>
@@ -286,8 +286,7 @@ Not part of `bun test`: browsers are too slow/flaky for the unit
 suite, so the smoke stays a separate explicit gate.
 
 Known follow-ups: meta-provider demo run (compact/mention/tool-write);
-agent-driven CDB add flow for brand-new device hosts (T48 modal covers
-set/add-on-existing); capability-mode pill wiring; subagent
+capability-mode pill wiring; subagent
 child drill-down (cards show the summary inline); map/chart renderers.
 
 ## Doctor spec (D15/D20)

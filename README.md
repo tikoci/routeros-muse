@@ -17,7 +17,8 @@ Status: **preview**. Expect rough edges; nothing here is finished.
 ## Quick start
 
 Prereqs: [Bun](https://bun.sh) (per Bun's own install instructions),
-plus `muse` installed and signed in. Then:
+plus the Muse agent from <https://dev.meta.ai> (`muse login` once to
+sign in; `routeros-muse code` checks and offers the installer). Then:
 
 ```sh
 bunx @tikoci/routeros-muse start   # web UI on 127.0.0.1 by default; opens your browser
@@ -27,10 +28,10 @@ From a checkout, `bun install` once, then `bun run start` does the
 same. Creating a workspace asks for a CDB password — the device
 registry (`device.cdb` beside the workspace) is created encrypted,
 and the browser lands on the lock screen where you retype it. On a
-terminal `start` walks you through template + password; off a
-terminal (or in scripts) pipe the password via `--password-stdin`.
-`init` behaves the same for a chosen directory, and the web picker's
-Create button asks in the form. `--open-cdb` creates without
+terminal `start` walks you through template + password. For scripted
+creation, pipe the password to `routeros-muse init <dir>
+--password-stdin`, then run `routeros-muse start <dir>`. The web
+picker's Create button asks in the form. `--open-cdb` creates without
 encryption (dev escape, never the default). `make gate` runs the
 full check (lint + tests + browser smoke).
 
@@ -57,9 +58,9 @@ password (see `docs/design/t39-auth-design.md`).
 ## How it uses the three tools
 
 `package.json` pins `@tikoci/quickchr`, `@tikoci/centrs`, and
-`@tikoci/rosetta` (`centrs` stays on the `0.1.9` release while `next`
-resolves to a prerelease without the encrypted-CDB surface; the
-others track `next` during preview). The bootstrap and
+`@tikoci/rosetta`, all three on the `next` tag during preview (this
+checkout's lockfile resolves centrs to `0.1.9`; Status shows the
+installed versions). The bootstrap and
 the server front the package's own `node_modules/.bin` on PATH for
 every spawn — server subprocesses and agent children alike — so all
 sides resolve identical builds:
@@ -122,8 +123,8 @@ or New Session does not apply it; reopen the previous chat from Past chats.
 `init`: scaffolds a workspace in the directory (default: here) from
 `minimal` (runnable minimum) or `network` (full starter), never
 overwriting, with an encrypted `device.cdb`, and registers it.
-After creating, the browser opens on the lock screen: retype the
-password you just set. The web picker's Create button scaffolds
+`init` then exits, printing the `start` command; `start` opens the
+browser on the lock screen, where you retype the password you set. The web picker's Create button scaffolds
 into `~/Networks` instead, then navigates there itself.
 
 `code`: checks prereqs, the trilogy, and the agent; opens and

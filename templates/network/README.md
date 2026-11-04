@@ -8,11 +8,15 @@ options for when circumstances require them, never prerequisites.
 
 ## Instantiate (N=1 start)
 
-1. Copy this tree to the new home (private git repo, local dir, or
-   router disk — see `.agents/skills/` for the home guides).
+1. Create it with `routeros-muse init <dir> --template network`
+   (scaffolds this tree plus an encrypted `device.cdb`), or copy the
+   tree to the new home (private git repo, local dir, or router disk —
+   see `.agents/skills/` for the home guides).
 2. Edit `workspace.toml`: home type, repo URL, tool pins, backup record.
-3. Edit `router.toml`: your one box (site-location-role id, label on
-   the unit; serial binds at unbox, never before).
+3. Add your box with Add device in the UI (the CDB is the device list;
+   `devices.toml` mirrors it). Optionally note its intent in
+   `router.toml` (site-location-role id, label on the unit; serial
+   binds at unbox, never before), linked by `cdb = "<id>"`.
 4. Run the first pull into `observations/`, run the checker (`checks/`),
    write the first `summary.md`.
 5. First commit is plan/skills/schemes/docs only — no pulls, no

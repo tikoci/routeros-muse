@@ -1,13 +1,13 @@
 # routeros-muse — agent entry
 
-Local git repo for the RouterOS network workspace + web UI.
-(History: staged in ~/Work, landed here at T14.)
+Git repo for the RouterOS network workspace + web UI.
 
 ## Start here
 
 1. `README.md` — owner-facing: what it is, CLI, workspace idea.
-2. `records/` — the tracker. `make plan` (ordered work), `make check`
-   (validate before claiming an update). needs/tasks/decisions/concepts TOML.
+2. `records/` — the tracker. `make -C records plan` (ordered work),
+   `make -C records check` (validate before claiming an update).
+   needs/tasks/decisions/concepts TOML.
 3. `docs/internals.md` — how the pieces fit; `docs/design/` — design notes.
 4. `SECURITY.md` — security facts and known gaps (grows as we learn).
 5. `CONTRIBUTING.md` — issues vs records, PR/merge rules, releasing.
@@ -15,7 +15,7 @@ Local git repo for the RouterOS network workspace + web UI.
 ## Conventions (binding)
 
 - Track in `records/*.toml`, never in prose. Update the record in the
-  same step that does the work; `make check` must pass.
+  same step that does the work; `make -C records check` must pass.
 - Claim work before starting (`agent` = you, status `active`).
   Unclaimed READY items are fair game.
 - The human is the developer; router owner/operator is the end user.
@@ -34,9 +34,9 @@ Local git repo for the RouterOS network workspace + web UI.
   system. Wire shapes come from wire captures, never memory.
 - quickchr is grounding, not replication (D36): prove claims on a
   disposable CHR. bigdude: reads free, ANY write asks the developer first.
-- Sibling checkouts, not foreign deps: quickchr/centrs/rosetta live in
-  `~/Projects/tikoci` — file the need in `records/needs.toml`, fix it
-  there, consume it here via `@next` pins. Never fork, never work
+- Upstream, not forks: quickchr/centrs/rosetta are separate tikoci
+  repos — file the need in `records/needs.toml`, fix it in that repo's
+  own checkout, consume the published release here via `@next`. Never fork, never work
   around silently; a workaround ships only with its upstream issue
   linked in the task evidence.
 - Upstream fixes go upstream as PRs (issues first, comment don't duplicate).
