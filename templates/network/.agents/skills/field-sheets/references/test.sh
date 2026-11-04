@@ -35,8 +35,8 @@ expect "never hand-edited" "generated-from-records line"
 if grep -qE 'src="http|href="http|url\(http' "$page"; then
   echo "FAIL html: external refs (must render offline)"; fail=1
 else echo "ok html: no external refs"; fi
-steps=$(grep -o "You should see:" "$page" | wc -l)
-stops=$(grep -o "If not, STOP:" "$page" | wc -l)
+steps=$(grep -o "You should see:" "$page" | wc -l | tr -d " ")
+stops=$(grep -o "If not, STOP:" "$page" | wc -l | tr -d " ")
 if [ "$steps" = "3" ] && [ "$stops" = "3" ]; then
   echo "ok html: 3 steps each carry expected + stop"
 else echo "FAIL html: steps=$steps stops=$stops (want 3/3)"; fail=1; fi

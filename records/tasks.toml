@@ -1575,7 +1575,7 @@ id = "T155"
 title = "make gate is red on the developer's Intel Mac at HEAD (path, PATH and timing failures)"
 status = "needed"
 detail = "Found 2026-11-03 while gating T154 on the Mac (not orca). All of these reproduce on clean b30e98f with T154 stashed: (1) the smoke runs centrs from PATH, and ~/.bun/bin/centrs is 0.1.9-next.23 (no devices init --encrypt), so it throws at ui-smoke.ts open smoke; the bundled node_modules/.bin/centrs 0.1.9 works, so the smoke should run the bundled copy, not depend on PATH order. (2) scaffold-safety symlinked-ancestor and templates spaced-path tests compare /var/folders against /private/var/folders (macOS tmp realpath). (3) serve doctor missing-tool alert never fires; picker chat-stats test times out at 5s; t106 127.0.0.2 relay bind fails (macOS has no 127.0.0.2 alias by default). (4) four network-template skill self-tests need chromium. (5) smoke reds: t56 500 idles the composer, t55 settings lists the seeded ui tools (still the … placeholder), and extra 500s on /api/chat/stats and /api/chat/pending with why client closed, so the expected-routes and console-500 checks fail."
-evidence = "/tmp/gate2.log (gate with bundled centrs first on PATH) and /tmp/smoke-head.log (smoke on clean HEAD: SMOKE RED (4), same four); bun test on scaffold-safety, templates, serve, t106 at HEAD: 107 pass, 5 fail."
+evidence = "/tmp/gate2.log (gate with bundled centrs first on PATH) and /tmp/smoke-head.log (smoke on clean HEAD: SMOKE RED (4), same four); bun test on scaffold-safety, templates, serve, t106 at HEAD: 107 pass, 5 fail. Progress 2026-11-03 (claude): (1) fixed on this host: global ~/.bun centrs upgraded 0.1.9-next.23 -> 0.1.9 (bun add -g; latest and next are both 0.1.9), devices init --encrypt works; making the smoke prefer the bundled centrs is still open. (2) cause: macOS os.tmpdir() is /var/folders, a symlink to /private/var; realpath-resolving code returns /private/var while tests expect /var. Not related to muse skill symlinks. Suggested fix: mktmp returns realpathSync(d). (3) filed as T159 (linux-only doctor fixture), T160 (127.0.0.2 binds), T161 (picker chat-stats timeout). (4) fixed: /usr/local/bin/google-chrome wrapper for Google Chrome.app; field-sheets test.sh also needed wc -l padding stripped (BSD wc); all four skill tests pass. (5) smoke reds unchanged."
 acceptance = "make gate green on the Intel Mac and still green on orca; no test skipped to get there."
 blocked_by = []
 agent = ""
@@ -1612,4 +1612,37 @@ evidence = "tools/check-skills.ts: add-device and first-contact valid. Claims gr
 acceptance = "check-skills valid for both skills; records check passes."
 blocked_by = []
 agent = "claude"
+updated = "2026-11-03"
+
+[[task]]
+id = "T159"
+title = "Doctor missing-tool alert test uses a linux-only fixture, so it never fires on macOS"
+status = "needed"
+detail = "From T155 item 3. tests/serve.test.ts 'doctor alerts fire for missing required tools' writes a doctor.local.toml tool with os = \"linux\", so on darwin the tool is out of scope and api/alerts correctly stays empty (missing-tool alert never fired). Fix the fixture, not the doctor: use the host OS (process.platform mapped to the doctor os names) or a tool with no os filter, so the alerts branch is exercised on every platform."
+evidence = "Reproduced 2026-11-03 on the Intel Mac at 7740581 and on clean b27c211: same failure on both."
+acceptance = "Test passes on macOS and Linux; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T160"
+title = "Tests that bind 127.0.0.2 fail on macOS (no loopback alias by default)"
+status = "needed"
+detail = "From T155 item 3. tests/t106.test.ts 'a 127.0.0.2 UI bind still serves the bridge over the relay' and tests/t133.test.ts 'encrypt-now refuses off loopback' start the server on 127.0.0.2; macOS lo0 carries only 127.0.0.1, so Bun.serve fails (EADDRINUSE). Linux routes all of 127/8, which is why they pass there. Decide: probe 127.0.0.2 bindability and use another non-127.0.0.1 local address when absent (the property under test is 'not the relay address' / 'off loopback'), or document the one-time sudo ifconfig lo0 alias 127.0.0.2 setup for macOS dev hosts. Never skip silently (grounding rule)."
+evidence = "Reproduced 2026-11-03 on the Intel Mac at 7740581 and on clean b27c211; ifconfig lo0 shows inet 127.0.0.1 only."
+acceptance = "Both tests run (not skipped) and pass on macOS and Linux; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T161"
+title = "Picker test 'default approval mode surfaces in chat stats' times out at 5s on macOS"
+status = "needed"
+detail = "From T155 item 3. tests/templates.test.ts picker template routes > default approval mode surfaces in chat stats hits the 5000 ms bun default timeout and leaves a dangling process (bun reports 'killed 1 dangling process'). Cause unknown: find whether the stats read waits on a worker that never connects on this host, or is just slow and needs an explicit timeout. Check against T152 (session stats come back empty) and the smoke's extra api/chat/stats and api/chat/pending 500s (why: client closed), which may share the cause."
+evidence = "Reproduced 2026-11-03 on the Intel Mac at 7740581 and on clean b27c211."
+acceptance = "Root cause recorded; test passes without a padded timeout unless the cause shows the work is legitimately slow; make gate and records check pass."
+blocked_by = []
+agent = ""
 updated = "2026-11-03"
