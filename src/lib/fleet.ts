@@ -321,6 +321,9 @@ export async function doctorTwins(
  */
 export type CdbCredentialDetails = {
 	target: string;
+	comment?: string;
+	recordType?: number;
+	attributes?: Record<string, string>;
 	/** Per-service port overrides from the comment kv-soup (centrs#618). */
 	ports?: Record<string, string>;
 	user: string;
@@ -406,6 +409,105 @@ export function cleanPorts(v: unknown): Record<string, string> | null {
 	return out;
 }
 
+export const CREDENTIAL_KEYS = [
+	"identity",
+	"mac",
+	"ip",
+	"via",
+	"validate",
+	"insecure",
+	"timeout",
+	"port",
+	"source",
+	"mcp",
+	"lat",
+	"lon",
+	"altitude",
+	"altitude-type",
+] as const;
+export const VIA_VALUES = [
+	"rest-api",
+	"native-api",
+	"ssh",
+	"snmp",
+	"mndp",
+	"romon",
+	"winbox-terminal",
+	"btest",
+	"mac-telnet",
+] as const;
+export const RECORD_TYPES = [
+	"macTarget",
+	"ipAdmin",
+	"ipUser",
+	"romonNeighbor",
+	"romonTarget",
+] as const;
+
+/** Parse shell-word comment tokens, including quoted spaces and escaped quotes. Last token wins. */
+export function credentialAttributes(comment: unknown): Record<string, string> {
+	const out: Record<string, string> = {};
+	if (typeof comment !== "string") return out;
+	const words = comment.match(/(?:[^\s"]|"(?:[^"\\]|\\.)*")+/g) ?? [];
+	for (const word of words) {
+		const token = /^([A-Za-z][A-Za-z0-9_-]*)=(.*)$/.exec(word);
+		if (!token || token[1] === undefined || token[2] === undefined) continue;
+		const key = token[1];
+		if (
+			!(CREDENTIAL_KEYS as readonly string[]).includes(key) &&
+			key !== "ssh-key" &&
+			!(PORT_KEYS as readonly string[]).includes(key)
+		)
+			continue;
+		out[key] = token[2].replace(/"((?:[^"\\]|\\.)*)"/g, (_, v: string) =>
+			v.replace(/\\(["\\])/g, "$1"),
+		);
+	}
+	return out;
+}
+
+export function cleanCredentialAttributes(
+	value: unknown,
+): Record<string, string> | null {
+	if (value === undefined) return {};
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const out: Record<string, string> = {};
+	for (const [key, v] of Object.entries(value)) {
+		if (
+			!(CREDENTIAL_KEYS as readonly string[]).includes(key) ||
+			typeof v !== "string" ||
+			!/^[A-Za-z0-9_.:/@+%, -]*$/.test(v)
+		)
+			return null;
+		if (v !== "") {
+			const enums: Record<string, readonly string[]> = {
+				via: VIA_VALUES,
+				validate: ["true", "false"],
+				insecure: ["true", "false"],
+				mcp: ["ro", "rw"],
+				"altitude-type": ["MSL", "AGL"],
+			};
+			if (enums[key] && !enums[key]?.includes(v)) return null;
+			if (key === "port" && !validPortValue(v)) return null;
+			if (
+				key === "timeout" &&
+				(!/^\d+$/.test(v) || Number(v) < 1 || Number(v) > 2147483647)
+			)
+				return null;
+			if (
+				["lat", "lon", "altitude"].includes(key) &&
+				(!/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(v) ||
+					!Number.isFinite(Number(v)) ||
+					(key === "lat" && Math.abs(Number(v)) > 90) ||
+					(key === "lon" && Math.abs(Number(v)) > 180))
+			)
+				return null;
+		}
+		out[key] = v;
+	}
+	return out;
+}
+
 export function projectCdbEntry(entry: unknown): CdbCredentialDetails | null {
 	if (!entry || typeof entry !== "object") return null;
 	const rec = entry as Record<string, unknown>;
@@ -413,6 +515,15 @@ export function projectCdbEntry(entry: unknown): CdbCredentialDetails | null {
 	if (typeof target !== "string" || !target.trim()) return null;
 	return {
 		target: target.trim(),
+		comment: strField(rec, "comment"),
+		recordType:
+			typeof rec["recordType"] === "number" ? rec["recordType"] : undefined,
+		attributes: Object.fromEntries(
+			CREDENTIAL_KEYS.map((k) => [
+				k,
+				credentialAttributes(rec["commentMirror"] ?? rec["comment"])[k] ?? "",
+			]),
+		),
 		ports: portsOf(rec["comment"], rec["commentMirror"]),
 		user: strField(rec, "user"),
 		group: strField(rec, "group"),
@@ -420,7 +531,9 @@ export function projectCdbEntry(entry: unknown): CdbCredentialDetails | null {
 		session: strField(rec, "session"),
 		profile: strField(rec, "profile"),
 		hasPassword: rec["savedPassword"] === true,
-		sshKey: sshKeyOf(rec["comment"], rec["commentMirror"]),
+		sshKey:
+			credentialAttributes(rec["commentMirror"] ?? rec["comment"])["ssh-key"] ??
+			sshKeyOf(rec["comment"], rec["commentMirror"]),
 	};
 }
 
@@ -428,6 +541,9 @@ export function projectCdbEntry(entry: unknown): CdbCredentialDetails | null {
 export function credentialSnapshot(d: CdbCredentialDetails): string {
 	return JSON.stringify([
 		d.target,
+		d.comment ?? "",
+		d.recordType ?? null,
+		CREDENTIAL_KEYS.map((k) => d.attributes?.[k] ?? ""),
 		d.user,
 		d.group,
 		d.recordTypeName,
@@ -473,6 +589,10 @@ export async function showCdbDevice(
 }
 
 export type CdbCredentialWrite = {
+	group?: string;
+	recordTypeName?: string;
+	comment?: string;
+	attributes?: Record<string, string>;
 	user?: string;
 	password?: string;
 	sshKey?: string;
@@ -505,7 +625,17 @@ function writeArgs(
 	if (nonEmpty(write.password)) args.push("--password", write.password);
 	if (nonEmpty(write.profile)) args.push("--profile", write.profile);
 	if (nonEmpty(write.session)) args.push("--session", write.session);
-	if (nonEmpty(write.sshKey)) args.push(`ssh-key=${write.sshKey}`);
+	if (nonEmpty(write.group)) args.push("--group", write.group);
+	if (action === "add" && nonEmpty(write.recordTypeName))
+		args.push("--record-type", write.recordTypeName);
+	if (action === "add" && nonEmpty(write.comment))
+		args.push("--comment", write.comment);
+	if (write.sshKey !== undefined && (write.sshKey !== "" || action === "set"))
+		args.push(`ssh-key=${JSON.stringify(write.sshKey)}`);
+	for (const [k, v] of Object.entries(write.attributes ?? {})) {
+		if (v === "" && action === "add") continue;
+		args.push(`${k}=${JSON.stringify(v)}`);
+	}
 	for (const [k, v] of Object.entries(write.ports ?? {})) {
 		// A new record has nothing to remove; `key=` removes on set.
 		if (v === "" && action === "add") continue;
@@ -517,12 +647,10 @@ function writeArgs(
 }
 
 /**
- * Write one record's credentials (T48). Grounded on centrs
- * 0.1.9-next `devices set/add --help`: first-class --user/--password/
- * --profile/--session plus the comment kv-soup `ssh-key=<path>` pair —
- * nothing else is a credential scheme there, so nothing else is
- * offered. Empty fields are left unchanged, never cleared (clearing
- * rides the buggy C9 path upstream; not offered until it is sound).
+ * Write one record's credentials (T48). Grounded on bundled centrs 0.1.9 help and a disposable CDB roundtrip.
+ * First-class fields use flags; allowlisted attributes use comment tokens.
+ * Empty kv values remove tokens. First-class clearing remains blocked
+ * because it rides the buggy C9 path upstream.
  *
  * INTERIM single-writer stance pending tikoci/centrs#581 (C15) — a
  * re-read-and-compare, not a lock: the caller passes the snapshot its
@@ -536,7 +664,7 @@ function writeArgs(
  *
  * Two hard limits (T82) — do not mistake this for a lock:
  * password-blind — the snapshot compares only target, user, group,
- * record type, session, profile, saved-password presence, and ssh-key,
+ * record type, session, profile, comment attributes, saved-password presence, and ssh-key,
  * so a password-value rotation (A→B→C) leaves it identical and even a
  * sequential stale write succeeds with conflict=false; non-atomic —
  * the re-read and the write are separate centrs calls, so two
@@ -552,9 +680,56 @@ export async function setCdbCredentials(
 ): Promise<SetCdbResult> {
 	if (!have("centrs", env)) return { ok: false, why: "centrs not on PATH" };
 	if (
+		cleanCredentialAttributes(write.attributes) === null ||
+		cleanPorts(write.ports) === null ||
+		Object.entries(write).some(
+			([k, v]) =>
+				![
+					"user",
+					"password",
+					"sshKey",
+					"profile",
+					"session",
+					"group",
+					"recordTypeName",
+					"comment",
+					"ports",
+					"attributes",
+				].includes(k) ||
+				(typeof v === "string" &&
+					(/^[ -]*--?/.test(v) ||
+						[...v].some(
+							(c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127,
+						))),
+		) ||
+		(write.recordTypeName &&
+			!(RECORD_TYPES as readonly string[]).includes(write.recordTypeName))
+	)
+		return { ok: false, why: "bad credential fields" };
+	if (
+		expected &&
+		!("missing" in expected) &&
+		["user", "profile", "session", "group"].some(
+			(k) =>
+				write[k as keyof CdbCredentialWrite] === "" &&
+				expected[k as keyof CdbCredentialDetails],
+		)
+	)
+		return { ok: false, why: "first-class fields cannot be cleared" };
+	if (
+		expected &&
+		!("missing" in expected) &&
+		(write.comment !== undefined || write.recordTypeName !== undefined)
+	)
+		return { ok: false, why: "comment and record type are add-only" };
+	if (
 		!nonEmpty(write.user) &&
 		!nonEmpty(write.password) &&
-		!nonEmpty(write.sshKey) &&
+		write.sshKey === undefined &&
+		!nonEmpty(write.group) &&
+		!nonEmpty(write.recordTypeName) &&
+		!nonEmpty(write.comment) &&
+		Object.keys(write.attributes ?? {}).length === 0 &&
 		!nonEmpty(write.profile) &&
 		!nonEmpty(write.session) &&
 		Object.keys(write.ports ?? {}).length === 0

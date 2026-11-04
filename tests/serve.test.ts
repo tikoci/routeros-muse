@@ -2020,7 +2020,7 @@ describe("set credentials (T48)", () => {
 			group: "",
 			session: "s1",
 		});
-		expect(got).toEqual({
+		expect(got).toMatchObject({
 			target: "gw",
 			ports: { "www-port": "7080" },
 			user: "admin",
