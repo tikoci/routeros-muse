@@ -86,6 +86,9 @@ jobs:
       # echo turns landed off-peak but starved at peak). HALVE the file
       # parallelism so the timing-sensitive tests get a quieter box.
       # Same tests, same assertions — matched to the runner, not weakened.
+      # The 5s per-test default assumes orca speed (run 6: the T148
+      # add/remove leg busted it under parallel load); 30s keeps slow
+      # boxes honest without masking a real hang.
       - name: Fresh TMPDIR
         run: |
           mkdir -p "$RUNNER_TEMP/gate"
@@ -93,7 +96,7 @@ jobs:
       - name: bun test
         run: |
           set -eo pipefail
-          bun test --parallel=2 2>&1 | tee "$RUNNER_TEMP/test.log"
+          bun test --parallel=2 --timeout=30000 2>&1 | tee "$RUNNER_TEMP/test.log"
       - name: Nothing left behind in TMPDIR
         if: always()
         run: TMPDIR=/tmp bun tools/check-tmpdir.ts "$RUNNER_TEMP/gate"
