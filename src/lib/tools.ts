@@ -82,26 +82,32 @@ export function packageRoot(
 }
 
 /**
- * The package tool bundle: node_modules/.bin under the package root (a
- * checkout), else the enclosing node_modules/.bin when this package is
- * itself installed (bunx, bun add, -g), where Bun hoists our deps' bins.
- * Null when neither exists — the honest ambient fallback.
+ * node_modules dirs that hold our dependencies, nearest first: the
+ * package's own (a checkout), then the enclosing one when this package
+ * is itself installed (bunx, bun add, -g), where Bun hoists our deps.
+ */
+export function bundleRoots(pkgRoot: string): string[] {
+	const roots = [path.join(pkgRoot, "node_modules")];
+	const parts = pkgRoot.split(path.sep);
+	const nm = parts.lastIndexOf("node_modules");
+	if (nm > 0) roots.push(parts.slice(0, nm + 1).join(path.sep));
+	return roots;
+}
+
+/**
+ * The package tool bundle: the first bundle root's .bin that exists.
+ * Null when none does — the honest ambient fallback.
  */
 export function toolBinDir(
 	pkgRoot: string | null = packageRoot(),
 ): string | null {
 	if (!pkgRoot) return null;
-	const candidates = [path.join(pkgRoot, "node_modules", ".bin")];
-	const parts = pkgRoot.split(path.sep);
-	const nm = parts.lastIndexOf("node_modules");
-	if (nm > 0) {
-		candidates.push([...parts.slice(0, nm + 1), ".bin"].join(path.sep));
-	}
-	for (const bin of candidates) {
+	for (const root of bundleRoots(pkgRoot)) {
+		const bin = path.join(root, ".bin");
 		try {
 			if (nodeFs.statSync(bin).isDirectory()) return bin;
 		} catch {
-			// Not there: try the next candidate.
+			// Not there: try the next root.
 		}
 	}
 	return null;
