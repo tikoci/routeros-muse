@@ -58,7 +58,7 @@ import { SEED_TOOL_NAMES } from "../src/mcp/trilogy-tools";
 import { mcpToolName, UI_TOOL_NAMES } from "../src/mcp/ui-tools";
 import { startServer } from "../src/serve/server";
 import { cleanupTmpdirs, mktmp } from "../tests/helpers/tmp";
-import { stubT50Bin, withT50Env } from "../tests/t50-fake";
+import { stubT50Bin, stubT50CdbRows, withT50Env } from "../tests/t50-fake";
 import { pollT71Log, stubT71Bin, withT71Env } from "../tests/t71-fake";
 import { checkTwinsRefresh } from "./twins-smoke";
 
@@ -88,7 +88,35 @@ const HERE = import.meta.dir;
 const ROOT = path.resolve(HERE, "..");
 const OUT = path.join(ROOT, "out", "ui-smoke");
 
-function makeWorkspace(): string {
+// T155/T162: every centrs spawn (ours and the server's) runs the
+// locked copy in node_modules/.bin, never a stale global one.
+const BUNDLED_BIN = path.join(ROOT, "node_modules", ".bin");
+process.env["PATH"] =
+	`${BUNDLED_BIN}${path.delimiter}${process.env["PATH"] ?? ""}`;
+
+// D53/T162: the device list is the workspace device.cdb only. Seed a
+// disposable open CDB with the bundled centrs; each target becomes one
+// card (id = CDB target). smoke-gw's name never resolves, so status
+// reads fail fast (transport/dns) instead of reaching a real host.
+function seedCdb(dir: string, targets: string[], user = "smoke-admin"): string {
+	const cdb = path.join(dir, "device.cdb");
+	const env = { ...process.env, CENTRS_CDB_FILE: cdb };
+	const steps = [
+		["devices", "init"],
+		...targets.map((t) => ["devices", "add", t, "--user", user]),
+	];
+	for (const args of steps) {
+		const r = childProcess.spawnSync("centrs", args, { env, encoding: "utf8" });
+		if (r.error || r.status !== 0) {
+			throw new Error(
+				`seedCdb: centrs ${args.join(" ")} failed: ${(r.stderr || r.stdout || String(r.error)).slice(0, 200)}`,
+			);
+		}
+	}
+	return cdb;
+}
+
+function makeWorkspace(opts: { devices?: string[] } = {}): string {
 	const dir = mktmp("ui-smoke-ws-");
 	nodeFs.writeFileSync(
 		path.join(dir, "workspace.toml"),
@@ -97,8 +125,9 @@ function makeWorkspace(): string {
 	nodeFs.writeFileSync(path.join(dir, "AGENTS.md"), "# smoke workspace\n");
 	nodeFs.writeFileSync(
 		path.join(dir, "router.toml"),
-		'[device]\nid = "smoke-gw"\nrole = "gateway"\ncdb = "smoke-cdb"\n',
+		'[device]\nid = "smoke-gw"\nrole = "gateway"\ncdb = "smoke-gw"\n',
 	);
+	if (opts.devices) seedCdb(dir, opts.devices);
 	nodeFs.mkdirSync(path.join(dir, "operations"), { recursive: true });
 	nodeFs.writeFileSync(path.join(dir, "operations", "drift.md"), "# drift\n");
 	nodeFs.mkdirSync(path.join(dir, "inbox"), { recursive: true });
@@ -140,6 +169,31 @@ function check(name: string, cond: boolean, extra = ""): void {
 		`${cond ? "PASS" : "FAIL"}  ${name}${extra && !cond ? ` — ${extra}` : ""}`,
 	);
 	if (!cond) failures.push(name);
+}
+
+// The card's Add to Chat button (T135) targets the device: a pill in
+// the composer, the card flips to "in this chat ×".
+async function addToChat(p: Page, id: string): Promise<void> {
+	await p
+		.locator(`.dev[data-key="dev-${id}"] .chatstate button.minibtn`)
+		.click({ timeout: 15_000 });
+	await p.waitForSelector(`.tpill[data-dev="${id}"]`, { timeout: 5_000 });
+}
+
+// T143 file tree: unfold every folder under prefix (clicks re-render
+// the tree, so re-query until no closed folder is left).
+async function expandTree(p: Page, prefix: string): Promise<void> {
+	await p
+		.locator(`#wslist .frow.dir[title="${prefix}"]`)
+		.waitFor({ state: "attached", timeout: 15_000 });
+	for (let i = 0; i < 20; i++) {
+		const closed = p.locator(
+			`#wslist .frow.dir:not(.open):visible[title="${prefix}"], #wslist .frow.dir:not(.open):visible[title^="${prefix}/"]`,
+		);
+		if ((await closed.count()) === 0) return;
+		await closed.first().click();
+		await p.waitForTimeout(100);
+	}
 }
 
 // enterApp fires one MSP batch (models/past/history); the short auth
@@ -193,7 +247,8 @@ async function killPort(port: number): Promise<boolean> {
 	return false;
 }
 
-const SMOKE_WS = makeWorkspace();
+const SMOKE_GW_ROWS = [{ target: "smoke-gw", user: "smoke-admin" }];
+const SMOKE_WS = makeWorkspace({ devices: ["smoke-gw"] });
 const srv = await startServer({
 	dataHome: SMOKE_DATA_HOME,
 	configHome: SMOKE_CONFIG_HOME,
@@ -245,6 +300,9 @@ page.on("console", (msg) => {
 		}
 		consoleErrors.push(text);
 		const url = msg.location().url;
+		// Same idea as SMOKE-500: a bare network error names no route.
+		if (text.includes("net::ERR_"))
+			console.log("SMOKE-CONSOLE", text.slice(0, 120), url);
 		if (url.includes("/api/artifact")) {
 			artifactBlocks.push(text);
 			artifactBlockUrls.push(url);
@@ -281,6 +339,22 @@ page.on("pageerror", (err) =>
 	pageErrors.push(`pageerror: ${String(err).slice(0, 300)}`),
 );
 // T38: twins are on-demand — count /api/twins fetches from navigation on.
+// T162: device reads (status poll, pane stats) against unroutable
+// TEST-NET hosts run until centrs times out; a leg that stops its
+// server under one logs ERR_CONNECTION_REFUSED. Track them so such a
+// leg can settle first.
+const deviceReads = new Set<Request>();
+page.on("request", (req) => {
+	if (/^\/api\/devices\/.+\/(status|stats)$/.test(new URL(req.url()).pathname))
+		deviceReads.add(req);
+});
+page.on("requestfinished", (req) => deviceReads.delete(req));
+page.on("requestfailed", (req) => deviceReads.delete(req));
+async function settleDeviceReads(timeoutMs = 60_000): Promise<void> {
+	const until = Date.now() + timeoutMs;
+	while (deviceReads.size > 0 && Date.now() < until)
+		await new Promise((r) => setTimeout(r, 200));
+}
 let twinsFetches = 0;
 page.on("request", (req) => {
 	if (new URL(req.url()).pathname === "/api/twins") twinsFetches++;
@@ -1180,11 +1254,8 @@ try {
 			)
 			.then(() => true)
 			.catch(() => false);
-	// Pill for the restore legs (the T49 flow: card → Add → pill).
-	await page.locator('.dev[data-key="dev-smoke-gw"]').click();
-	await page.waitForSelector("#pdev-add:visible", { timeout: 10_000 });
-	await page.click("#pdev-add");
-	await page.waitForSelector('.tpill[data-dev="smoke-gw"]', { timeout: 5_000 });
+	// Pill for the restore legs (the card's Add to Chat → pill).
+	await addToChat(page, "smoke-gw");
 
 	// L1: 500 with why. Both attempt bodies are captured to prove the
 	// retry carries exactly the restored payload (no double upload).
@@ -2336,15 +2407,16 @@ try {
 	);
 	await page.screenshot({ path: path.join(OUT, "4-output-tab.png") });
 
-	// T38: device card shows the cdb link (device cdb key, D23).
-	const devLive = await page
-		.locator("#devlist .dev .live")
-		.first()
-		.textContent();
+	// T38: the device card carries its cdb link (D23/D53: the card id
+	// is the CDB target). The live line shows it until a status read
+	// lands; after that it shows the read's state, so read the base.
+	const devBase = await page
+		.locator('#devlist .dev[data-key="dev-smoke-gw"]')
+		.getAttribute("data-base");
 	check(
 		"device card shows cdb link",
-		devLive?.includes("cdb smoke-cdb") === true,
-		devLive ?? "no card",
+		devBase === "cdb smoke-gw · smoke-admin",
+		devBase ?? "no card",
 	);
 
 	// T38: twins on-demand — no fetch at boot, fetch on first tab show.
@@ -3211,7 +3283,7 @@ try {
 	});
 	const credAdd = childProcess.spawnSync(
 		"centrs",
-		["devices", "add", "smoke-cdb", "--user", "smoke-admin"],
+		["devices", "add", "smoke-gw", "--user", "smoke-admin"],
 		{ env: credEnv },
 	);
 	if (
@@ -3242,15 +3314,25 @@ try {
 			undefined,
 			{ timeout: 15_000 },
 		);
-		await page.waitForSelector("#devlist .dev .credrow button", {
+		await page.waitForSelector("#devlist .dev button.access", {
 			timeout: 15_000,
 		});
-		const credLabel =
-			(await page.locator("#devlist .dev .credrow button").textContent()) ?? "";
+		// The card's Access button (T163e) is the credentials affordance:
+		// marked need + titled when the record has no saved password.
+		const credAcc = await page.evaluate(() => {
+			const b = document.querySelector("#devlist .dev button.access");
+			return {
+				text: b?.textContent ?? "",
+				need: b?.classList.contains("need") ?? false,
+				title: b?.getAttribute("title") ?? "",
+			};
+		});
 		check(
 			"card without a password gets the set-credentials affordance",
-			credLabel === "Set credentials",
-			credLabel,
+			credAcc.text === "Access" &&
+				credAcc.need &&
+				/no saved password/i.test(credAcc.title),
+			JSON.stringify(credAcc),
 		);
 		await page.screenshot({ path: path.join(OUT, "13-creds-card.png") });
 		// The dead-host stats call fails honestly, and the device tab
@@ -3265,8 +3347,9 @@ try {
 			{ timeout: 60_000 },
 		);
 		check(
-			"device tab failure shows Set credentials",
-			(await page.locator("#pdev-cred:visible").count()) === 1,
+			"device tab failure shows Access",
+			(await page.locator("#pdev-cred:visible").count()) === 1 &&
+				(await page.locator("#pdev-cred").textContent()) === "Access",
 		);
 		await page.click("#pdev-cred");
 		await page.waitForSelector("#credmodal.open", { timeout: 10_000 });
@@ -3320,9 +3403,10 @@ try {
 			{ timeout: 30_000 },
 		);
 		await page.waitForFunction(
-			() =>
-				document.querySelector("#devlist .dev .credrow button")?.textContent ===
-				"Credentials",
+			() => {
+				const b = document.querySelector("#devlist .dev button.access");
+				return !!b && !b.classList.contains("need");
+			},
 			undefined,
 			{ timeout: 30_000 },
 		);
@@ -3352,7 +3436,7 @@ try {
 	});
 	const t72Add = childProcess.spawnSync(
 		"centrs",
-		["devices", "add", "smoke-cdb", "--user", "t72-admin"],
+		["devices", "add", "smoke-gw", "--user", "t72-admin"],
 		{ env: t72Env },
 	);
 	if (
@@ -3397,7 +3481,7 @@ try {
 			undefined,
 			{ timeout: 15_000 },
 		);
-		await page.waitForSelector("#devlist .dev .credrow button", {
+		await page.waitForSelector("#devlist .dev button.access", {
 			timeout: 15_000,
 		});
 		const t72ModalOpen = (): Promise<boolean> =>
@@ -3407,7 +3491,7 @@ try {
 					true,
 			);
 		const t72OpenModal = async (): Promise<void> => {
-			await page.locator("#devlist .dev .credrow button").first().click();
+			await page.locator("#devlist .dev button.access").first().click();
 			await page.waitForSelector("#credmodal.open", { timeout: 10_000 });
 			await page.waitForFunction(
 				() =>
@@ -3614,7 +3698,7 @@ try {
 		check(
 			"t72 Enter submits the modal",
 			(await t72ModalOpen()) === false && t72CredPosts === 1,
-			`open=${await t72ModalOpen()} posts=${t72CredPosts}`,
+			`open=${await t72ModalOpen()} posts=${t72CredPosts} err=${await page.locator("#crederr").textContent()} focus=${await page.evaluate(() => document.activeElement?.id ?? "")}`,
 		);
 		await t72EnsureClosed();
 
@@ -3680,6 +3764,17 @@ try {
 		}
 		await page.locator("#credcancel").click();
 		await t72WaitClosed();
+		// D53: the CDB is the device list, so any list reload while it
+		// was parked emptied the cards. Reload with it restored before
+		// reopening through the card's Access button.
+		await page.evaluate(() =>
+			(
+				window as unknown as { __reloadDevices: () => Promise<void> }
+			).__reloadDevices(),
+		);
+		await page.waitForSelector("#devlist .dev button.access", {
+			timeout: 15_000,
+		});
 		const t72WarnsBefore = t72Warns.length;
 		await t72OpenModal();
 		nodeFs.renameSync(t72Cdb, `${t72Cdb}.parked`);
@@ -3778,11 +3873,20 @@ try {
 		);
 		await page.waitForFunction(
 			() =>
-				(document.getElementById("leftfoot")?.textContent ?? "").includes(
-					"2 devices",
+				/ devices? · /.test(
+					document.getElementById("leftfoot")?.textContent ?? "",
 				),
 			undefined,
 			{ timeout: 15_000 },
+		);
+		// D53 replaces "2 devices · router.toml": [[device]] tables are
+		// plain TOML now; only the (absent) device.cdb lists devices.
+		check(
+			"t84 router.toml devices do not list (CDB only)",
+			(await page.locator("#leftfoot").textContent()) ===
+				"0 devices · centrs CDB" &&
+				(await page.locator("#devlist .dev").count()) === 0,
+			(await page.locator("#leftfoot").textContent()) ?? "",
 		);
 		await page.locator('#wslist [data-path="router.toml"]').click();
 		await page.waitForSelector("#toml-secs input, #toml-secs textarea", {
@@ -3818,18 +3922,21 @@ try {
 		await t84Reload;
 		await page.waitForFunction(
 			() =>
-				(document.getElementById("leftfoot")?.textContent ?? "").includes(
-					"2 devices",
+				/ devices? · /.test(
+					document.getElementById("leftfoot")?.textContent ?? "",
 				),
 			undefined,
 			{ timeout: 15_000 },
 		);
-		const t84Foot = (await page.locator("#leftfoot").textContent()) ?? "";
+		// The file keeps both tables after the visit (no flattening).
+		const t84Toml = nodeFs.readFileSync(
+			path.join(t84Ws, "router.toml"),
+			"utf8",
+		);
 		check(
 			"t84 devices survive after reload",
-			t84Foot === "2 devices · router.toml" &&
-				(await page.locator("#devlist .dev").count()) === 2,
-			t84Foot,
+			t84Toml.includes('id = "t84-a"') && t84Toml.includes('id = "t84-b"'),
+			t84Toml.slice(0, 120),
 		);
 		await page.screenshot({ path: path.join(OUT, "17-t84-devices.png") });
 	} finally {
@@ -3958,14 +4065,17 @@ try {
 			});
 		};
 		const artFrame = page.frameLocator("#artframe");
-		// Render primaries surface in recents with the ART kind.
+		// T143 replaces recents with the file tree: render primaries
+		// list under reports/render/<job>/ once the folders unfold, and
+		// open in the artifact viewer (the old ART chip is gone).
+		await expandTree(page, "reports");
 		for (const primary of ["topology.html", "report.html"]) {
 			const row = page.locator(`#wslist .docrow[data-path$="${primary}"]`);
 			await row.first().waitFor({ timeout: 10_000 });
 			check(
-				`t83 recents lists the ${primary} primary`,
+				`t83 file tree lists the ${primary} primary`,
 				(await row.count()) === 1 &&
-					((await row.first().locator(".kchip").textContent()) ?? "") === "ART",
+					(await row.first().getAttribute("data-goto")) === "pane-artifact",
 			);
 		}
 		// Offline proof: abort and record every request that is not to
@@ -4434,12 +4544,15 @@ try {
 	// across reload; a pending approval survives a reload via
 	// /api/chat/pending. Screenshots 30-34.
 	const t50 = stubT50Bin();
+	// The fake bin shadows centrs (hermetic); its CDB list answers
+	// smoke-gw, the target seeded into the workspace device.cdb.
+	stubT50CdbRows(t50.bin, SMOKE_GW_ROWS);
 	await withT50Env(t50.log, async () => {
 		const srvT = await startServer({
 			dataHome: mktmp("ui-smoke-t50-dh-"),
 			configHome: SMOKE_CONFIG_HOME,
 			allowOpenCdb: true,
-			workspace: makeWorkspace(),
+			workspace: makeWorkspace({ devices: ["smoke-gw"] }),
 			provider: "echo",
 			museHome: makeHome(),
 			toolBinDir: t50.bin,
@@ -4819,12 +4932,13 @@ try {
 			// the pill travels with the send, the sent bubble shows
 			// a chip (never the raw preamble), and the fake's turn
 			// input carries the validated context line.
-			await page.locator('.dev[data-key="dev-smoke-gw"]').click();
-			await page.waitForSelector("#pdev-add:visible", { timeout: 10_000 });
-			await page.click("#pdev-add");
-			await page.waitForSelector('.tpill[data-dev="smoke-gw"]', {
-				timeout: 5_000,
-			});
+			await addToChat(page, "smoke-gw");
+			check(
+				"t49 card flips to in this chat",
+				(await page
+					.locator('.dev[data-key="dev-smoke-gw"].targeted .inchat')
+					.count()) === 1,
+			);
 			await page.fill("#chatinput", "T49-TARGET-PROBE");
 			await page.click("#sendbtn");
 			await page.waitForFunction(
@@ -4972,10 +5086,13 @@ try {
 	// visible; the settings row lists the seeded tool rules; the
 	// agent-visible results ride the turn text. Screenshot 44.
 	const t55 = stubT50Bin();
+	// The fake bin shadows centrs (hermetic); its CDB list answers
+	// smoke-gw, the target seeded into the workspace device.cdb.
+	stubT50CdbRows(t55.bin, SMOKE_GW_ROWS);
 	await withT50Env(t55.log, async () => {
 		// T106 keeps the workspace path: the quoted-file leg below
 		// drops a file with a quote in its name into it.
-		const ws55 = makeWorkspace();
+		const ws55 = makeWorkspace({ devices: ["smoke-gw"] });
 		const srv55 = await startServer({
 			dataHome: mktmp("ui-smoke-t55-dh-"),
 			configHome: SMOKE_CONFIG_HOME,
@@ -4995,6 +5112,11 @@ try {
 				{ timeout: 15_000 },
 			);
 			await batch55;
+			// ui_select_device checks ids against the last device list
+			// (T162 item 2, D55): let the CDB list land first.
+			await page.waitForSelector('.dev[data-key="dev-smoke-gw"]', {
+				timeout: 30_000,
+			});
 			const preTools =
 				(await page.locator("#preallow-tools").textContent()) ?? "";
 			check(
@@ -5032,7 +5154,8 @@ try {
 			const docBody = (await page.locator("#doc-body").textContent()) ?? "";
 			check(
 				"t55 opened tab shows the file body",
-				docBody.includes("# drift"),
+				// T142 renders markdown: the "# drift" heading shows as h1.
+				(await page.locator("#doc-body h1").first().textContent()) === "drift",
 				docBody.slice(0, 80),
 			);
 			// The pill lives in the chat pane, behind the opened doc
@@ -5102,7 +5225,7 @@ try {
 			const qBody = (await page.locator("#doc-body").textContent()) ?? "";
 			check(
 				"t106 quoted file shows its body",
-				qBody.includes("# quoted"),
+				(await page.locator("#doc-body h1").first().textContent()) === "quoted",
 				qBody.slice(0, 80),
 			);
 			// Quiescence before the stop (same T39-flake guard as the
@@ -5122,53 +5245,28 @@ try {
 	// T110: agent-driven add-device. The relay opens the SAME
 	// credentials modal in add mode (title, context, prefilled user,
 	// empty password, display-only host); the owner-typed save
-	// appends router.toml and creates the CDB record through a
-	// stateful fake centrs, and the new card appears. Screenshots
-	// 46-47.
-	const addBin = mktmp("ui-smoke-t110-bin-");
-	const addState = mktmp("ui-smoke-t110-state-");
-	nodeFs.writeFileSync(
-		path.join(addBin, "centrs"),
-		"#!/bin/sh\n" +
-			[
-				'log="$0-argv.log"; printf "%s\\n" "$*" >> "$log"',
-				'state_dir="$SMOKE_ADD_STATE"',
-				'rec="$state_dir/records.txt"',
-				'fail() { printf "%s\\n" "{\\"ok\\":false,\\"error\\":{\\"code\\":\\"$1\\",\\"summary\\":\\"$2\\"},\\"warnings\\":[],\\"tips\\":[],\\"meta\\":{}}" >&2; exit 0; }',
-				'entry() { printf "%s\\n" "{\\"ok\\":true,\\"data\\":{\\"action\\":\\"$3\\",\\"target\\":\\"$1\\",\\"entry\\":{\\"target\\":\\"$1\\",\\"recordType\\":5,\\"recordTypeName\\":\\"ipAdmin\\",\\"group\\":\\"\\",\\"user\\":\\"$2\\",\\"session\\":\\"\\",\\"comment\\":\\"\\",\\"commentMirror\\":\\"\\",\\"profile\\":\\"<none>\\",\\"savedPassword\\":true}},\\"warnings\\":[],\\"tips\\":[],\\"meta\\":{}}"; }',
-				'has_cdb=""; want=""; target=""; user=""; prev=""',
-				'for a in "$@"; do',
-				'  if [ "$prev" = "--cdb-file" ]; then has_cdb="$a";',
-				'  elif [ "$prev" = "--user" ]; then user="$a";',
-				'  elif [ "$a" = "show" ] || [ "$a" = "list" ] || [ "$a" = "add" ]; then want="$a";',
-				'  elif [ "$want" != "" ] && [ "$target" = "" ] && [ "$prev" != "--cdb-file" ]; then',
-				'    case "$a" in -*|ssh-key=*) ;; *) target="$a";; esac;',
-				"  fi",
-				'  prev="$a"',
-				"done",
-				'if [ "$1" != "devices" ]; then echo "stub-centrs 9.9.9-t110"; exit 0; fi',
-				'if [ -n "$has_cdb" ] && [ ! -f "$has_cdb" ]; then fail "cdb/not-found" "CDB file not found"; fi',
-				'if [ "$want" = "list" ]; then printf "%s\\n" "{\\"ok\\":true,\\"data\\":[],\\"warnings\\":[],\\"tips\\":[],\\"meta\\":{}}"; exit 0; fi',
-				'line="$(grep -F "$target	" "$rec" 2>/dev/null | head -1)"',
-				'if [ "$want" = "show" ]; then',
-				'  if [ -z "$line" ]; then fail "cdb/not-found-target" "No CDB entry matches"; fi',
-				'  u="$(printf "%s" "$line" | cut -f2)"; entry "$target" "$u" "show"; exit 0',
-				"fi",
-				'if [ "$want" = "add" ]; then',
-				'  if [ -n "$line" ]; then fail "cdb/already-exists" "already exists"; fi',
-				'  printf "%s\\t%s\\n" "$target" "$user" >> "$rec"; entry "$target" "$user" "add"; exit 0',
-				"fi",
-				'fail "cdb/bad-subcommand" "unknown"',
-			].join("\n") +
-			"\n",
+	// creates the CDB record (D53: CDB-only, router.toml is never
+	// written) and the new card appears. Then the owner's own Add
+	// Device form (host typed) and Remove (confirm) on the same
+	// disposable CDB, through the bundled centrs. Screenshots 46-47.
+	const addWs = makeWorkspace({ devices: [] });
+	const addCdb = path.join(addWs, "device.cdb");
+	const addTomlBefore = nodeFs.readFileSync(
+		path.join(addWs, "router.toml"),
+		"utf8",
 	);
-	nodeFs.chmodSync(path.join(addBin, "centrs"), 0o755);
-	const addWs = makeWorkspace();
-	nodeFs.writeFileSync(path.join(addWs, "device.cdb"), "t110-smoke-fake-cdb\n");
-	// The shim reads SMOKE_ADD_STATE from its spawn env, which the
-	// server snapshots at boot — so it is set before startServer.
-	const savedAddState = process.env["SMOKE_ADD_STATE"];
-	process.env["SMOKE_ADD_STATE"] = addState;
+	const cdbShow = (target: string): { ok?: boolean; data?: unknown } => {
+		const r = childProcess.spawnSync(
+			"centrs",
+			["devices", "show", target, "--cdb-file", addCdb, "--format", "json"],
+			{ encoding: "utf8" },
+		);
+		try {
+			return JSON.parse(r.stdout || r.stderr || "{}");
+		} catch {
+			return {};
+		}
+	};
 	const addSrv = await startServer({
 		dataHome: mktmp("ui-smoke-t110-dh-"),
 		configHome: SMOKE_CONFIG_HOME,
@@ -5176,7 +5274,6 @@ try {
 		workspace: addWs,
 		provider: "echo",
 		museHome: makeHome(),
-		toolBinDir: addBin,
 		mcpToken: "smoke-t110-token",
 	});
 	try {
@@ -5238,21 +5335,123 @@ try {
 			undefined,
 			{ timeout: 15_000 },
 		);
-		await page.waitForSelector('.dev[data-key="dev-192-0-2-99"]', {
+		await page.waitForSelector('.dev[data-key="dev-192.0.2.99"]', {
 			timeout: 15_000,
 		});
 		check("t110 new device card appears after save", true);
-		const addToml = nodeFs.readFileSync(
-			path.join(addWs, "router.toml"),
-			"utf8",
-		);
+		const added = cdbShow("192.0.2.99") as {
+			ok?: boolean;
+			data?: { entry?: { user?: string; passwordSet?: boolean } };
+		};
 		check(
-			"t110 router.toml gains the device block",
-			addToml.includes('id = "192-0-2-99"') &&
-				addToml.includes('cdb = "192.0.2.99"'),
-			addToml.slice(-160),
+			"t110 save creates the CDB record with user and password",
+			added.ok === true &&
+				added.data?.entry?.user === "robot-admin" &&
+				added.data?.entry?.passwordSet === true,
+			JSON.stringify(added).slice(0, 200),
+		);
+		// D53 replaces the old "router.toml gains the device block":
+		// the CDB record is the whole device; router.toml stays as is.
+		check(
+			"t110 router.toml is not written (D53)",
+			nodeFs.readFileSync(path.join(addWs, "router.toml"), "utf8") ===
+				addTomlBefore,
 		);
 		await page.screenshot({ path: path.join(OUT, "47-t110-add-card.png") });
+		// The owner's Add Device form: same modal, host typed.
+		await page.click("#adddevice");
+		await page.waitForSelector("#credmodal.open", { timeout: 10_000 });
+		check(
+			"add-device form opens with an editable host, no record-check note",
+			(await page.locator("#credtitle").textContent()) === "Add device" &&
+				(await page.locator("#credf-host").isEditable()) &&
+				!(await page.locator("#credlimit").isVisible()),
+		);
+		await page.fill("#credf-host", "192.0.2.98");
+		await page.fill("#credf-user", "owner-admin");
+		await page.fill("#credf-password", "t162-form-secret");
+		await page.screenshot({ path: path.join(OUT, "47b-add-device-form.png") });
+		await page.click("#credsave");
+		await page.waitForFunction(
+			() =>
+				document.getElementById("credmodal")?.classList.contains("open") ===
+				false,
+			undefined,
+			{ timeout: 15_000 },
+		);
+		await page.waitForSelector('.dev[data-key="dev-192.0.2.98"]', {
+			timeout: 15_000,
+		});
+		const formAdded = cdbShow("192.0.2.98") as {
+			ok?: boolean;
+			data?: { entry?: { user?: string } };
+		};
+		check(
+			"add-device form creates the card and the CDB record",
+			formAdded.ok === true && formAdded.data?.entry?.user === "owner-admin",
+			JSON.stringify(formAdded).slice(0, 200),
+		);
+		check(
+			"left foot counts both CDB devices",
+			(await page.locator("#leftfoot").textContent()) ===
+				"2 devices · centrs CDB",
+			(await page.locator("#leftfoot").textContent()) ?? "",
+		);
+		// Remove: device pane → Remove → confirm. The card and the
+		// record go; the other device stays.
+		await page.locator('.dev[data-key="dev-192.0.2.98"] .name').click();
+		await page.waitForSelector("#pane-device.active", { timeout: 10_000 });
+		// Let the pane's stats read (unroutable TEST-NET host: it waits
+		// out centrs' timeout) land first; a read that reaches the server
+		// after the remove is an honest 404 for a device that is gone.
+		await settleDeviceReads();
+		let removePrompt = "";
+		page.once("dialog", (d) => {
+			removePrompt = d.message();
+			void d.accept();
+		});
+		await page.click("#pdev-remove");
+		await page.waitForSelector('.dev[data-key="dev-192.0.2.98"]', {
+			state: "detached",
+			timeout: 15_000,
+		});
+		check(
+			"remove confirms by name",
+			removePrompt.includes("Remove 192.0.2.98 from the centrs CDB"),
+			removePrompt,
+		);
+		check(
+			"remove drops the CDB record and keeps the other device",
+			cdbShow("192.0.2.98").ok !== true &&
+				cdbShow("192.0.2.99").ok === true &&
+				(await page.locator('.dev[data-key="dev-192.0.2.99"]').count()) === 1,
+		);
+		// T162 item 4: a target WinBox/centrs accepts but that is no
+		// valid new host (space, semicolon) still removes from the UI.
+		const oddTarget = "lab router; x";
+		const oddAdd = childProcess.spawnSync(
+			"centrs",
+			["devices", "add", oddTarget, "--user", "admin", "--cdb-file", addCdb],
+			{ encoding: "utf8" },
+		);
+		if (oddAdd.status !== 0) throw new Error("t162 odd-target seed failed");
+		await page.evaluate(() =>
+			(
+				window as unknown as { __reloadDevices: () => Promise<void> }
+			).__reloadDevices(),
+		);
+		const oddCard = page.locator(`.dev[data-key="dev-${oddTarget}"]`);
+		await oddCard.locator(".name").click({ timeout: 15_000 });
+		await page.waitForSelector("#pane-device.active", { timeout: 10_000 });
+		await settleDeviceReads();
+		page.once("dialog", (d) => void d.accept());
+		await page.click("#pdev-remove");
+		await oddCard.waitFor({ state: "detached", timeout: 15_000 });
+		check(
+			"remove takes a CDB target with spaces and metacharacters",
+			cdbShow(oddTarget).ok !== true && cdbShow("192.0.2.99").ok === true,
+			(await page.locator("#pdev-note").textContent()) ?? "",
+		);
 		// Quiescence before the stop (same T39-flake guard as the
 		// T50 leg above).
 		await page.evaluate(async () => {
@@ -5263,9 +5462,9 @@ try {
 			);
 		});
 	} finally {
+		// Poll reads of 192.0.2.99 wait out centrs' own timeout.
+		await settleDeviceReads();
 		await addSrv.stop();
-		if (savedAddState === undefined) delete process.env["SMOKE_ADD_STATE"];
-		else process.env["SMOKE_ADD_STATE"] = savedAddState;
 	}
 
 	// T50 follow-up: first-connect recovery, settled-elsewhere
@@ -5619,12 +5818,15 @@ try {
 	// while-running contract (both buttons disabled with a Stop
 	// tooltip; the routes 409). Screenshots 48-50.
 	const t60 = stubT50Bin();
+	// The fake bin shadows centrs (hermetic); its CDB list answers
+	// smoke-gw, the target seeded into the workspace device.cdb.
+	stubT50CdbRows(t60.bin, SMOKE_GW_ROWS);
 	await withT50Env(t60.log, async () => {
 		const srvS = await startServer({
 			dataHome: mktmp("ui-smoke-t60-dh-"),
 			configHome: SMOKE_CONFIG_HOME,
 			allowOpenCdb: true,
-			workspace: makeWorkspace(),
+			workspace: makeWorkspace({ devices: ["smoke-gw"] }),
 			provider: "echo",
 			museHome: makeHome(),
 			toolBinDir: t60.bin,
