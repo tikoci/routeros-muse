@@ -227,7 +227,14 @@
   .q-opt.picked { border-color: var(--accent); background: var(--accent-dim); }
   .q-opt .ql { font-weight: 650; font-size: 12.5px; flex: none; }
   .q-opt .qd { font-size: 11.5px; color: var(--muted); }
-  .q-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .q-btns { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .q-need { background: none; border: none; padding: 0 4px; font: 600 12px var(--sans); color: var(--amber); cursor: pointer; }
+  .q-need:disabled { cursor: default; color: var(--faint); }
+  .q-need:not(:disabled):hover { text-decoration: underline; }
+  .q-card .q-q { border-left: 2px solid transparent; padding-left: 8px; margin-left: -10px; }
+  .q-card .q-q.q-open { border-left-color: var(--amber); }
+  .q-flash { animation: qflash 1.2s ease-out; }
+  @keyframes qflash { 0% { background: var(--amber-dim); } 100% { background: transparent; } }
   .defbtns { display: flex; gap: 8px; padding: 2px 2px 3px 88px; }
   .minibtn.cur { border-color: var(--accent); color: var(--text); }
   .tobj { font-size: 12.5px; margin: 0 0 6px; }
@@ -1006,6 +1013,15 @@
   let NO_WS = false;
   function idlePlaceholder() { return NO_WS ? "Ask about your devices (no workspace attached)…" : "Ask about this network…"; }
   let META_AUTH = "unknown";
+  // Open question prompts (set by updateWaiting). While one waits, a
+  // typed message is only queued: muse delivers it after the prompt is
+  // answered or declined, so the composer says so instead of inviting
+  // a reply that seems to go nowhere.
+  let QUESTIONS_PENDING = 0;
+  function composerPlaceholder() {
+    if (QUESTIONS_PENDING > 0) return "Answer the question above first — messages typed here wait until then…";
+    return AGENT_RUNNING ? "Reply or steer while it runs…" : composerIdlePlaceholder();
+  }
   function composerIdlePlaceholder() { return META_AUTH === "absent" ? "Meta login required — run `muse login`, then Recheck…" : idlePlaceholder(); }
   function refreshSendVisibility() {
     // P2-5: adopting borrows the running visual (Send hidden, Stop
@@ -1181,7 +1197,7 @@
     document.getElementById("runstat").style.display = on ? "" : "none";
     document.getElementById("runstat").title = on ? "Agent is running" : "Agent is idle";
     refreshSendVisibility();
-    document.getElementById("chatinput").placeholder = on ? "Reply or steer while it runs…" : composerIdlePlaceholder();
+    document.getElementById("chatinput").placeholder = composerPlaceholder();
     markUnread(false);
     if (!on) document.getElementById("mainstat").innerHTML = "";
     else if (document.querySelector('.ctab.main.active')) document.getElementById("mainstat").innerHTML = '<span class="mdot"></span>';
@@ -3182,6 +3198,8 @@
     // T49: capture the pill targets in the same atomic prefix as the
     // images (T69): they travel with this send, and only this send.
     const targets = pillTargets();
+    // Sent while a question waits: muse queues it behind the prompt.
+    const queuedBehindQuestion = QUESTIONS_PENDING > 0;
     // T56: snapshot the dispatch for failSend (restore + run scoping).
     const saved = { text, images, targets, wasRunning: AGENT_RUNNING, liveBefore: LIVE_TURN, epoch: STOP_EPOCH + 1 };
     STOP_EPOCH = saved.epoch;
@@ -3211,6 +3229,7 @@
       if (typeof j.turnId === "string") {
         LIVE_TURN = j.turnId;
       }
+      if (queuedBehindQuestion) showToast("Queued — the agent reads this after you answer or decline the question above.", "warn");
     } catch (e) {
       failSend(saved, optimistic, (e && e.message) || String(e), null);
     }
@@ -3397,6 +3416,10 @@
 
   function updateWaiting() {
     const t = pendingTallies();
+    if (QUESTIONS_PENDING !== t.questions) {
+      QUESTIONS_PENDING = t.questions;
+      $("chatinput").placeholder = composerPlaceholder();
+    }
     const w = document.getElementById("waiting");
     if (t.total === 0) { w.style.display = "none"; return; }
     w.style.display = "";
@@ -3618,6 +3641,7 @@
         min: typeof sel.minSelections === "number" ? sel.minSelections : 1,
         max: typeof sel.maxSelections === "number" ? sel.maxSelections : null,
         box: null,
+        header: typeof q.header === "string" ? q.header : "",
       };
       state.picks.set(q.id, st);
       const box = document.createElement("div");
@@ -3673,14 +3697,36 @@
     decline.className = "btn q-decline";
     decline.textContent = "Decline";
     decline.addEventListener("click", () => cancelQuestion(p.userInputId));
+    // Answer arms only when every question has a pick; with several
+    // questions the first can be scrolled away, so name what is still
+    // open and jump to it.
+    const need = document.createElement("button");
+    need.type = "button";
+    need.className = "q-need";
+    need.addEventListener("click", () => {
+      const first = [...state.picks.values()].find((st) => !questionPicked(st));
+      if (!first || !first.box) return;
+      first.box.scrollIntoView({ block: "center" });
+      first.box.classList.remove("q-flash");
+      void first.box.offsetWidth;
+      first.box.classList.add("q-flash");
+    });
     btns.appendChild(answer);
     btns.appendChild(decline);
+    btns.appendChild(need);
     body.appendChild(btns);
     state.answerBtn = answer;
     state.declineBtn = decline;
+    state.needEl = need;
+    paintQuestionPicks(state);
     return shell.wrap;
   }
 
+  function questionPicked(st) {
+    if (!st.multi) return st.set.size === 1;
+    const max = st.max === null ? Infinity : st.max;
+    return st.set.size >= st.min && st.set.size <= max;
+  }
   function paintQuestionPicks(state) {
     for (const [, st] of state.picks) {
       if (!st.box) continue;
@@ -3690,14 +3736,21 @@
     }
     // Answer arms when every question has a host-acceptable pick: the
     // single choice, or a multiple within its selection bounds.
-    let ok = state.picks.size > 0;
+    const open = [];
     for (const [, st] of state.picks) {
-      if (st.multi) {
-        const max = st.max === null ? Infinity : st.max;
-        if (st.set.size < st.min || st.set.size > max) { ok = false; break; }
-      } else if (st.set.size !== 1) { ok = false; break; }
+      st.box.classList.toggle("q-open", !questionPicked(st));
+      if (!questionPicked(st)) open.push(st);
     }
+    const ok = state.picks.size > 0 && open.length === 0;
     if (state.answerBtn) state.answerBtn.disabled = !ok || state.busy;
+    if (state.needEl) {
+      const heads = open.map((st) => st.header).filter(Boolean);
+      state.needEl.hidden = ok || state.resolved;
+      state.needEl.textContent = state.picks.size > 1
+        ? "Still to answer: " + (heads.join(", ") || open.length + " question" + (open.length === 1 ? "" : "s")) + " ↑"
+        : "Pick an option to answer";
+      state.needEl.disabled = state.picks.size <= 1;
+    }
   }
 
   function questionPayload(state) {
@@ -3797,6 +3850,8 @@
       if (pill) pill.remove();
       if (rec.answerBtn) rec.answerBtn.disabled = true;
       if (rec.declineBtn) rec.declineBtn.disabled = true;
+      if (rec.needEl) rec.needEl.hidden = true;
+      for (const q of rec.el.querySelectorAll(".q-open")) q.classList.remove("q-open");
       const line = document.createElement("div");
       line.className = "q-resolved";
       const b = document.createElement("b");
@@ -5086,7 +5141,7 @@
   // T50: the waiting strip jumps to the first hold card still pending.
   document.getElementById("waiting").addEventListener("click", () => {
     const el = document.querySelector(".appr-card.hold-pending, .q-card.hold-pending");
-    if (el) el.scrollIntoView({ block: "center" });
+    if (el) el.scrollIntoView({ block: "start" });
   });
 
   function showLock(st) {

@@ -1679,3 +1679,25 @@ acceptance = "Decision recorded; if building, a smoke leg shows the side chat be
 blocked_by = []
 agent = "claude"
 updated = "2026-11-04"
+
+[[task]]
+id = "T165"
+title = "Multi-question prompts look stuck: Answer disabled with no reason, typed replies silently queue"
+status = "active"
+detail = "Developer 2026-11-04 test (drum82 SSTP session): the question card showed 'No access' picked but Answer disabled and the chat stuck. Cause from the session log: the request_user_input prompt carried two questions (sstp-fix above, drum82-access below); Answer arms only when every question has a pick, and the unpicked first question was scrolled out of view with nothing saying so. The owner then typed 'no access', which muse queued (inbox_item_queued) behind the still-open prompt, so nothing visibly happened. Fix: the card names what is still open ('Still to answer: SSTP fix ↑', jump + flash) and marks open questions; the composer placeholder says messages wait until the prompt is answered while one is pending, and a send made then toasts Queued (decided at dispatch, so the send that started the run never does); the waiting strip scrolls a card to its top."
+evidence = "Session ~/.local/share/muse/sessions/2026/11/04/01a1a612-b998-7dd1-abc4-b30d1357bdaf: seq 917 user_input_prompt_requested with 2 questions; seq 919 inbox_item_queued (the typed reply). Checked on the T50 fake (NEED-MULTI) with scratch/q.ts: 12/12 PASS (hint names both, then only the open one; Answer off until both; jump flashes; composer notice on and restored; no Queued toast for the starting send, one for the mid-prompt send; console clean); shot out/shots/q-1-open.png eyeballed. Smoke leg added beside the T50 question legs (t50 multi: 6 checks) but unexecuted until T162 lets the smoke reach the T50 block. Lint zero."
+acceptance = "The t50 multi smoke legs pass once T162 lands; make gate and records check pass."
+blocked_by = ["T162"]
+agent = "claude"
+updated = "2026-11-04"
+
+[[task]]
+id = "T166"
+title = "Question card: free-text answer per question (protocol freeText), grounded live first"
+status = "needed"
+detail = "From T165: owners answer questions by typing (drum82: 'no access'). The answer protocol allows {questionId, freeText} (≤500 chars, docs/design/t50-t55-wire-shapes.md) and /api/chat/question/answer already validates and forwards it, but freeText has never been sent to a real muse: only selectedLabel was exercised live. Capture a live request_user_input answered with freeText (does the model see it, does a question with options accept it) before adding an 'Other…' field per question. Do not ship the field on the schema alone."
+evidence = "grep freeText across docs/records/tests/tools 2026-11-04: only the schema line in t50-t55-wire-shapes.md; no capture."
+acceptance = "Live capture of a freeText answer settles answered and reaches the model; UI field + smoke leg; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-04"
