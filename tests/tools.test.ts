@@ -71,6 +71,19 @@ describe("package root and bundle", () => {
 		expect(toolBinDir(dir)).toBe(bin);
 	});
 
+	test("toolBinDir finds the hoisted bundle of an installed package", () => {
+		const dir = mktmp("t51-hoisted-");
+		const pkg = path.join(dir, "node_modules", "@tikoci", "routeros-muse");
+		nodeFs.mkdirSync(pkg, { recursive: true });
+		expect(toolBinDir(pkg)).toBeNull();
+		const bin = path.join(dir, "node_modules", ".bin");
+		nodeFs.mkdirSync(bin, { recursive: true });
+		expect(toolBinDir(pkg)).toBe(bin);
+		const own = path.join(pkg, "node_modules", ".bin");
+		nodeFs.mkdirSync(own, { recursive: true });
+		expect(toolBinDir(pkg)).toBe(own);
+	});
+
 	test("toolSource labels honestly", () => {
 		expect(toolSource("/x/node_modules/.bin")).toBe("package");
 		expect(toolSource(null)).toBe("ambient");

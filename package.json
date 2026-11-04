@@ -3,6 +3,14 @@
 	"version": "0.1.0-dev.0",
 	"description": "A RouterOS network workspace plus web UI that puts an agent beside your network, built on quickchr/centrs/rosetta.",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tikoci/routeros-muse.git"
+	},
+	"homepage": "https://github.com/tikoci/routeros-muse#readme",
+	"bugs": {
+		"url": "https://github.com/tikoci/routeros-muse/issues"
+	},
 	"type": "module",
 	"bin": {
 		"routeros-muse": "./src/index.ts"

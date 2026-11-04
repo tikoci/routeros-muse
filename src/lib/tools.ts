@@ -82,19 +82,29 @@ export function packageRoot(
 }
 
 /**
- * The package tool bundle (node_modules/.bin under the package root).
- * Null when the bundle is not installed — the honest ambient fallback.
+ * The package tool bundle: node_modules/.bin under the package root (a
+ * checkout), else the enclosing node_modules/.bin when this package is
+ * itself installed (bunx, bun add, -g), where Bun hoists our deps' bins.
+ * Null when neither exists — the honest ambient fallback.
  */
 export function toolBinDir(
 	pkgRoot: string | null = packageRoot(),
 ): string | null {
 	if (!pkgRoot) return null;
-	const bin = path.join(pkgRoot, "node_modules", ".bin");
-	try {
-		return nodeFs.statSync(bin).isDirectory() ? bin : null;
-	} catch {
-		return null;
+	const candidates = [path.join(pkgRoot, "node_modules", ".bin")];
+	const parts = pkgRoot.split(path.sep);
+	const nm = parts.lastIndexOf("node_modules");
+	if (nm > 0) {
+		candidates.push([...parts.slice(0, nm + 1), ".bin"].join(path.sep));
 	}
+	for (const bin of candidates) {
+		try {
+			if (nodeFs.statSync(bin).isDirectory()) return bin;
+		} catch {
+			// Not there: try the next candidate.
+		}
+	}
+	return null;
 }
 
 export function toolSource(binDir: string | null): ToolSource {
