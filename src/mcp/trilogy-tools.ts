@@ -24,7 +24,7 @@
 // DB resolves next to the entry.
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import { packageRoot } from "../lib/tools";
+import { bundleRoots, packageRoot } from "../lib/tools";
 import type { McpServerConfig } from "../msp/client";
 import {
 	mcpToolName,
@@ -83,22 +83,18 @@ export const ROSETTA_SEED_TOOLS: string[] = ROSETTA_TOOL_NAMES.filter(
 
 // T112: centrs via CLI this phase; centrs MCP returns after GitHub (T111 password channel)
 
-/** Absolute rosetta entry under a package root, or null when missing. */
+/** Absolute rosetta entry in a bundle root, or null when missing. */
 export function rosettaEntry(pkgRoot: string | null): string | null {
 	if (!pkgRoot) return null;
-	const entry = path.join(
-		pkgRoot,
-		"node_modules",
-		"@tikoci",
-		"rosetta",
-		"bin",
-		"rosetta.js",
-	);
-	try {
-		return nodeFs.statSync(entry).isFile() ? entry : null;
-	} catch {
-		return null;
+	for (const root of bundleRoots(pkgRoot)) {
+		const entry = path.join(root, "@tikoci", "rosetta", "bin", "rosetta.js");
+		try {
+			if (nodeFs.statSync(entry).isFile()) return entry;
+		} catch {
+			// Not there: try the next root.
+		}
 	}
+	return null;
 }
 
 export type SessionMcpConfig = UiMcpConfig & {

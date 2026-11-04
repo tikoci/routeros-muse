@@ -25,6 +25,7 @@ import { ensurePreallowReads, policyFile } from "../src/lib/preallow";
 import {
 	ROSETTA_MCP_SERVER,
 	ROSETTA_TOOL_NAMES,
+	rosettaEntry,
 	SEED_TOOL_NAMES,
 	sessionMcpServers,
 	trilogyToolName,
@@ -149,6 +150,25 @@ describe("sessionMcpServers builder", () => {
 		// stub above is ignored, only rosetta is missed.
 		expect(missed).toEqual([ROSETTA_MCP_SERVER]);
 		expect(Object.keys(cfg)).toEqual([UI_MCP_SERVER]);
+	});
+
+	test("installed package resolves the hoisted rosetta entry", () => {
+		const top = mktmp("t105-hoisted-");
+		const pkg = path.join(top, "node_modules", "@tikoci", "routeros-muse");
+		nodeFs.mkdirSync(pkg, { recursive: true });
+		const bin = path.join(top, "node_modules", "@tikoci", "rosetta", "bin");
+		nodeFs.mkdirSync(bin, { recursive: true });
+		nodeFs.writeFileSync(path.join(bin, "rosetta.js"), "// stub\n");
+		expect(rosettaEntry(pkg)).toBe(path.join(bin, "rosetta.js"));
+		const { servers: cfg, missed } = sessionMcpServers({
+			bridge: "/pkg/src/mcp/ui-bridge.ts",
+			bun: "/bin/bun",
+			url: "http://127.0.0.1:9999/",
+			token: "tok",
+			pkgRoot: pkg,
+		});
+		expect(missed).toEqual([]);
+		expect(Object.keys(cfg)).toContain(ROSETTA_MCP_SERVER);
 	});
 
 	test("missing package root omits rosetta, ui remains", () => {
