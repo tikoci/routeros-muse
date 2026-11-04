@@ -66,6 +66,16 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
+      # The suite is hermetic (fake provider, temp dirs) but still
+      # shells the real muse binary (echo MSP spawns `muse serve`,
+      # runCode probes doctor.toml) and t141 needs a real chromium.
+      # Same installs the smoke job relies on.
+      - name: Install muse
+        run: |
+          curl -fsSL https://dev.meta.ai/install.sh | bash
+          command -v muse && muse --version
+      - name: Playwright chromium
+        run: bunx playwright install --with-deps chromium
       - name: Fresh TMPDIR
         run: |
           mkdir -p "$RUNNER_TEMP/gate"
