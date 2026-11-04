@@ -3467,10 +3467,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const id = host;
 					const ports = cleanPorts(body.ports);
 					if (ports === null) {
-						return json({
-							ok: false,
-							why: "bad {ports} (known port keys, 1-65535)",
-						});
+						// Same status as /credentials (T162): a malformed body.
+						return json(
+							{ ok: false, why: "bad {ports} (known port keys, 1-65535)" },
+							400,
+						);
 					}
 					// Then create the CDB record via the T48 creation
 					// path ({missing:true}); never a parallel writer.

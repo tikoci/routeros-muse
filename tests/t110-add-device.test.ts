@@ -666,6 +666,35 @@ describe("POST /api/devices/add", () => {
 		}
 	});
 
+	test("bad {ports} is a 400 like /credentials and writes nothing (T162)", async () => {
+		const { bin, state } = stubT110Bin();
+		const ws = makeWorkspace();
+		const srv = await startT110Srv({ workspace: ws, state, bin });
+		try {
+			for (const ports of [
+				{ "www-port": "0" },
+				{ "www-port": "65536" },
+				{ "telnet-port": "23" },
+				"80",
+			]) {
+				const r = await postAdd(srv.url, {
+					host: "192.0.2.99",
+					user: "u",
+					password: "p",
+					ports,
+				});
+				expect(r.status).toBe(400);
+				expect(r.json).toEqual({
+					ok: false,
+					why: "bad {ports} (known port keys, 1-65535)",
+				});
+			}
+			expect(Object.keys(readState(state))).toHaveLength(0);
+		} finally {
+			await srv.stop();
+		}
+	});
+
 	test("no-workspace mode is CDB-only; id is the host target", async () => {
 		const { bin, state } = stubT110Bin();
 		const srv = await startT110Srv({ noWorkspace: true, state, bin });
