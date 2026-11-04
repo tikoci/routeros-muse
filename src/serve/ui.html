@@ -1835,7 +1835,8 @@
     const noteEl = document.getElementById("pdev-note");
     noteEl.textContent = "removing…";
     try {
-      const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/remove", { method: "POST" });
+      // The server refuses a POST without a JSON content type (403).
+      const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/remove", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       const j = await r.json();
       if (!j.ok) { noteEl.textContent = "remove failed: " + (j.why || "unknown"); return; }
       dropTarget(id);
@@ -2317,6 +2318,17 @@
   // T72 busy-blocks-close: every close path (Esc, backdrop, X,
   // Cancel) routes through here and is ignored mid-save. The global
   // Esc handler still closes the picker — only the credal close guards.
+  // Drop the in-flight save state. A successful save releases BEFORE
+  // the device reload (T162 sweep): releasing only in finally left Save
+  // disabled for the whole reload, so a modal reopened in that window
+  // could not submit, and a second save started then had its busy
+  // state undone by the first save's late finally.
+  function credRelease() {
+    credSaving = false;
+    document.getElementById("credsave").disabled = false;
+    document.getElementById("credcancel").disabled = false;
+    document.getElementById("credx").disabled = false;
+  }
   function closeCred() { if (credSaving) return; document.getElementById("credmodal").classList.remove("open"); credState = null; }
   async function openCred(id, contextErr) {
     // Never swap the modal under an in-flight save (its completion would
@@ -2326,6 +2338,7 @@
     document.getElementById("credsave").textContent = "Save to CDB";
     document.getElementById("credtitle").textContent = "Access · " + id;
     document.getElementById("credl-host").style.display = "none";
+    document.getElementById("credlimit").hidden = false;
     credFields(null, false);
     document.getElementById("credctx").textContent = "loading…";
     document.getElementById("crederr").textContent = "";
@@ -2368,6 +2381,8 @@
     document.getElementById("credtitle").textContent = host ? "Add device · " + host : "Add device";
     const hostEl = document.getElementById("credf-host");
     document.getElementById("credl-host").style.display = "";
+    // No record yet, so there are no record changes to check.
+    document.getElementById("credlimit").hidden = true;
     hostEl.value = host || "";
     hostEl.readOnly = !!host;
     credFields({ user: user || "" }, true);
@@ -2404,6 +2419,7 @@
     document.getElementById("credcancel").disabled = true;
     document.getElementById("credx").disabled = true;
     document.getElementById("crederr").textContent = "saving…";
+    let released = false;
     try {
       const r = await fetch("/api/devices/" + encodeURIComponent(credState.id) + "/credentials", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json();
@@ -2415,7 +2431,8 @@
         // The save is done: drop the in-flight flag before the internal
         // close (closeCred guards only the user close paths mid-save).
         credFields(null, false);
-        credSaving = false;
+        credRelease();
+        released = true;
         closeCred();
         await window.__reloadDevices();
         renderDevice(id);
@@ -2432,10 +2449,7 @@
     } catch (e) {
       document.getElementById("crederr").textContent = "unavailable: " + e.message;
     } finally {
-      credSaving = false;
-      document.getElementById("credsave").disabled = false;
-      document.getElementById("credcancel").disabled = false;
-      document.getElementById("credx").disabled = false;
+      if (!released) credRelease();
     }
   }
   // T110 add-mode save: same T72 guards as saveCred (double-submit,
@@ -2471,6 +2485,7 @@
     document.getElementById("credcancel").disabled = true;
     document.getElementById("credx").disabled = true;
     document.getElementById("crederr").textContent = "saving…";
+    let released = false;
     try {
       const r = await fetch("/api/devices/add", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json();
@@ -2478,7 +2493,8 @@
         const doneId = j.id || id;
         document.getElementById("credf-host").value = "";
         credFields(null, false);
-        credSaving = false;
+        credRelease();
+        released = true;
         closeCred();
         await window.__reloadDevices();
         renderDevice(doneId);
@@ -2491,10 +2507,7 @@
     } catch (e) {
       document.getElementById("crederr").textContent = "unavailable: " + e.message;
     } finally {
-      credSaving = false;
-      document.getElementById("credsave").disabled = false;
-      document.getElementById("credcancel").disabled = false;
-      document.getElementById("credx").disabled = false;
+      if (!released) credRelease();
     }
   }
   document.getElementById("credx").addEventListener("click", closeCred);

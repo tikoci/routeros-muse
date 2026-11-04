@@ -439,3 +439,14 @@ outcome = "Developer 2026-11-03: the default read set includes the common file r
 blocked_by = []
 agent = ""
 updated = "2026-11-03"
+
+[[decision]]
+id = "D55"
+title = "ui_select_device: where the relay's known-device set comes from"
+status = "open"
+detail = "T162 item 2. The ui_select_device relay (server.ts handleRelay) accepts an id only if it is in knownDeviceIds, the set the last successful GET /api/devices left behind. Consequences: (i) it is empty until some browser tab has listed devices, so an agent that selects before the UI loaded gets 'unknown device id' for a real device; (ii) it is one set per server, shared by every client of that server (all clients see the same device.cdb, so sharing is mostly harmless, but a locked tab and an unlocked tab feed the same set); (iii) a failed list (locked CDB, centrs error) keeps the old ids, so a removed or renamed target can still be selected until the next good list; Remove deletes its id, Add does not insert one until the next list. The relay has no unlock env of its own, which is why it trusts the UI list instead of asking centrs. Options: (a) keep the UI-list snapshot but fail closed: a failed list clears the set, Add inserts its id, and the miss why says the device list has not loaded; no extra spawns. (b) The relay lists the CDB itself on every call, with the env of the worker session that owns the MCP token (workerEnv already carries that session's unlock); exact and independent of tabs, one centrs devices list spawn per select, and it fails when that session is locked. (c) Hybrid: answer from the snapshot on a hit; on a miss, re-list with the owning worker's env once and refresh the set before refusing; a failed list clears the set (fail closed). (d) Drop the server check: always emit ui/select-device and let each tab add a pill only for a card it renders; cheapest, but the agent loses an honest refusal and every tab must re-check. Recommended default: (c). It keeps the common path spawn-free, removes the 'UI not loaded yet' false refusal and the stale-id window, and keeps the agent's answer honest; per-session snapshots are not needed while one server binds one CDB. Not implemented in T162; T169 executes the outcome."
+decided = ""
+outcome = ""
+blocked_by = []
+agent = ""
+updated = "2026-11-04"
