@@ -1536,3 +1536,80 @@ acceptance = "Smoke leg at a compact viewport: no-workspace start shows the Work
 blocked_by = []
 agent = ""
 updated = "2026-11-03"
+
+[[task]]
+id = "T152"
+title = "Session stats come back empty: context ring never fills, popover shows dashes"
+status = "needed"
+detail = "Developer test drive 2026-11-03: the context ring by the session timer stays empty, and the Session popover shows Model …, Context — · 1 msgs, Tokens — total, Turns 0 after a session that ran several turns. ui.html refreshStatpop fills both the ring (ctxring strokeDashoffset) and the popover from GET /api/chat/stats; when contextPct, totalTokens and model are absent the ring resets to empty and the fields keep placeholders. So the server stats source is the likely fault, not the ring drawing. Find which MSP events or session fields /api/chat/stats reads, and why they are empty for this session (provider not reporting usage, wrong session id after a reset, or stats read before the first turn completes)."
+evidence = "Developer screenshot 2026-11-03 (Session · 0m popover, ring empty at 2:00). ui.html refreshStatpop sets ctxring only when j.contextPct != null. Session log ~/.local/share/muse/sessions/2026/11/03/01a1a390-.../session.jsonl has 18 model_completed events."
+acceptance = "Fail-first test on /api/chat/stats with a recorded session that has usage: contextPct, totalTokens, turns and model are populated; ring fills in the UI smoke; make gate passes."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T153"
+title = "Probe: does a shell redirect run under a seeded read rule (echo x > file)?"
+status = "needed"
+detail = "D54 seeded echo and cat. Muse records pipeline stages as argv with redirects stripped (session log stage_evidence shows cat workspace.toml for cat workspace.toml 2>&1), so it is unknown whether echo x > router.toml prompts as a write or runs under the echo rule. Under :ask-me the sandbox blocks writes outside the workspace, but the workspace itself is writable. Probe on a real muse session in Ask first: run echo x > probe.txt, cat a > b and printf-free variants; record whether each prompts. If a redirect runs unprompted, decide between dropping echo/cat from the seed and a muse-side fix."
+evidence = "D54; SECURITY.md section 3 note; stage_evidence in session 01a1a390-1187-7d22-b359-e1985ede24e1."
+acceptance = "Command plus output for each probe recorded in evidence; SECURITY.md updated with the result; if needed, READ_COMMANDS changed with a test."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T154"
+title = "Add Device prompt follows check-dialog-verify; minimal AGENTS.md names the device flow; Open File label"
+status = "done"
+detail = "Developer test drive 2026-11-03: the Add Device button prompt asked for device id, site, role and reachability and said to record it in router.toml (pre-T110, pre-D53), so the agent built a TOML walkthrough, hexdumped device.cdb and never used ui_add_device, which was in its tool catalog. New prompt: ask for host and user, check centrs devices list --json for a duplicate, call ui_add_device, never ask for the password in chat. templates/minimal/AGENTS.md gains a Devices section (CDB via centrs, CENTRS_CDB_FILE, ui_add_device, no shell devices add). The add-device skill's note about centrs devices list prompting is updated for D54. The workspace Add File button opens a file, so it is now Open File. The button itself stays until T136 replaces it with the form."
+evidence = "ui.html adddevice handler and #wsadd label; templates/minimal/AGENTS.md; templates/network/.agents/skills/add-device/SKILL.md step 0; session 01a1a390-1187-7d22-b359-e1985ede24e1 (hexdump call, write_todos with site/role, ui_add_device in the tool catalog)."
+acceptance = "make gate and records check pass."
+blocked_by = []
+agent = "claude"
+updated = "2026-11-03"
+
+[[task]]
+id = "T155"
+title = "make gate is red on the developer's Intel Mac at HEAD (path, PATH and timing failures)"
+status = "needed"
+detail = "Found 2026-11-03 while gating T154 on the Mac (not orca). All of these reproduce on clean b30e98f with T154 stashed: (1) the smoke runs centrs from PATH, and ~/.bun/bin/centrs is 0.1.9-next.23 (no devices init --encrypt), so it throws at ui-smoke.ts open smoke; the bundled node_modules/.bin/centrs 0.1.9 works, so the smoke should run the bundled copy, not depend on PATH order. (2) scaffold-safety symlinked-ancestor and templates spaced-path tests compare /var/folders against /private/var/folders (macOS tmp realpath). (3) serve doctor missing-tool alert never fires; picker chat-stats test times out at 5s; t106 127.0.0.2 relay bind fails (macOS has no 127.0.0.2 alias by default). (4) four network-template skill self-tests need chromium. (5) smoke reds: t56 500 idles the composer, t55 settings lists the seeded ui tools (still the … placeholder), and extra 500s on /api/chat/stats and /api/chat/pending with why client closed, so the expected-routes and console-500 checks fail."
+evidence = "/tmp/gate2.log (gate with bundled centrs first on PATH) and /tmp/smoke-head.log (smoke on clean HEAD: SMOKE RED (4), same four); bun test on scaffold-safety, templates, serve, t106 at HEAD: 107 pass, 5 fail."
+acceptance = "make gate green on the Intel Mac and still green on orca; no test skipped to get there."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T156"
+title = "Third access mode: ask first without the sandbox (promptUnmatched plus --disable-sandbox)"
+status = "needed"
+detail = "Developer test drive 2026-11-03: under Ask first (:ask-me) the shell sandbox blocks direct sockets, so native API, SSH, MAC-Telnet, MNDP and ping cannot reach a router, and REST only leaves through muse's proxy (which resets Basic-auth requests, T157). Allow all works but drops every prompt. Muse supports :ask-me plus --disable-sandbox (permissions.md P6 row 71: REACH and SUCCEED). There is no finer knob (fs sandbox on, direct network on): four fixed profiles, --sandbox-network only tightens, custom profiles need enterprise planes. routeros-muse is binary today: profileForAccess (server.ts) maps everything but allowAll to :ask-me, the UI has two buttons, the worker spawn passes only --trust-workspace. Add a third mode (or workspace toggle) that spawns the worker with --disable-sandbox under promptUnmatched. Costs: writes outside the workspace go from hard-blocked to approve-to-allow; seeded network host rules go inert (network-kind approvals never fire unsandboxed). Must verify first: row 71 was measured under onRequest, not promptUnmatched, so prove shell prompts still fire for unseeded commands. The flag is spawn-level, so a mode switch needs a worker respawn."
+evidence = "docs/design/permissions.md P6 row 71 and line 265; src/serve/server.ts profileForAccess; ui.html defaccess buttons; sandboxed probe session ~/.local/share/muse/sessions/2026/11/03/01a1a3dd-fdc3-79d1-855b-abe029cb1742 (nc/ping EPERM, centrs ECONNRESET, unsandboxed retry OK)."
+acceptance = "Live probe under promptUnmatched plus --disable-sandbox: an unseeded shell command prompts, centrs native-api and mac-telnet reach a real box; the third mode is selectable in the UI and survives restart; templates' access-mode notes updated; make gate passes."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T157"
+title = "Muse sandbox proxy resets HTTP requests that carry Basic credentials (report upstream)"
+status = "needed"
+detail = "Sandboxed probe matrix 2026-11-03, run by the muse agent in scratch/test2 through the sandbox proxy (http_proxy=127.0.0.1:<port>), curl and Bun alike. Pass through to the router (401, or 400 where parsed): GET and POST with no auth on /rest/ and /rest/console/inspect; Authorization: Bearer; X-Custom; Proxy-Authorization: Basic; Basic empty, garbage, or valid base64 without a colon. TCP reset (curl exit 52, Bun ECONNRESET): any Basic value that decodes to user:pass shape (x:y, a:b, robot-admin:wrongpass), any case, on GET and POST. So centrs REST cannot work under Ask first even with the host's network rule seeded. Fixing it rescues REST only, not native API, SSH or L2 (T156). Unexplained: the deep-dive F8 early ECONNREFUSED on 8728 (refused, not reset), seen before the host rule was seeded."
+evidence = "Muse agent report relayed by the developer 2026-11-03 (13 sandboxed probes). Our side: approval-policy.json for test2 holds {kind:network, host:192.168.74.1} (seeded at restart); local nc listener shows Bun sends absolute-form GET through http_proxy like curl. Unsandboxed centrs retrieve with the same credentials returns /system/resource."
+acceptance = "Upstream muse report filed with the matrix and linked here; templates' access-mode notes updated when fixed."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T158"
+title = "Templates name the access-mode limits and the first-contact handoff"
+status = "done"
+detail = "From the 2026-11-03 add-device deep dive and sandbox probe. templates/minimal/AGENTS.md: a What you are paragraph (routeros-muse, centrs, rosetta, quickchr, routeros-* skills) and an access-mode note (Ask first sandbox: REST only via a proxy that resets Basic auth; network tools need Allow all; refused-everywhere means sandbox). first-contact: a sandbox check before probing; a non-default-ports step (MAC-Telnet in, read /ip/service/print, re-probe); persist rules (credentials only through the UI dialog; mac= makes MAC targets resolve the record's credentials; port= is global including MAC-Telnet delivery, so pair with via=rest-api; no note= key). add-device: verify failure hands off to first-contact; non-secret record keys may be set after the save. Repo AGENTS.md gains where muse session logs and per-workspace homes live."
+evidence = "tools/check-skills.ts: add-device and first-contact valid. Claims grounded in C25 (target.ts port override), T157 (proxy matrix), session 01a1a3b4-3ff3-7eb2-a4ca-701f58b09417 (mac= fix at calls 38-40)."
+acceptance = "check-skills valid for both skills; records check passes."
+blocked_by = []
+agent = "claude"
+updated = "2026-11-03"

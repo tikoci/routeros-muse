@@ -51,3 +51,40 @@ Local git repo for the RouterOS network workspace + web UI.
 - `tools/` — skill gate, UI smoke, router capture + checker
 - `records/` — needs/tasks/decisions/concepts + query tool
 - `docs/` — internals, design notes, UI concept mockups
+
+## Debugging a live session (outside the repo)
+
+- Muse session logs: `~/.local/share/muse/sessions/YYYY/MM/DD/<session-id>/session.jsonl`
+  (one JSON event per line; newest dir = latest chat). Useful
+  `payload.event.kind` values: `assistant_tool_calls_committed`
+  (calls + args), `tool_result_batch_committed` (outputs),
+  `requested`/`decision_applied` (approvals, per pipeline stage),
+  `skill_read_observed`; top-level `payload_type`
+  `runtime.approval_reconfigure` marks an access-mode switch.
+- Per-workspace muse home: `~/.local/share/routeros-muse/.muse-config/<name>-<id>/muse/`
+  (`approval-policy.json` = seeded + owner-approved rules,
+  `skills/` = staged routeros-skills).
+- Test workspaces under `scratch/` sit inside this repo, so the
+  agent can wander `../..` into our source and root AGENTS.md.
+  A real owner workspace has no parent repo; weigh findings that
+  depend on that.
+- Access mode decides what a session can reach. Ask first runs the
+  shell sandboxed: no direct sockets (native API, SSH, MAC-Telnet,
+  MNDP, ping fail as EPERM or instant refused), and REST only via
+  muse's proxy, which resets Basic-auth requests (T157). Allow all
+  is unsandboxed. Test device work under Allow all until T156 or
+  T157 lands, and never read "every port refused" under Ask first as
+  a router fault.
+- Read the log before trusting an agent's self-report. Its write-up
+  of a session can misattribute causes (sandbox read as router
+  state) or credit itself with steps the owner prompted.
+- Records written in a session show up as CDB warnings later
+  (`cdb/unknown-option: note` came from an agent's
+  `devices set note=`; centrs has no such key, C25).
+
+## Gating on the developer's Mac
+
+`make gate` is red there at HEAD for environment reasons (T155):
+put the bundled centrs first (`PATH="$PWD/node_modules/.bin:$PATH"`,
+the global `~/.bun/bin/centrs` can be stale), and compare any
+failures against the T155 list before calling one new.

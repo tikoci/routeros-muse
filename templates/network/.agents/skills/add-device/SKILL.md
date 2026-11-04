@@ -25,12 +25,11 @@ owner's dialog), never ask for a password at any step.
 ### 0. Check (duplicate-first, read-only)
 
 - `centrs devices list --json` on the CLI (routine device
-  work goes through the CLI, not MCP tools; it is not in the
-  seeded read set, so the owner may be asked to approve it
-  once): if the host is already a target, stop
-  and open that card instead of adding. Same rule for
-  `router.toml`: a `[device]` with that host or id means it
-  is already registered.
+  work goes through the CLI, not MCP tools; it is in the
+  seeded read set, so it runs without a prompt): if the host
+  is already a target, stop and open that card instead of
+  adding. Same rule for `router.toml`: a `[device]` with that
+  host or id means it is already registered.
 - Reads only. No writes, no password prompts, no `devices add`
   from the terminal — the CDB write happens through the UI save
   (step 2), never from your shell.
@@ -65,6 +64,10 @@ owner's dialog), never ask for a password at any step.
   /system/resource --json` (or `centrs devices show <host>
   --json`): a working credential read proves the record,
   not the dialog animation.
+- If that read fails, the record is fine but the path is not:
+  switch to the `first-contact` skill (sandbox check, probe,
+  transport select, non-default ports). Do not stop at a failed
+  default REST read.
 - If the save failed with an encrypted CDB, say so plainly
   (creation on encrypted CDBs waits on upstream
   `tikoci/centrs#558`) and use the card's Set credentials
@@ -89,6 +92,9 @@ get you a password securely.
 - Read-only until the owner clicks Save: `devices list` /
   `devices show` and `retrieve` reads only. The CDB write is
   the owner's click in the UI, not your tool call.
+- After the save, credentials stay UI-only. Non-secret record
+  keys (`mac=`, `via=`, `port=`) may be set later with
+  `centrs devices set` as part of `first-contact`.
 
 ### Envs
 

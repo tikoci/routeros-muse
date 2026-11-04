@@ -41,6 +41,13 @@ pull PPP secrets, script sources, or Wi-Fi keys into the chat
 ([centrs#542](https://github.com/tikoci/centrs/issues/542), C1). Give
 agent sessions an account without `sensitive`.
 
+The seeded file viewers (D54: `ls`, `cat`, `head`, `grep` and the
+others in `READ_COMMANDS`) take any path, so a session can read files
+outside the workspace without an approval, as far as the sandbox
+allows. Not yet verified: whether muse treats a shell redirect
+(`echo x > router.toml`) as a separate write needing approval, or lets
+it run under the `echo`/`cat` rule (T153).
+
 ## 4. Access modes and permission profiles
 
 Two modes in the UI and `--yolo` flag (D38, D42,

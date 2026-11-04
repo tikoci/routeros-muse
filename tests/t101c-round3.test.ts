@@ -50,15 +50,28 @@ function taggedPrefixes(cfg: string): string[] {
 }
 
 describe("round 3 fix 1: read set keeps centrs retrieve (brief change)", () => {
-	test("READ_COMMANDS is exactly retrieve + quickchr list/doctor", () => {
+	test("READ_COMMANDS keeps centrs retrieve (D54 adds file viewers)", () => {
 		// Developer decision 2026-11-02: centrs is a helper, not the
 		// security layer — the seeded retrieve rule trusts centrs's
 		// read/write split (C19 fixed upstream), and strict setups
 		// use a restricted RouterOS account.
 		expect(READ_COMMANDS).toEqual([
 			["centrs", "retrieve"],
+			["centrs", "devices", "list"],
+			["centrs", "explain"],
 			["quickchr", "list"],
 			["quickchr", "doctor"],
+			["ls"],
+			["cat"],
+			["head"],
+			["tail"],
+			["wc"],
+			["grep"],
+			["file"],
+			["stat"],
+			["pwd"],
+			["echo"],
+			["which"],
 		]);
 		expect(POLICY_SCHEMA_VERSION).toBe(2);
 	});

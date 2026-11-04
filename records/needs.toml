@@ -418,3 +418,14 @@ evidence = "https://github.com/tikoci/centrs/issues/610 (T116, developer-authori
 blocked_by = ["T86"]
 agent = ""
 updated = "2026-11-02"
+
+[[need]]
+id = "C25"
+repo = "centrs"
+title = "Per-service port overrides in the CDB record (port= is global across transports today)"
+status = "needed"
+detail = "Developer test drive 2026-11-03: a box with www on 7080 and www-ssl on 7443 (api, ssh, winbox standard). Setting port=7080 on the record fixed default rest-api but broke default execute (native-api dialed 7080), and the same override replaces the MAC-Telnet UDP delivery port. Today the only workable record is port=7080 plus via=rest-api, with --port on every other transport. Design questions before any PR: key shape (per-protocol keys such as rest-port/api-port, a port map, or reading /ip/service once and caching), whether a port should ever apply to MAC-Telnet delivery, how mac-telnet --host interacts, provenance in meta.settings, and WinBox CDB compatibility (comment-kv round-trip). The public routeros-centrs skill waits on this: it cannot teach a non-default-ports recipe without somewhere to store the ports."
+evidence = "node_modules/@tikoci/centrs/src/resolver/target.ts (0.1.9) lines ~140-182 and 226-231: cdb?.overrides.port feeds both the mac-telnet delivery port and the IP transport port; same on centrs origin/main a03e3cb. Session ~/.local/share/muse/sessions/2026/11/03/01a1a3b4-3ff3-7eb2-a4ca-701f58b09417 calls 56-65. No matching centrs issue (gh search 2026-11-03). Also seen: centrs has no note= key (cdb/unknown-option warning)."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"

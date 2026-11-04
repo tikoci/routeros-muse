@@ -50,25 +50,41 @@ export const PREALLOW_TAG = "routeros-muse:seed";
 export const POLICY_SCHEMA_VERSION = 2;
 
 /**
- * Designed read set, one argv prefix per rule (D43 as amended
- * 2026-11-02): exactly three two-word prefixes, so sibling
- * subcommands keep prompting (centrs execute stays unlisted —
- * --yes cannot be excluded — and bare binaries are never seeded:
- * [quickchr] would also free `quickchr remove`).
- * Dropped from round 1: ls, cat, grep (not confined to the
- * workspace — agents read files with muse's own tools), find
- * (runs -exec/-delete), rosetta browse/--help/--version (browse
- * writes its DB). The seeded retrieve rule trusts centrs's
- * read/write split (reads run, writes need --yes); the known
- * fragment-path bug is C19 (centrs#586), open upstream. Housekeeping:
- * quickchr list/doctor call refreshAllStatuses(), which rewrites
- * stale local machine state (clears dead PIDs/frozen markers) —
- * local bookkeeping, no device contact, acceptable in the read set.
+ * Designed read set, one argv prefix per rule. D43 as amended
+ * 2026-11-02 cut this to the three tikoci reads below; the developer
+ * reversed the file half on 2026-11-03 (D54): an agent that needs
+ * an approval for every `cat` or `ls` is not usable, and muse
+ * approves each pipeline stage separately, so one shell call could
+ * stack ten or more Once prompts. The file commands are read-only
+ * viewers. Their path arguments are not confined to the workspace,
+ * and the developer accepted that. Still excluded, because each one
+ * can write: find (-exec/-delete), sed (-i), awk (system()), tee,
+ * and rosetta browse (writes its DB). Bare tikoci binaries are
+ * never seeded: [quickchr] would also free `quickchr remove`, and
+ * centrs execute stays unlisted (--yes cannot be excluded). The
+ * seeded retrieve rule trusts centrs's read/write split (reads
+ * run, writes need --yes); the fragment-path bug is C19
+ * (centrs#586). quickchr
+ * list/doctor rewrite stale local machine state (dead PIDs/frozen
+ * markers) with no device contact, which is acceptable here.
  */
 export const READ_COMMANDS: string[][] = [
 	["centrs", "retrieve"],
+	["centrs", "devices", "list"],
+	["centrs", "explain"],
 	["quickchr", "list"],
 	["quickchr", "doctor"],
+	["ls"],
+	["cat"],
+	["head"],
+	["tail"],
+	["wc"],
+	["grep"],
+	["file"],
+	["stat"],
+	["pwd"],
+	["echo"],
+	["which"],
 ];
 
 /**

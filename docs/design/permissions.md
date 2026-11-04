@@ -606,6 +606,10 @@ binary — `[quickchr]` would also free `quickchr remove`):
 `quickchr list`, `quickchr doctor`, `ls`, `cat`, `grep`, `find`.
 AMENDED in round 2 (see the D44 section above): the live set is
 `centrs retrieve`, `quickchr list`, `quickchr doctor`.
+AMENDED again 2026-11-03 (D54): the developer restored the read-only
+file viewers (`ls cat head tail wc grep file stat pwd echo which`)
+and added `centrs devices list` and `centrs explain`. `find`, `sed`,
+`awk` and `tee` stay out because each can write.
 Still prompting, live-verified: `centrs execute` (second word
 differs — P3 both directions), any write outside the workspace
 (shell approval under promptUnmatched; hard-blocked by the sandbox

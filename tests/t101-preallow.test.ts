@@ -128,13 +128,27 @@ describe("read command set", () => {
 		}
 	});
 
-	test("round 2: exactly centrs retrieve + quickchr list/doctor (D43 as amended)", () => {
-		// find runs -exec/-delete, rosetta browse writes its DB, and
-		// cat/grep/ls are not confined to the workspace: all dropped.
+	test("exactly the tikoci reads plus read-only file viewers (D43 as amended, D54)", () => {
+		// D54 restored the read-only file viewers. find runs
+		// -exec/-delete, sed -i and awk system() write, and rosetta
+		// browse writes its DB: all stay out.
 		expect(READ_COMMANDS).toEqual([
 			["centrs", "retrieve"],
+			["centrs", "devices", "list"],
+			["centrs", "explain"],
 			["quickchr", "list"],
 			["quickchr", "doctor"],
+			["ls"],
+			["cat"],
+			["head"],
+			["tail"],
+			["wc"],
+			["grep"],
+			["file"],
+			["stat"],
+			["pwd"],
+			["echo"],
+			["which"],
 		]);
 	});
 });

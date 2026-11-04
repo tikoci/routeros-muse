@@ -111,12 +111,25 @@ describe("private home path", () => {
 	});
 });
 
-describe("read set (D43 as amended)", () => {
-	test("exactly centrs retrieve + quickchr list/doctor, nothing else", () => {
+describe("read set (D43 as amended, D54 file reads)", () => {
+	test("exactly the tikoci reads plus read-only file viewers, nothing else", () => {
 		expect(READ_COMMANDS).toEqual([
 			["centrs", "retrieve"],
+			["centrs", "devices", "list"],
+			["centrs", "explain"],
 			["quickchr", "list"],
 			["quickchr", "doctor"],
+			["ls"],
+			["cat"],
+			["head"],
+			["tail"],
+			["wc"],
+			["grep"],
+			["file"],
+			["stat"],
+			["pwd"],
+			["echo"],
+			["which"],
 		]);
 	});
 });
@@ -418,7 +431,7 @@ describe("per-workspace host ownership (D45)", () => {
 		});
 	});
 
-	test("stale seed commands (ls/cat/...) from round 1 are replaced, not merged", () => {
+	test("stale seed commands (find/sed/...) are replaced, not merged", () => {
 		withRealHome(() => {
 			const priv = mktmp("t101b-stale-");
 			const ws = mktmp("t101b-stale-ws-");
@@ -427,7 +440,7 @@ describe("per-workspace host ownership (D45)", () => {
 				policyFile(priv),
 				JSON.stringify({
 					schema_version: 2,
-					rules: ["ls", "cat", "rosetta"].map((cmd) => ({
+					rules: ["find", "sed", "rosetta"].map((cmd) => ({
 						effect: "allow",
 						durability: "local_persistent",
 						rule: {
@@ -457,7 +470,7 @@ describe("per-workspace host ownership (D45)", () => {
 			const prefixes = shell.map((r) =>
 				JSON.stringify((r["rule"] as Record<string, unknown>)["argv_prefix"]),
 			);
-			expect(prefixes).not.toContain(JSON.stringify(["ls"]));
+			expect(prefixes).not.toContain(JSON.stringify(["find"]));
 			expect(prefixes).toContain(JSON.stringify(["centrs", "retrieve"]));
 		});
 	});
@@ -649,11 +662,9 @@ describe("T101b server wiring (D44)", () => {
 					const status = await getJson(`${srv.url}api/status`);
 					const pre = status["preallow"] as Record<string, unknown>;
 					expect(pre["configHome"]).toBe(priv);
-					expect(pre["commands"]).toEqual([
-						"centrs retrieve",
-						"quickchr list",
-						"quickchr doctor",
-					]);
+					expect(pre["commands"]).toEqual(
+						READ_COMMANDS.map((p) => p.join(" ")),
+					);
 				} finally {
 					await srv.stop();
 				}

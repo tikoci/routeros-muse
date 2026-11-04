@@ -458,7 +458,7 @@
       <div class="sect split"><span>Devices · live via centrs</span><button class="minibtn" id="adddevice" title="Ask the agent to add a device (idle only)">Add Device</button></div>
       <div id="devlist"></div>
       </div>
-      <div class="sect split"><span>Workspace · recent</span><button class="minibtn" id="wsadd" title="Open a file…">Add File</button></div>
+      <div class="sect split"><span>Workspace · recent</span><button class="minibtn" id="wsadd" title="Open a workspace file…">Open File</button></div>
       <div id="wslist">
       </div>
       <button class="morelink" id="wsmore">Show more ↓</button>
@@ -4374,7 +4374,7 @@
     $("adddevice").addEventListener("click", () => {
       // Settled: Add Device is an idle-time prompt injection, not a form.
       if (AGENT_RUNNING) return;
-      send("Add a device: walk me through what you need (device id, site, role, how to reach it), then record it in router.toml following the repo skills. Start by asking for the first missing piece.");
+      send("Add a device. Ask me for its host (IP or DNS name) and login user if I have not given them. Check `centrs devices list --json` for a duplicate, then call ui_add_device prefilled with host and user so I type the password in the dialog. Never ask for the password in chat.");
     });
   }
 
