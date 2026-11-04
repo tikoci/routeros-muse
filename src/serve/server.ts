@@ -3311,6 +3311,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							profile?: unknown;
 							session?: unknown;
 							ports?: unknown;
+							attributes?: unknown;
+							group?: unknown;
+							recordTypeName?: unknown;
+							comment?: unknown;
 							expected?: unknown;
 						};
 						const field = (v: unknown): string | undefined =>
@@ -3336,6 +3340,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								sshKey: field(body.sshKey),
 								profile: field(body.profile),
 								session: field(body.session),
+								group: field(body.group),
+								recordTypeName: field(body.recordTypeName),
+								comment: field(body.comment),
+								attributes: body.attributes as
+									| Record<string, string>
+									| undefined,
 								ports,
 							},
 							envFor(req),
@@ -3388,6 +3398,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						profile?: unknown;
 						session?: unknown;
 						ports?: unknown;
+						attributes?: unknown;
+						group?: unknown;
+						recordTypeName?: unknown;
+						comment?: unknown;
 						id?: unknown;
 					};
 					// Defense in depth: the route is directly reachable,
@@ -3447,6 +3461,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							...(sshKey ? { sshKey } : {}),
 							...(profile ? { profile } : {}),
 							...(session ? { session } : {}),
+							group: field(body.group),
+							recordTypeName: field(body.recordTypeName),
+							comment: field(body.comment),
+							attributes: body.attributes as Record<string, string> | undefined,
 							ports,
 						},
 						envFor(req),
@@ -3462,7 +3480,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						// when the record carries OUR user, so a retry never
 						// overwrites a stranger's credentials. Otherwise the
 						// 409 stands and the owner reviews in the modal.
-						if (created.current.user === user) {
+						// Add-only fields need owner review on an existing record;
+						// never silently drop the requested type or comment on retry.
+						if (
+							created.current.user === user &&
+							body.recordTypeName === undefined &&
+							body.comment === undefined
+						) {
 							const retried = await setCdbCredentials(
 								cdbFile,
 								host,
@@ -3472,6 +3496,12 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									...(sshKey ? { sshKey } : {}),
 									...(profile ? { profile } : {}),
 									...(session ? { session } : {}),
+									group: field(body.group),
+									recordTypeName: field(body.recordTypeName),
+									comment: field(body.comment),
+									attributes: body.attributes as
+										| Record<string, string>
+										| undefined,
 									ports,
 								},
 								envFor(req),

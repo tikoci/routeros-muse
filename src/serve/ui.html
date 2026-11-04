@@ -321,13 +321,29 @@
   .mform input:focus { outline: none; border-color: var(--accent); }
   #credf-password { -webkit-text-security: disc; }
   .credhint { font: 400 11px var(--sans); color: var(--faint); }
-  .credctx { font: 12px var(--mono); color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .credctx { font: 12px var(--sans); color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .crederr { color: var(--bad); font-size: 12.5px; min-height: 18px; overflow-wrap: anywhere; }
   .crednote { font-size: 11.5px; color: var(--faint); line-height: 1.45; overflow-wrap: anywhere; }
   .dev .chat .chatstate { display: inline-flex; align-items: center; gap: 6px; }
   .credgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
   .credports { border: 1px solid var(--border-soft); border-radius: 8px; padding: 6px 10px 10px; margin: 4px 0; }
   .credports legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+  #credmodal .modal { max-height: 86vh; width: 600px; }
+  #credmodal .mform { gap: 14px; }
+  #credmodal .mform select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: 13px var(--sans); min-width: 0; }
+  #credmodal input { min-width: 0; width: 100%; box-sizing: border-box; }
+  .credkey { display: flex; gap: 8px; align-items: center; }
+  .credkey input { flex: 1; }
+  .credkey button { white-space: nowrap; opacity: .5; cursor: not-allowed; }
+  .credsaved { color: var(--accent); font-size: 10px; margin-left: 5px; font-weight: 500; }
+  .credsection { border: 1px solid var(--border-soft); border-radius: 8px; }
+  .credsection summary { cursor: pointer; padding: 11px 12px; font: 600 12px var(--sans); color: var(--muted); }
+  .credcount { float: right; color: var(--faint); font-weight: 400; }
+  .credsection fieldset { border: 0; padding: 4px 12px 12px; margin: 0; min-width: 0; gap: 12px; }
+  .credsection > p { margin: 0 12px 12px; }
+  #credlimit summary { cursor: pointer; }
+  #credlimit p { margin: 8px 0 0; }
+  .credclear:empty { display: none; }
   .minibtn.need { border-color: var(--amber); color: var(--amber); }
   .titem { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; }
   .titem:hover { background: var(--inset); }
@@ -824,14 +840,21 @@
     <div class="mbody">
       <form class="mform" id="credform">
         <div class="credctx" id="credctx">loading…</div>
-        <div class="crednote" id="credlimit">Conflict check is limited: it compares only the device, login user, group, record type, session, WinBox profile, whether a password is saved, and the SSH key path. Password-value changes are invisible to it — a password changed elsewhere since this modal opened will NOT raise a conflict. The check re-reads the record before saving; it is not atomic, so two simultaneous saves can both succeed with one lost. Durable fix: tikoci/centrs#581.</div>
-        <label id="credl-host" style="display:none">Device address<input id="credf-host" placeholder="IP or DNS name" spellcheck="false" autocapitalize="off"></label>
-        <label>Login user<input id="credf-user" autocomplete="username" placeholder="unchanged" spellcheck="false"></label>
-        <label>Password<input type="text" id="credf-password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lastpass-ignore placeholder="unchanged (no-echo)"></label>
-        <label>SSH key path<input id="credf-sshkey" placeholder="unchanged" spellcheck="false"><span class="credhint">Saved as the ssh-key= pair in the record comment (comment kv-soup — see centrs devices set --help).</span></label>
-        <label>WinBox profile<input id="credf-profile" placeholder="unchanged" spellcheck="false"></label>
-        <label>Session<input id="credf-session" placeholder="unchanged" spellcheck="false"></label>
-        <fieldset class="credports"><legend>Service ports (blank = RouterOS default)</legend>
+        <details class="crednote" id="credlimit"><summary>Save checks for record changes · limitations</summary><p>Compares all displayed record attributes before saving. Password-value changes cannot be detected, and simultaneous saves can overwrite each other. Pending centrs#581.</p></details>
+        <label id="credl-host" style="display:none">Address<input id="credf-host" placeholder="IP or DNS name" spellcheck="false" autocapitalize="off"></label>
+        <label>Login user<input id="credf-user" autocomplete="username" spellcheck="false"><span class="credhint credclear" id="credclear-user"></span></label>
+        <label><span>Password <small class="credsaved" id="credsaved" hidden>saved</small></span><input type="text" id="credf-password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lastpass-ignore><span class="credhint" id="credpwhint">Leave blank to keep the saved password.</span></label>
+        <label>SSH key path<span class="credkey"><input id="credf-sshkey" spellcheck="false"><span title="Not implemented yet"><button class="btn" type="button" disabled title="Not implemented yet">Browse…</button></span></span></label>
+<details class="credsection">
+          <summary>Connection<small class="credcount"></small></summary>
+          <fieldset class="credgrid"><legend hidden>Connection</legend>
+            <label>Transport<select id="credf-via"><option value="">Default</option><option value="rest-api">rest-api</option><option value="native-api">native-api</option><option value="ssh">ssh</option><option value="snmp">snmp</option><option value="mndp">mndp</option><option value="romon">romon</option><option value="winbox-terminal">winbox-terminal</option><option value="btest">btest</option><option value="mac-telnet">mac-telnet</option></select></label>
+            <label>Transport port<input id="credf-port" spellcheck="false"></label>
+            <label>Timeout (ms)<input id="credf-timeout" spellcheck="false"></label>
+            <label>Validate commands<select id="credf-validate"><option value="">Default</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label>Skip TLS verification<select id="credf-insecure"><option value="">Default</option><option value="true">true</option><option value="false">false</option></select></label>
+          </fieldset>
+          <fieldset class="credports"><legend>Service ports (blank = RouterOS default)</legend>
           <div class="credgrid">
             <label>www (REST)<input id="credp-www-port" inputmode="numeric" placeholder="80" spellcheck="false"></label>
             <label>www-ssl (REST)<input id="credp-www-ssl-port" inputmode="numeric" placeholder="443" spellcheck="false"></label>
@@ -839,8 +862,43 @@
             <label>api-ssl<input id="credp-api-ssl-port" inputmode="numeric" placeholder="8729" spellcheck="false"></label>
             <label>ssh<input id="credp-ssh-port" inputmode="numeric" placeholder="22" spellcheck="false"></label>
           </div>
-          <span class="credhint">Saved as www-port=, api-port=, … in the record comment. centrs uses them once tikoci/centrs#618 ships; until then they are stored but ignored.</span>
+          <span class="credhint">Stored in the record comment; connection overrides take effect after centrs#618 ships.</span>
         </fieldset>
+</details>
+        <details class="credsection">
+          <summary>WinBox<small class="credcount"></small></summary>
+          <fieldset class="credgrid"><legend hidden>WinBox</legend>
+            <label>WinBox profile<input id="credf-profile" spellcheck="false"><span class="credhint credclear" id="credclear-profile"></span></label>
+            <label>Session<input id="credf-session" spellcheck="false"><span class="credhint credclear" id="credclear-session"></span></label>
+            <label>Group<input id="credf-group" spellcheck="false"><span class="credhint credclear" id="credclear-group"></span></label>
+            <label>Record type<select id="credf-recordTypeName"><option value="">Default</option><option value="macTarget">macTarget</option><option value="ipAdmin">ipAdmin</option><option value="ipUser">ipUser</option><option value="romonNeighbor">romonNeighbor</option><option value="romonTarget">romonTarget</option></select></label>
+          </fieldset><p class="credhint">Record type and comment can only be set when adding a device.</p>
+        </details>
+        <details class="credsection">
+          <summary>Lookup<small class="credcount"></small></summary>
+          <fieldset class="credgrid"><legend hidden>Lookup</legend>
+            <label>Identity<input id="credf-identity" spellcheck="false"></label>
+            <label>MAC address<input id="credf-mac" spellcheck="false"></label>
+            <label>IP address<input id="credf-ip" spellcheck="false"></label>
+          </fieldset>
+        </details>
+        <details class="credsection">
+          <summary>Location<small class="credcount"></small></summary>
+          <fieldset class="credgrid"><legend hidden>Location</legend>
+            <label>Latitude<input id="credf-lat" spellcheck="false"></label>
+            <label>Longitude<input id="credf-lon" spellcheck="false"></label>
+            <label>Altitude (m)<input id="credf-altitude" spellcheck="false"></label>
+            <label>Altitude reference<select id="credf-altitude-type"><option value="">Default</option><option value="MSL">MSL</option><option value="AGL">AGL</option></select></label>
+          </fieldset>
+        </details>
+        <details class="credsection">
+          <summary>Policy<small class="credcount"></small></summary>
+          <fieldset class="credgrid"><legend hidden>Policy</legend>
+            <label>MCP policy<select id="credf-mcp"><option value="">Default</option><option value="ro">ro</option><option value="rw">rw</option></select></label>
+            <label>Source<input id="credf-source" spellcheck="false"></label>
+            <label>Comment<input id="credf-comment" spellcheck="false"></label>
+          </fieldset>
+        </details>
         <div class="crederr" id="crederr"></div>
       </form>
     </div>
@@ -1639,8 +1697,8 @@
   document.getElementById("pickercancel").addEventListener("click", closePicker);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closePicker(); closeCred(); } });
   picker.addEventListener("click", (e) => { if (e.target === picker) closePicker(); });
-  // T48 set-credentials modal: redacted record context on top, five
-  // credential fields below (empty = unchanged, password never echoes),
+  // T48 set-credentials modal: redacted record context on top,
+  // record fields below (current values, password never echoes),
   // Save writes through POST credentials with the snapshot read at
   // open. A 409 conflict re-bases the snapshot on the current record
   // and keeps typed input, so review-then-retry is one more Save.
@@ -1670,6 +1728,9 @@
     "need GET or POST",
     "auth required",
     "save failed",
+    "bad credential fields",
+    "first-class fields cannot be cleared",
+    "comment and record type are add-only",
     // T110 add-device route whys (server.ts /api/devices/add): every
     // why that route can return, enumerated exactly like the T48 set
     // above. The interpolated id/host slots are agent-provided but
@@ -1686,6 +1747,52 @@
   ];
   // centrs#618 service port keys (fleet.ts PORT_KEYS).
   const PORT_KEYS = ["www-port", "www-ssl-port", "api-port", "api-ssl-port", "ssh-port"];
+  const CRED_ATTRIBUTES = ["identity", "mac", "ip", "via", "validate", "insecure", "timeout", "port", "source", "mcp", "lat", "lon", "altitude", "altitude-type"];
+  const CRED_FIRST = ["user", "profile", "session", "group"];
+  function credCounts() {
+    document.querySelectorAll(".credsection").forEach(section => {
+      const count = [...section.querySelectorAll("input, select")].filter(el => el.value !== "").length;
+      section.querySelector(".credcount").textContent = count ? count + " set" : "";
+    });
+  }
+  function credFields(details, add) {
+    const d = details || {};
+    for (const key of [...CRED_FIRST, "sshkey", "password", "comment", "recordTypeName", ...CRED_ATTRIBUTES]) {
+      const el = document.getElementById("credf-" + key);
+      const current = CRED_ATTRIBUTES.includes(key) ? (d.attributes && d.attributes[key]) || "" : d[key] || "";
+      if (el.tagName === "SELECT") {
+        el.querySelectorAll("option[data-imported]").forEach(option => option.remove());
+        if (current && ![...el.options].some(option => option.value === current)) {
+          const option = document.createElement("option"); option.value = current; option.textContent = current; option.dataset.imported = "true"; el.append(option);
+        }
+      }
+      el.value = key === "password" ? "" : key === "sshkey" ? d.sshKey || "" : CRED_ATTRIBUTES.includes(key) ? (d.attributes && d.attributes[key]) || "" : d[key] || "";
+      if (key === "recordTypeName") el.disabled = !add;
+      if (key === "comment") el.readOnly = !add;
+      const hint = document.getElementById("credclear-" + key);
+      if (hint) hint.textContent = !add && d[key] ? "Can be replaced; clearing is not supported by centrs." : "";
+    }
+    document.getElementById("credsaved").hidden = !d.hasPassword;
+    document.getElementById("credpwhint").textContent = add ? "Enter a password or an SSH key path." : "Leave blank to keep the saved password.";
+    document.querySelectorAll(".credsection").forEach(el => { el.open = false; });
+    portFields(d.ports);
+    credCounts();
+  }
+  function credChanges(before, add) {
+    const d = before || {};
+    const out = { ports: portChanges(d.ports), attributes: {} };
+    for (const key of [...CRED_FIRST, "sshkey", "password", ...(add ? ["comment", "recordTypeName"] : [])]) {
+      const value = document.getElementById("credf-" + key).value;
+      const name = key === "sshkey" ? "sshKey" : key;
+      if (key === "password" ? value !== "" : value !== (d[name] || "")) out[name] = value;
+    }
+    for (const key of CRED_ATTRIBUTES) {
+      const value = document.getElementById("credf-" + key).value.trim();
+      if (value !== ((d.attributes && d.attributes[key]) || "")) out.attributes[key] = value;
+    }
+    return out;
+  }
+  document.getElementById("credform").addEventListener("input", credCounts);
   function portFields(ports) {
     for (const k of PORT_KEYS) document.getElementById("credp-" + k).value = (ports && ports[k]) || "";
   }
@@ -1728,22 +1835,9 @@
     document.getElementById("credctx").textContent = "unavailable: couldn't load the record — see the browser console.";
   }
   function credCtxText(d, contextErr) {
-    const lines = [
-      "target " + d.target,
-      "user " + (d.user || "(none)") + " · password " + (d.hasPassword ? "saved" : "not set"),
-    ];
-    if (d.sshKey) lines.push("ssh-key " + d.sshKey);
-    const ports = PORT_KEYS.filter((k) => d.ports && d.ports[k]).map((k) => k + "=" + d.ports[k]);
-    if (ports.length) lines.push(ports.join(" · "));
-    const handles = [];
-    if (d.recordTypeName) handles.push(d.recordTypeName);
-    if (d.group) handles.push("group " + d.group);
-    if (d.profile) handles.push("profile " + d.profile);
-    if (d.session) handles.push("session " + d.session);
-    if (handles.length) lines.push(handles.join(" · "));
-    if (contextErr) lines.push("last error: " + contextErr);
-    return lines.join("\n");
+    return d.target + " · user " + (d.user || "none") + " · " + (d.recordTypeName || "record") + " · password " + (d.hasPassword ? "saved" : "not set") + (contextErr ? " · last error: " + contextErr : "");
   }
+
   // T72 busy-blocks-close: every close path (Esc, backdrop, X,
   // Cancel) routes through here and is ignored mid-save. The global
   // Esc handler still closes the picker — only the credal close guards.
@@ -1754,13 +1848,11 @@
     if (credSaving) return;
     credState = { id, expected: null, add: null };
     document.getElementById("credsave").textContent = "Save to CDB";
-    document.getElementById("credf-password").placeholder = "unchanged (no-echo)";
     document.getElementById("credtitle").textContent = "Access · " + id;
     document.getElementById("credl-host").style.display = "none";
-    portFields(null);
+    credFields(null, false);
     document.getElementById("credctx").textContent = "loading…";
     document.getElementById("crederr").textContent = "";
-    for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
     document.getElementById("credmodal").classList.add("open");
     try {
       const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/credentials");
@@ -1779,9 +1871,7 @@
         return;
       }
       credState.expected = j.details;
-      document.getElementById("credf-user").value = j.details.user || "";
-      document.getElementById("credf-sshkey").value = j.details.sshKey || "";
-      portFields(j.details.ports);
+      credFields(j.details, false);
       document.getElementById("credctx").textContent = credCtxText(j.details, contextErr);
     } catch (e) {
       document.getElementById("credctx").textContent = "unavailable: " + e.message;
@@ -1804,16 +1894,11 @@
     document.getElementById("credl-host").style.display = "";
     hostEl.value = host || "";
     hostEl.readOnly = !!host;
-    portFields(null);
+    credFields({ user: user || "" }, true);
     document.getElementById("credctx").textContent = host
       ? "New device " + host + " — saving creates its centrs CDB record.\nHost is shown, not edited. Type the password below; it is never echoed."
       : "New device — saving creates its centrs CDB record. The password is never echoed.";
     document.getElementById("crederr").textContent = "";
-    for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
-    document.getElementById("credf-user").value = user || "";
-    // "unchanged" is set-mode copy: in add mode an empty password is
-    // refused, so the placeholder says what is wanted instead.
-    document.getElementById("credf-password").placeholder = "type the password (never echoed)";
     document.getElementById("credsave").textContent = "Add device";
     document.getElementById("credmodal").classList.add("open");
     (host ? document.getElementById("credf-user") : hostEl).focus();
@@ -1827,11 +1912,15 @@
     // queued. Save is also disabled while saving (visual + click block;
     // Enter-submit still reaches this guard, which is the real block).
     if (credSaving) return;
-    const v = (f) => document.getElementById(f).value;
-    const ports = portChanges(credState.expected.ports);
-    const body = { user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session"), ports, expected: credState.expected };
-    if (!body.user && !body.password && !body.sshKey && !body.profile && !body.session && !Object.keys(ports).length) {
-      document.getElementById("crederr").textContent = "nothing to write — fill at least one field.";
+    const body = { ...credChanges(credState.expected, false), expected: credState.expected };
+    for (const key of CRED_FIRST) {
+      if (body[key] === "" && credState.expected[key]) {
+        document.getElementById("crederr").textContent = "Cannot clear " + key + "; enter a replacement.";
+        return;
+      }
+    }
+    if (Object.keys(body).length === 3 && !Object.keys(body.ports).length && !Object.keys(body.attributes).length) {
+      document.getElementById("crederr").textContent = "No changes to save.";
       return;
     }
     credSaving = true;
@@ -1844,12 +1933,12 @@
       const j = await r.json();
       if (j.ok) {
         const id = credState.id;
-        // T72 clear-on-success: all five fields (especially the secret)
+        // T72 clear-on-success: all fields (especially the secret)
         // are wiped immediately, before the modal closes. Any failure
         // below leaves every typed value exactly as typed.
-        for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
         // The save is done: drop the in-flight flag before the internal
         // close (closeCred guards only the user close paths mid-save).
+        credFields(null, false);
         credSaving = false;
         closeCred();
         await window.__reloadDevices();
@@ -1892,7 +1981,7 @@
       return;
     }
     const id = host;
-    const body = { host, id, user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session"), ports: portChanges(null) };
+    const body = { ...credChanges(null, true), host };
     if (!body.user) {
       document.getElementById("crederr").textContent = "need a login user — fill the user field.";
       return;
@@ -1911,8 +2000,8 @@
       const j = await r.json();
       if (j.ok) {
         const doneId = j.id || id;
-        for (const f of ["credf-host", "credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
-        portFields(null);
+        document.getElementById("credf-host").value = "";
+        credFields(null, false);
         credSaving = false;
         closeCred();
         await window.__reloadDevices();

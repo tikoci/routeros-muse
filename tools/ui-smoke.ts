@@ -2886,6 +2886,15 @@ try {
 			JSON.stringify(pwField),
 		);
 		await page.screenshot({ path: path.join(OUT, "14-creds-modal.png") });
+		await page.locator(".credsection summary").first().click();
+		await page.screenshot({ path: path.join(OUT, "14-creds-connection.png") });
+		await page.evaluate(() => {
+			document.documentElement.dataset["theme"] = "light";
+		});
+		await page.screenshot({ path: path.join(OUT, "14-creds-light.png") });
+		await page.evaluate(() => {
+			document.documentElement.dataset["theme"] = "dark";
+		});
 		await page.fill("#credf-password", "t48-smoke-secret");
 		await page.click("#credsave");
 		await page.waitForFunction(
@@ -3045,6 +3054,12 @@ try {
 		await page.fill("#credf-user", "t72-mine");
 		await page.fill("#credf-password", "t72-secret-A");
 		await page.fill("#credf-sshkey", "/home/op/.ssh/t72_ed25519");
+		await page
+			.locator(".credsection")
+			.filter({ has: page.locator("#credf-profile") })
+			.evaluate((el) => {
+				(el as HTMLDetailsElement).open = true;
+			});
 		await page.fill("#credf-profile", "t72-prof");
 		await page.fill("#credf-session", "t72-sess");
 		await page.click("#credsave");
@@ -3172,6 +3187,12 @@ try {
 		// T72(d): Enter in any field submits the modal.
 		await t72OpenModal();
 		t72CredPosts = 0;
+		await page
+			.locator(".credsection")
+			.filter({ has: page.locator("#credf-profile") })
+			.evaluate((el) => {
+				(el as HTMLDetailsElement).open = true;
+			});
 		await page.fill("#credf-profile", "t72-enter-prof");
 		await page.locator("#credf-profile").press("Enter");
 		await t72WaitClosed();
@@ -3251,6 +3272,12 @@ try {
 			await page.fill("#credf-user", "t72-mine-f2");
 			await page.fill("#credf-password", "t72-secret-F2");
 			await page.fill("#credf-sshkey", "/home/op/.ssh/t72-f2_ed25519");
+			await page
+				.locator(".credsection")
+				.filter({ has: page.locator("#credf-profile") })
+				.evaluate((el) => {
+					(el as HTMLDetailsElement).open = true;
+				});
 			await page.fill("#credf-profile", "t72-prof-f2");
 			await page.fill("#credf-session", "t72-sess-f2");
 			await page.click("#credsave");
@@ -4715,7 +4742,7 @@ try {
 		check(
 			"t110 dialog states the new-device save",
 			addCtx.includes("New device") &&
-				addCtx.includes("router.toml") &&
+				addCtx.includes("CDB record") &&
 				addCtx.includes("Host is shown, not edited"),
 			addCtx.slice(0, 160),
 		);
