@@ -1778,7 +1778,9 @@
     nameEl.textContent = device.id;
     roleEl.textContent = [device.role, device.site].filter(Boolean).join(" · ") || (device.cdb ? "centrs device" + (device.user ? " · " + device.user : "") : "device");
     addEl.onclick = () => { addTarget(id); showPane("pane-chat"); };
-    credEl.onclick = () => openCred(id, noteEl.textContent);
+    // Only a failed read is context for the Access dialog; a success
+    // note ("read just now via centrs") is not an error.
+    credEl.onclick = () => openCred(id, devStatusOf(id).state === "unreachable" ? devStatusOf(id).why || null : null);
     document.getElementById("pdev-refresh").onclick = () => renderDevice(id);
     document.getElementById("pdev-remove").onclick = () => removeDevice(id);
     paintDevDot(document.getElementById("pdev-dot"), devStatusOf(id));
@@ -2229,7 +2231,7 @@
       if (hint) hint.textContent = !add && d[key] ? "Can be replaced; clearing is not supported by centrs." : "";
     }
     document.getElementById("credsaved").hidden = !d.hasPassword;
-    document.getElementById("credpwhint").textContent = add ? "Enter a password or an SSH key path." : "Leave blank to keep the saved password.";
+    document.getElementById("credpwhint").textContent = add ? "Enter a password or an SSH key path." : d.hasPassword ? "Leave blank to keep the saved password." : "No password saved — type one to set it.";
     document.querySelectorAll(".credsection").forEach(el => { el.open = false; });
     portFields(d.ports);
     credCounts();
@@ -4128,12 +4130,17 @@
       const src0 = j.source === "cdb" ? "centrs CDB" : "router.toml";
       $("leftfoot").textContent = n0 + " device" + (n0 === 1 ? "" : "s") + " · " + src0;
       if (n0 === 0) {
-        const empty = j.why
-          ? "devices unavailable: " + j.why
-          : j.source === "cdb"
-            ? "No devices in the centrs CDB."
-            : "No devices in router.toml.";
-        box.innerHTML = '<div class="wsempty"><p>' + esc(empty) + "</p></div>";
+        // A missing store is the normal first-run state, not an error:
+        // say what to do, keep the centrs why in the tooltip.
+        const noStore = typeof j.why === "string" && j.why.startsWith("cdb/not-found");
+        const empty = noStore
+          ? "No devices yet — Add Device creates the registry."
+          : j.why
+            ? "Devices unavailable: " + j.why
+            : "No devices in the centrs CDB yet.";
+        box.innerHTML = '<div class="wsempty"><p></p></div>';
+        box.querySelector("p").textContent = empty;
+        if (j.why) box.querySelector(".wsempty").title = j.why;
         devPollRestart();
         return;
       }

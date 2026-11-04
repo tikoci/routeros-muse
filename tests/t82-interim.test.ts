@@ -122,10 +122,13 @@ describe("T82 interim conflict-check limits", () => {
 		// Static note sits under the context block, above the fields.
 		expect(note).toBeGreaterThan(ctx);
 		expect(firstField).toBeGreaterThan(note);
-		// Password-value invisibility disclosure…
-		expect(html).toContain("Password-value changes are invisible to it");
-		expect(html).toContain("will NOT raise a conflict");
-		// …and the durable-fix reference.
-		expect(html).toContain("tikoci/centrs#581");
+		// T163: a compact disclosure, not a paragraph — the facts stay:
+		// password-value blindness, the non-atomic overwrite, and the
+		// durable-fix reference.
+		const block = html.slice(note, html.indexOf("</details>", note));
+		expect(block).toContain("<summary>");
+		expect(block).toContain("Password-value changes cannot be detected");
+		expect(block).toContain("simultaneous saves can overwrite each other");
+		expect(block).toContain("centrs#581");
 	});
 });
