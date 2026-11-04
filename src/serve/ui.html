@@ -646,8 +646,8 @@
         <button class="sel" id="sel-effort-btn">Effort <b id="seleffort">…</b><span class="car">▾</span></button>
         <button class="sel" id="sel-access-btn">Access <b id="selaccess">…</b><span class="car">▾</span></button>
         <div class="selmenu" id="selmenu"></div>
-        <button class="sel" id="newsession-btn" title="Start a fresh chat; the main chat moves to Past chats">New Side Chat</button>
-        <span id="newsession-confirm" class="nsconfirm" style="display:none"><span>Start a side chat? The main chat moves to Past chats.</span><button class="minibtn" id="newsession-go">Start</button><button class="minibtn" id="newsession-cancel">Cancel</button></span>
+        <button class="sel" id="newsession-btn" title="Start a new session; the current main chat moves to Past chats">New Session</button>
+        <span id="newsession-confirm" class="nsconfirm" style="display:none"><span>Start a new session? The current main chat moves to Past chats.</span><button class="minibtn" id="newsession-go">Start</button><button class="minibtn" id="newsession-cancel">Cancel</button></span>
         <span class="sp"></span>
         <span class="runstat" id="runstat" title="Agent is idle" style="display:none"><span class="rdot"></span><span id="runtime">0:00</span></span>
         <span class="ctx" id="ctxbtn" title="Session stats">
@@ -1037,7 +1037,7 @@
     const nb = document.getElementById("newsession-btn");
     if (nb) {
       nb.disabled = running;
-      nb.title = running ? "Stop the running turn first" : "Start a fresh chat; the main chat moves to Past chats";
+      nb.title = running ? "Stop the running turn first" : "Start a new session; the current main chat moves to Past chats";
     }
     const mc = document.getElementById("makecurrent-btn");
     if (mc) {
@@ -3309,14 +3309,14 @@
       try { j = await r.json(); } catch { j = null; }
       disarmNewSession();
       if (!r.ok || !j || j.ok !== true) {
-        showToast("New side chat failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
+        showToast("New session failed: " + ((j && j.why) || ("HTTP " + r.status)), "alert");
         return;
       }
       await applyMainChanged(j.sessionId, j.generation, stamp);
-      showToast("Side chat started — the previous main chat moved to Past chats.", "info");
+      showToast("New session started — the previous main chat moved to Past chats.", "info");
     } catch (e) {
       disarmNewSession();
-      showToast("New side chat failed: " + e.message, "alert");
+      showToast("New session failed: " + e.message, "alert");
     } finally {
       ADOPTING -= 1;
       settleHeldMain();

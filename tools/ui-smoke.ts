@@ -5620,7 +5620,9 @@ try {
 				"t60 new session asks inline with the past-chats note",
 				(
 					(await page.locator("#newsession-confirm").textContent()) ?? ""
-				).includes("Start a side chat? The main chat moves to Past chats."),
+				).includes(
+					"Start a new session? The current main chat moves to Past chats.",
+				),
 			);
 			await page.screenshot({
 				path: path.join(OUT, "48-t60-new-confirm.png"),
