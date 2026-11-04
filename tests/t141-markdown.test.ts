@@ -13,10 +13,13 @@ beforeAll(async () => {
 	await page.setContent(
 		await inlineMarkdown("<!doctype html><body><!--muse:markdown--></body>"),
 	);
-});
+	// Real browser launch on a loaded box can exceed bun's 5s hook
+	// default (CI run 4: launch starved beside a worker-heavy file).
+}, 60_000);
 
 afterAll(async () => {
-	await browser.close();
+	// A failed launch must not mask itself behind a close crash.
+	if (browser) await browser.close();
 });
 
 type El = { tag: string; attrs: string[] };
