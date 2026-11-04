@@ -26,7 +26,7 @@
 		"@tikoci/quickchr": "next",
 		"@tikoci/rosetta": "next",
 		"dompurify": "3.4.17",
-		"marked": "16.4.2",
+		"marked": "18.1.2",
 		"mermaid": "12.2.0",
 		"routeros-skills": "github:tikoci/routeros-skills#37f271ff0195745aeac727daa74482d2c2abb75c"
 	},
