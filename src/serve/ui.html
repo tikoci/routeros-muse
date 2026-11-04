@@ -172,7 +172,7 @@
   .stream .caret { width: 8px; height: 15px; background: var(--accent); border-radius: 2px; animation: pulse 1s infinite; }
 
   .msg.agent.tcard { align-self: stretch; max-width: none; }
-  .msg.agent.tcard .body { background: transparent; border-color: var(--border); }
+  .msg.agent.tcard .body { background: transparent; border: none; padding: 2px 0 2px 4px; }
   .tcard .who .tname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tcard .who .pill { margin-left: auto; flex: none; }
   .kindcap { font: 10.5px var(--mono); color: var(--faint); flex: none; }
@@ -276,8 +276,15 @@
   .plusmark { color: var(--faint); font-size: 14px; }
   .morelink { display: block; width: calc(100% - 20px); margin: 2px 10px 6px; background: none; border: none; cursor: pointer; color: var(--faint); font: 600 11.5px var(--sans); text-align: left; padding: 4px 10px; border-radius: 6px; }
   .morelink:hover { color: var(--text); background: var(--inset); }
-  #wslist .docrow:nth-child(n+5) { display: none; }
-  .left.expanded #wslist .docrow { display: flex; }
+  /* workspace file tree (T143) */
+  #wslist .frow { display: flex; align-items: center; gap: 6px; margin: 0 10px; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+  #wslist .frow:hover { background: var(--inset); }
+  #wslist .frow .fn { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #wslist .frow .dm { font-size: 10.5px; color: var(--faint); flex: none; }
+  #wslist .frow .tw { width: 12px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+  #wslist .frow.dir .tw::before { content: ""; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; padding: 2.5px; transform: rotate(-45deg); }
+  #wslist .frow.dir.open .tw::before { transform: rotate(45deg); }
+  #wslist .frow.dir .fn { color: var(--muted); font-weight: 600; }
   .left.expanded .devsect { display: none; }
   .wsempty { margin: 4px 10px; padding: 16px 10px; text-align: center; color: var(--faint); font-size: 12px; }
   .wsempty p { margin: 0 0 10px; }
@@ -317,7 +324,10 @@
   .credctx { font: 12px var(--mono); color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .crederr { color: var(--bad); font-size: 12.5px; min-height: 18px; overflow-wrap: anywhere; }
   .crednote { font-size: 11.5px; color: var(--faint); line-height: 1.45; overflow-wrap: anywhere; }
-  .dev .credrow { margin: 8px 0 0 16px; }
+  .dev .chat .chatstate { display: inline-flex; align-items: center; gap: 6px; }
+  .credgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
+  .credports { border: 1px solid var(--border-soft); border-radius: 8px; padding: 6px 10px 10px; margin: 4px 0; }
+  .credports legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
   .minibtn.need { border-color: var(--amber); color: var(--amber); }
   .titem { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; }
   .titem:hover { background: var(--inset); }
@@ -478,14 +488,14 @@
     <div class="brand"><span class="marks" title="RouterOS Muse"><svg width="14" height="15" viewBox="0 0 41.83 44.62"><path d="M41.83,13.83c0-1.77-.96-3.4-2.5-4.26L23.3.62c-1.48-.83-3.28-.83-4.76,0L2.5,9.57c-1.54.86-2.5,2.49-2.5,4.26v17.08c0,1.78.97,3.42,2.53,4.28l16.04,8.82c1.46.81,3.24.81,4.7,0l16.04-8.82c1.56-.86,2.53-2.5,2.53-4.28V13.83ZM12.03,30.78c0,.4-.43.65-.78.46l-2.68-1.48c-.56-.31-.9-.89-.9-1.53v-8.07c0-.4.43-.65.78-.46l2.95,1.63c.39.21.63.62.63,1.07v8.38ZM34.16,28.19c0,.63-.34,1.22-.9,1.53l-2.68,1.48c-.35.19-.78-.06-.78-.46v-10.32c0-.4-.43-.65-.78-.46l-4.95,2.73c-.56.31-.9.89-.9,1.53v10.55c0,.32-.17.61-.45.76l-1.01.56c-.52.29-1.16.29-1.69,0l-.94-.52c-.28-.15-.45-.45-.45-.76v-10.66c0-.63-.34-1.22-.9-1.53l-9.81-5.42c-.17-.09-.27-.27-.27-.46v-.42c0-.63.34-1.22.9-1.53l1.4-.77c.52-.29,1.16-.29,1.69,0l8.48,4.69c.52.29,1.16.29,1.69,0l3.81-2.11c.36-.2.36-.72,0-.92l-8.51-4.7c-.36-.2-.36-.72,0-.92l2.9-1.6c.52-.29,1.16-.29,1.69,0l11.55,6.38c.56.31.9.89.9,1.53v11.81Z" fill="currentColor"/></svg><svg width="20" height="15" viewBox="0 0 24 18"><path d="M18.6 6.6c-2 0-3.6 2.5-4.9 4.4-.5.8-1.1 1.7-1.7 2.4-.6-.7-1.2-1.6-1.7-2.4-1.3-1.9-2.9-4.4-4.9-4.4-2.7 0-4.4 2.2-4.4 4.9s1.7 4.9 4.4 4.9c2 0 3.6-2.5 4.9-4.4.5-.8 1.1-1.7 1.7-2.4.6.7 1.2 1.6 1.7 2.4 1.3 1.9 2.9 4.4 4.9 4.4 2.7 0 4.4-2.2 4.4-4.9s-1.7-4.9-4.4-4.9z" fill="none" stroke="currentColor" stroke-width="2"/></svg></span></div>
     <div class="scroll">
       <div class="devsect">
-      <div class="sect split"><span>Devices · live via centrs</span><button class="minibtn" id="adddevice" title="Ask the agent to add a device (idle only)">Add Device</button></div>
+      <div class="sect split"><span>Devices · live via centrs</span><button class="minibtn" id="adddevice" title="Add a device to the centrs CDB">Add Device</button></div>
       <div id="devlist"></div>
       </div>
-      <div class="sect split"><span>Workspace · recent</span><button class="minibtn" id="wsadd" title="Open a workspace file…">Open File</button></div>
+      <div class="sect split"><span>Workspace · files</span><button class="minibtn" id="wsadd" title="Open a workspace file…">Open File</button></div>
       <div id="wslist">
       </div>
-      <button class="morelink" id="wsmore">Show more ↓</button>
-      <div class="wsempty" id="wsempty" style="display:none"><p>No recent files.</p><button class="btn" id="wsopen">Open file</button></div>
+      <button class="morelink" id="wsmore" style="display:none">Show more ↓</button>
+      <div class="wsempty" id="wsempty" style="display:none"><p>No files.</p><button class="btn" id="wsopen">Open file</button></div>
     </div>
     <div class="foot" id="leftfoot">…</div>
   </aside>
@@ -522,8 +532,8 @@
         <button class="minibtn" id="oauthrecheck">Recheck</button>
       </div>
       <div class="targets" id="targets">
-        <button class="tadd" id="tadddev" title="Target another device — its centrs card is checked and added here">+ Device</button>
-        <button class="tadd" id="composerfile" title="Open a file…">+ File</button>
+        <button class="tadd" id="tadddev" hidden title="Target another device — its centrs card is checked and added here">+ Device</button>
+        <button class="tadd" id="composerfile" hidden title="Open a file…">+ File</button>
       </div>
       <div class="waiting" id="waiting" style="display:none" title="Jump to the first item waiting for you"><span class="wdot"></span><span id="waiting-text">Waiting for you</span></div>
       <div class="composer">
@@ -588,7 +598,7 @@
         <h1 id="pdev-name">…</h1>
         <div class="statgrid" id="pdev-stats">
         </div>
-        <div class="tomlfoot"><button class="btn primary" id="pdev-add" style="display:none">Add to chat</button><button class="btn" id="pdev-cred" style="display:none">Set credentials</button><button class="btn" id="pdev-refresh">Refresh</button><span class="note" id="pdev-note">…</span></div>
+        <div class="tomlfoot"><button class="btn primary" id="pdev-add" style="display:none">Add to chat</button><button class="btn" id="pdev-cred">Access</button><button class="btn" id="pdev-refresh">Refresh</button><button class="btn" id="pdev-remove" title="Remove this device from the centrs CDB">Remove</button><span class="note" id="pdev-note">…</span></div>
       </div>
     </div>
 
@@ -809,17 +819,28 @@
   </div>
 </div>
 <div class="overlay" id="credmodal">
-  <div class="modal" role="dialog" aria-label="Set credentials">
-    <div class="mhead"><span id="credtitle">Set credentials</span><button class="x" id="credx" title="Close">×</button></div>
+  <div class="modal" role="dialog" aria-label="Device access">
+    <div class="mhead"><span id="credtitle">Access</span><button class="x" id="credx" title="Close">×</button></div>
     <div class="mbody">
       <form class="mform" id="credform">
         <div class="credctx" id="credctx">loading…</div>
         <div class="crednote" id="credlimit">Conflict check is limited: it compares only the device, login user, group, record type, session, WinBox profile, whether a password is saved, and the SSH key path. Password-value changes are invisible to it — a password changed elsewhere since this modal opened will NOT raise a conflict. The check re-reads the record before saving; it is not atomic, so two simultaneous saves can both succeed with one lost. Durable fix: tikoci/centrs#581.</div>
+        <label id="credl-host" style="display:none">Device address<input id="credf-host" placeholder="IP or DNS name" spellcheck="false" autocapitalize="off"></label>
         <label>Login user<input id="credf-user" autocomplete="username" placeholder="unchanged" spellcheck="false"></label>
         <label>Password<input type="text" id="credf-password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lastpass-ignore placeholder="unchanged (no-echo)"></label>
         <label>SSH key path<input id="credf-sshkey" placeholder="unchanged" spellcheck="false"><span class="credhint">Saved as the ssh-key= pair in the record comment (comment kv-soup — see centrs devices set --help).</span></label>
         <label>WinBox profile<input id="credf-profile" placeholder="unchanged" spellcheck="false"></label>
         <label>Session<input id="credf-session" placeholder="unchanged" spellcheck="false"></label>
+        <fieldset class="credports"><legend>Service ports (blank = RouterOS default)</legend>
+          <div class="credgrid">
+            <label>www (REST)<input id="credp-www-port" inputmode="numeric" placeholder="80" spellcheck="false"></label>
+            <label>www-ssl (REST)<input id="credp-www-ssl-port" inputmode="numeric" placeholder="443" spellcheck="false"></label>
+            <label>api<input id="credp-api-port" inputmode="numeric" placeholder="8728" spellcheck="false"></label>
+            <label>api-ssl<input id="credp-api-ssl-port" inputmode="numeric" placeholder="8729" spellcheck="false"></label>
+            <label>ssh<input id="credp-ssh-port" inputmode="numeric" placeholder="22" spellcheck="false"></label>
+          </div>
+          <span class="credhint">Saved as www-port=, api-port=, … in the record comment. centrs uses them once tikoci/centrs#618 ships; until then they are stored but ignored.</span>
+        </fieldset>
         <div class="crederr" id="crederr"></div>
       </form>
     </div>
@@ -1005,7 +1026,7 @@
   function setRunning(on) {
     AGENT_RUNNING = on;
     if (on) { runSecs = 0; }
-    else { stopReset(); }
+    else { stopReset(); if (window.__reloadFiles) window.__reloadFiles(); }
     document.getElementById("runstat").style.display = on ? "" : "none";
     document.getElementById("runstat").title = on ? "Agent is running" : "Agent is idle";
     refreshSendVisibility();
@@ -1243,10 +1264,9 @@
     noteEl.textContent = "checking…";
     addEl.style.display = "none";
     addEl.onclick = () => { addTarget(id); showPane("pane-chat"); };
-    credEl.style.display = "none";
     credEl.onclick = () => openCred(id, noteEl.textContent);
     document.getElementById("pdev-refresh").onclick = () => renderDevice(id);
-    const linkable = NO_WS || !!device.cdb;
+    document.getElementById("pdev-remove").onclick = () => removeDevice(id);
     try {
       const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/stats");
       const j = await r.json();
@@ -1255,7 +1275,6 @@
         statsEl.innerHTML = "";
         noteEl.textContent = j.why;
         addEl.style.display = "";
-        if (linkable) credEl.style.display = "";
         return;
       }
       dotEl.className = "dot ok";
@@ -1275,7 +1294,21 @@
       dotEl.className = "dot warn";
       noteEl.textContent = "unavailable: " + e.message;
       addEl.style.display = "";
-      if (linkable) credEl.style.display = "";
+    }
+  }
+  async function removeDevice(id) {
+    if (!confirm("Remove " + id + " from the centrs CDB? centrs keeps a backup of the store.")) return;
+    const noteEl = document.getElementById("pdev-note");
+    noteEl.textContent = "removing…";
+    try {
+      const r = await fetch("/api/devices/" + encodeURIComponent(id) + "/remove", { method: "POST" });
+      const j = await r.json();
+      if (!j.ok) { noteEl.textContent = "remove failed: " + (j.why || "unknown"); return; }
+      dropTarget(id);
+      await window.__reloadDevices();
+      showPane("pane-chat");
+    } catch (e) {
+      noteEl.textContent = "remove failed: " + e.message;
     }
   }
   let tomlState = null;
@@ -1396,11 +1429,9 @@
     showPane(id);
     if (id === "pane-artifact") bindArtTab(slot);
   }
-  function topWorkspace(file) {
-    const row = document.querySelector('#wslist [data-path="' + CSS.escape(file) + '"]')
-      || document.querySelector('#wslist [data-file="' + CSS.escape(file) + '"]');
-    if (row) row.parentNode.prepend(row);
-  }
+  // The workspace list is a file tree (T143), not an MRU list: opening
+  // a file no longer reorders it.
+  function topWorkspace() {}
   function addTarget(id) {
     if (document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]')) return;
     const pill = document.createElement("span");
@@ -1413,9 +1444,15 @@
     pill.appendChild(x);
     document.getElementById("targets").prepend(pill);
     const card = document.querySelector('.dev[data-key="' + CSS.escape('dev-' + id) + '"]');
-    if (card) {
-      card.classList.add("targeted");
-      card.querySelector(".chat").innerHTML = "";
+    if (card) cardChatState(card, id, true);
+    refreshStatpop();
+  }
+  // The card's chat slot: an Add to Chat button, or "in this chat ×".
+  function cardChatState(card, id, inChat) {
+    card.classList.toggle("targeted", inChat);
+    const slot = card.querySelector(".chatstate");
+    slot.textContent = "";
+    if (inChat) {
       const s = document.createElement("span");
       s.className = "inchat";
       s.textContent = "in this chat ";
@@ -1425,18 +1462,21 @@
       ux.title = "Remove from this chat";
       ux.textContent = "×";
       s.appendChild(ux);
-      card.querySelector(".chat").appendChild(s);
+      slot.appendChild(s);
+      return;
     }
-    refreshStatpop();
+    const b = document.createElement("button");
+    b.className = "minibtn";
+    b.textContent = "Add to Chat";
+    b.title = "Target this device in the chat";
+    b.addEventListener("click", (e) => { e.stopPropagation(); addTarget(id); });
+    slot.appendChild(b);
   }
   function dropTarget(id) {
     const pill = document.querySelector('.tpill[data-dev="' + CSS.escape(id) + '"]');
     if (pill) pill.remove();
     const card = document.querySelector('.dev[data-key="' + CSS.escape('dev-' + id) + '"]');
-    if (card) {
-      card.classList.remove("targeted");
-      card.querySelector(".chat").innerHTML = '<span class="gone">not in this chat</span>';
-    }
+    if (card) cardChatState(card, id, false);
     refreshStatpop();
   }
   // T55: agent-driven UI over the ui/* SSE events. ui_notify posts a
@@ -1642,7 +1682,22 @@
     "need {password} or {sshKey} (one secret to save)",
     "bad {id} (lowercase slug: [a-z0-9-], starts alnum, 1-64 chars)",
     "router.toml is unparseable; edit the file by hand",
+    "bad {ports} (known port keys, 1-65535)",
   ];
+  // centrs#618 service port keys (fleet.ts PORT_KEYS).
+  const PORT_KEYS = ["www-port", "www-ssl-port", "api-port", "api-ssl-port", "ssh-port"];
+  function portFields(ports) {
+    for (const k of PORT_KEYS) document.getElementById("credp-" + k).value = (ports && ports[k]) || "";
+  }
+  // Only keys whose value differs from the record; "" removes a key.
+  function portChanges(before) {
+    const out = {};
+    for (const k of PORT_KEYS) {
+      const v = document.getElementById("credp-" + k).value.trim();
+      if (v !== ((before && before[k]) || "")) out[k] = v;
+    }
+    return out;
+  }
   function credSafeWhy(why, id, target) {
     if (typeof why !== "string" || why === "") return null;
     if (CRED_SAFE_WHY.includes(why)) return why;
@@ -1678,6 +1733,8 @@
       "user " + (d.user || "(none)") + " · password " + (d.hasPassword ? "saved" : "not set"),
     ];
     if (d.sshKey) lines.push("ssh-key " + d.sshKey);
+    const ports = PORT_KEYS.filter((k) => d.ports && d.ports[k]).map((k) => k + "=" + d.ports[k]);
+    if (ports.length) lines.push(ports.join(" · "));
     const handles = [];
     if (d.recordTypeName) handles.push(d.recordTypeName);
     if (d.group) handles.push("group " + d.group);
@@ -1698,7 +1755,9 @@
     credState = { id, expected: null, add: null };
     document.getElementById("credsave").textContent = "Save to CDB";
     document.getElementById("credf-password").placeholder = "unchanged (no-echo)";
-    document.getElementById("credtitle").textContent = "Set credentials · " + id;
+    document.getElementById("credtitle").textContent = "Access · " + id;
+    document.getElementById("credl-host").style.display = "none";
+    portFields(null);
     document.getElementById("credctx").textContent = "loading…";
     document.getElementById("crederr").textContent = "";
     for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
@@ -1722,6 +1781,7 @@
       credState.expected = j.details;
       document.getElementById("credf-user").value = j.details.user || "";
       document.getElementById("credf-sshkey").value = j.details.sshKey || "";
+      portFields(j.details.ports);
       document.getElementById("credctx").textContent = credCtxText(j.details, contextErr);
     } catch (e) {
       document.getElementById("credctx").textContent = "unavailable: " + e.message;
@@ -1733,16 +1793,21 @@
   // relay validation) instead of the T48 `expected` snapshot, and
   // the title/context say so. All T72 hardening applies unchanged:
   // busy guard, clear-on-success, retain-on-failure, whitelist.
+  // From the Add Device button host is "" and the owner types it; from
+  // the agent relay it arrives prefilled and stays read-only.
   async function openAddDevice(host, user, id) {
     // Never swap the modal under an in-flight save (same guard as openCred).
     if (credSaving) return;
-    credState = { id, expected: null, add: { host, user: user || "" } };
-    document.getElementById("credtitle").textContent = "Add device · " + host;
-    const routerLine = NO_WS
-      ? "saving creates the CDB record (no workspace attached: router.toml is skipped)."
-      : "saving adds it to router.toml (id " + id + ") and creates the CDB record.";
-    document.getElementById("credctx").textContent =
-      "New device " + host + " — " + routerLine + "\nHost is shown, not edited. Type the password below; it is never echoed.";
+    credState = { id, expected: null, add: { host, user: user || "", typed: !host } };
+    document.getElementById("credtitle").textContent = host ? "Add device · " + host : "Add device";
+    const hostEl = document.getElementById("credf-host");
+    document.getElementById("credl-host").style.display = "";
+    hostEl.value = host || "";
+    hostEl.readOnly = !!host;
+    portFields(null);
+    document.getElementById("credctx").textContent = host
+      ? "New device " + host + " — saving creates its centrs CDB record.\nHost is shown, not edited. Type the password below; it is never echoed."
+      : "New device — saving creates its centrs CDB record. The password is never echoed.";
     document.getElementById("crederr").textContent = "";
     for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
     document.getElementById("credf-user").value = user || "";
@@ -1751,6 +1816,7 @@
     document.getElementById("credf-password").placeholder = "type the password (never echoed)";
     document.getElementById("credsave").textContent = "Add device";
     document.getElementById("credmodal").classList.add("open");
+    (host ? document.getElementById("credf-user") : hostEl).focus();
   }
   async function saveCred() {
     if (!credState) return;
@@ -1762,8 +1828,9 @@
     // Enter-submit still reaches this guard, which is the real block).
     if (credSaving) return;
     const v = (f) => document.getElementById(f).value;
-    const body = { user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session"), expected: credState.expected };
-    if (!body.user && !body.password && !body.sshKey && !body.profile && !body.session) {
+    const ports = portChanges(credState.expected.ports);
+    const body = { user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session"), ports, expected: credState.expected };
+    if (!body.user && !body.password && !body.sshKey && !body.profile && !body.session && !Object.keys(ports).length) {
       document.getElementById("crederr").textContent = "nothing to write — fill at least one field.";
       return;
     }
@@ -1819,9 +1886,13 @@
     if (!credState || !credState.add) return;
     if (credSaving) return;
     const v = (f) => document.getElementById(f).value;
-    const host = credState.add.host;
-    const id = credState.id;
-    const body = { host, id, user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session") };
+    const host = credState.add.typed ? v("credf-host").trim() : credState.add.host;
+    if (!host) {
+      document.getElementById("crederr").textContent = "need the device address — fill the address field.";
+      return;
+    }
+    const id = host;
+    const body = { host, id, user: v("credf-user"), password: v("credf-password"), sshKey: v("credf-sshkey"), profile: v("credf-profile"), session: v("credf-session"), ports: portChanges(null) };
     if (!body.user) {
       document.getElementById("crederr").textContent = "need a login user — fill the user field.";
       return;
@@ -1840,7 +1911,8 @@
       const j = await r.json();
       if (j.ok) {
         const doneId = j.id || id;
-        for (const f of ["credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
+        for (const f of ["credf-host", "credf-user", "credf-password", "credf-sshkey", "credf-profile", "credf-session"]) document.getElementById(f).value = "";
+        portFields(null);
         credSaving = false;
         closeCred();
         await window.__reloadDevices();
@@ -1912,9 +1984,8 @@
     setWsExpanded(!document.querySelector(".left").classList.contains("expanded"));
   });
   function refreshWs() {
-    const empty = document.querySelectorAll("#wslist .docrow").length === 0;
+    const empty = document.querySelectorAll("#wslist .frow").length === 0;
     document.getElementById("wsempty").style.display = empty ? "" : "none";
-    document.getElementById("wsmore").style.display = empty ? "none" : "";
   }
   const chatmsgs = document.querySelector("#pane-chat .msgs");
   const tailbar = document.getElementById("tailbar");
@@ -3516,22 +3587,19 @@
         card.title = "Click for the stats tab";
         const role = [d.role, d.site].filter(Boolean).join(" · ") || (d.cdb ? "centrs device" : "device");
         card.innerHTML = '<div class="row1"><span class="dot warn"></span><span class="name"></span><span class="role"></span></div>'
-          + '<div class="live"></div><div class="chat"><span class="gone">not in this chat</span></div>';
+          + '<div class="live"></div><div class="chat"><button class="minibtn access">Access</button><span class="chatstate"></span></div>';
         card.querySelector(".name").textContent = d.id;
         card.querySelector(".role").textContent = role;
         card.querySelector(".live").textContent = d.cdb ? "cdb " + d.cdb + (d.user ? " · " + d.user : "") : d.host ? d.host : "no device linked";
-        if (d.cdb) {
-          const row = document.createElement("div");
-          row.className = "credrow";
-          const b = document.createElement("button");
-          const needs = d.hasPassword === false;
-          b.className = "minibtn" + (needs ? " need" : "");
-          b.textContent = needs ? "Set credentials" : "Credentials";
-          b.title = needs ? "No saved password for this device — set one" : "Review or change this device's CDB credentials";
-          b.addEventListener("click", (e) => { e.stopPropagation(); openCred(d.id, null); });
-          row.appendChild(b);
-          card.appendChild(row);
+        const acc = card.querySelector(".access");
+        if (d.hasPassword === false) {
+          acc.classList.add("need");
+          acc.title = "No saved password for this device — set one";
+        } else {
+          acc.title = "Login, password, SSH key and service ports in the CDB";
         }
+        acc.addEventListener("click", (e) => { e.stopPropagation(); openCred(d.id, null); });
+        cardChatState(card, d.id, false);
         box.appendChild(card);
       }
       const n = window.__devices.length;
@@ -3542,40 +3610,57 @@
     }
   }
 
+  // T143: the left panel lists the workspace's files as a tree (every
+  // file except dotfiles and *.cdb stores, filtered server-side).
+  // Directories fold; the open set survives reloads.
+  const FILES_OPEN = new Set();
   async function loadRecents() {
     const box = $("wslist");
     try {
-      const j = await getJSON("/api/recents");
+      const j = await getJSON("/api/files");
       if (j.why) {
         box.innerHTML = '<div class="setnote">' + esc(j.why) + "</div>";
         return;
       }
       box.innerHTML = "";
-      for (const r of j.recents || []) {
+      const closedAt = [];
+      for (const e of j.entries || []) {
+        while (closedAt.length && e.depth <= closedAt[closedAt.length - 1]) closedAt.pop();
+        const hidden = closedAt.length > 0;
+        const isDir = e.kind === "dir";
         const row = document.createElement("div");
-        row.className = "docrow";
-        row.dataset.path = r.path;
-        row.dataset.title = r.title;
-        if (r.kind === "dir") {
-          row.dataset.goto = "pane-doc";
-        } else if (r.path.endsWith(".toml")) {
-          row.dataset.goto = "pane-toml";
-        } else if (r.kind === "artifact") {
-          row.dataset.goto = "pane-artifact";
-          row.dataset.tier = r.tier === "scripts" ? "scripts" : "static";
+        row.className = "frow" + (isDir ? " dir" : " docrow");
+        row.style.paddingLeft = 8 + e.depth * 14 + "px";
+        row.title = e.path;
+        if (hidden) row.style.display = "none";
+        const open = isDir && FILES_OPEN.has(e.path);
+        if (isDir) {
+          row.innerHTML = '<span class="tw"></span><span class="fn"></span>';
+          if (open) row.classList.add("open");
+          row.addEventListener("click", () => {
+            if (FILES_OPEN.has(e.path)) FILES_OPEN.delete(e.path); else FILES_OPEN.add(e.path);
+            loadRecents();
+          });
+          if (!open) closedAt.push(e.depth);
         } else {
-          row.dataset.goto = "pane-doc";
+          row.dataset.path = e.path;
+          row.dataset.title = e.name;
+          if (e.kind === "toml") row.dataset.goto = "pane-toml";
+          else if (isArtifact(e.path)) {
+            row.dataset.goto = "pane-artifact";
+            row.dataset.tier = e.tier === "scripts" ? "scripts" : "static";
+          } else row.dataset.goto = "pane-doc";
+          row.innerHTML = '<span class="tw"></span><span class="fn"></span><span class="dm"></span>';
+          row.querySelector(".dm").textContent = e.meta || "";
         }
-        const chip = r.kind === "toml" ? "TOML" : r.kind === "md" ? "MD" : r.kind === "artifact" ? "ART" : "DIR";
-        row.innerHTML = '<span class="kchip ' + r.kind + '">' + chip + '</span><div class="grow"><div class="dn"></div><div class="file"></div></div><span class="dm"></span>';
-        row.querySelector(".dn").textContent = r.title;
-        row.querySelector(".file").textContent = r.file;
-        row.querySelector(".dm").textContent = r.meta;
+        row.querySelector(".fn").textContent = isDir ? e.name + "/" : e.name;
         box.appendChild(row);
       }
       refreshWs();
     } catch { refreshWs(); }
   }
+  window.__reloadFiles = loadRecents;
+  window.addEventListener("focus", () => loadRecents());
 
   async function loadTree() {
     const box = $("mview-topology");
@@ -4343,11 +4428,9 @@
       refreshStatpop();
       stopNote("Stopped via " + stepName + ".", false);
     });
-    $("adddevice").addEventListener("click", () => {
-      // Settled: Add Device is an idle-time prompt injection, not a form.
-      if (AGENT_RUNNING) return;
-      send("Add a device. Ask me for its host (IP or DNS name) and login user if I have not given them. Check `centrs devices list --json` for a duplicate, then call ui_add_device prefilled with host and user so I type the password in the dialog. Never ask for the password in chat.");
-    });
+    // T136: Add Device opens the form directly (the agent relay
+    // ui_add_device still opens the same form prefilled).
+    $("adddevice").addEventListener("click", () => openAddDevice("", "", ""));
   }
 
   function wireUpload() {

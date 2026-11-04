@@ -11,13 +11,14 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	type CdbCredentialDetails,
+	cleanPorts,
 	type Device,
 	deviceStats,
 	doctorTwins,
 	listCdbDevices,
 	listDevices,
 	listTwins,
-	readDevices,
+	removeCdbDevice,
 	setCdbCredentials,
 	showCdbDevice,
 } from "../lib/fleet";
@@ -59,7 +60,6 @@ import {
 	writePreallowReads,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
-import { parseToml } from "../lib/toml";
 import {
 	toolBinDir as defaultToolBinDir,
 	detectInstalled,
@@ -77,6 +77,7 @@ import {
 	isArtifactPath,
 	listAlerts,
 	listRecents,
+	listWorkspaceFiles,
 	readTomlSections,
 	readWorkspaceFile,
 	resolveArtifact,
@@ -97,7 +98,6 @@ import {
 	mintMcpToken,
 	NOTIFY_TEXT_MAX,
 	resolveUiOpen,
-	slugFromHost,
 	stripMcpPrefix,
 	tokensEqual,
 	validAddHost,
@@ -1213,6 +1213,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	/** stop() waits this long for in-flight launches before killing. */
 	const STOP_LAUNCH_WAIT_MS = 60_000;
 	let metaAuth: MetaAuth = "unknown";
+	/** D53: device ids (CDB targets) from the last /api/devices list. */
+	let knownDeviceIds = new Set<string>();
 	const uiHtml = await inlineMarkdown(await Bun.file(UI_PATH).text());
 	const provider =
 		opts.provider ?? process.env["ROUTEROS_MUSE_PROVIDER"] ?? "meta";
@@ -2477,13 +2479,13 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 			return json({ ok: true, result: `opened ${rel}` });
 		}
 		if (tool === "ui_select_device") {
-			if (noWs) return json({ ok: false, why: "no workspace attached" });
 			const id = args["id"];
 			if (typeof id !== "string" || !id) {
 				return json({ ok: false, why: "need {id}" });
 			}
-			const dev = readDevices(root).find((d) => d.id === id);
-			if (!dev) {
+			// D53: ids are CDB targets; the relay has no unlock env of
+			// its own, so it checks the list the UI last loaded.
+			if (!knownDeviceIds.has(id)) {
 				return json({
 					ok: false,
 					why: `unknown device id: ${id.slice(0, 120)}`,
@@ -2524,8 +2526,9 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				});
 			}
 			const user = typeof userRaw === "string" ? userRaw : "";
-			const id =
-				typeof idRaw === "string" && idRaw !== "" ? idRaw : slugFromHost(host);
+			// D53: the CDB target is the device id; {id} is accepted
+			// for compatibility and ignored.
+			const id = host;
 			emit({ method: "ui/add-device", params: { host, user, id } });
 			return json({
 				ok: true,
@@ -2628,6 +2631,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					noWs &&
 					(p === "/api/tree" ||
 						p === "/api/recents" ||
+						p === "/api/files" ||
 						p === "/api/file" ||
 						p === "/api/toml" ||
 						p === "/api/alerts" ||
@@ -3167,6 +3171,18 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					);
 					return json({ root, entries });
 				}
+				if (p === "/api/files") {
+					const cx = {
+						dataHome: opts.dataHome,
+						cache: new Map<string, TierMemo>(),
+					};
+					const entries = listWorkspaceFiles(root).map((e) =>
+						isArtifactPath(e.path)
+							? { ...e, tier: artifactTier(root, e.path, cx) }
+							: e,
+					);
+					return json({ entries });
+				}
 				if (p === "/api/recents") {
 					// One tier memo per request, as in /api/tree.
 					const cx = {
@@ -3234,20 +3250,31 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json(res.body, res.status);
 				}
 				if (p === "/api/devices") {
-					return json(
-						await listDevices(noWs ? null : root, cdbFile, envFor(req)),
+					const listed = await listDevices(cdbFile, envFor(req));
+					if (!listed.why)
+						knownDeviceIds = new Set(listed.devices.map((d) => d.id));
+					return json(listed);
+				}
+				// Remove one device from the CDB (owner click + confirm).
+				if (
+					p.startsWith("/api/devices/") &&
+					p.endsWith("/remove") &&
+					req.method === "POST"
+				) {
+					const id = decodeURIComponent(
+						p.slice("/api/devices/".length, -"/remove".length),
 					);
+					if (!validAddHost(id))
+						return json({ ok: false, why: `no device ${id}` }, 404);
+					const res = await removeCdbDevice(cdbFile, id, envFor(req));
+					if (res.ok) knownDeviceIds.delete(id);
+					return json(res);
 				}
 				if (p.startsWith("/api/devices/") && p.endsWith("/stats")) {
 					const id = decodeURIComponent(
 						p.slice("/api/devices/".length, -"/stats".length),
 					);
-					const res = await deviceStats(
-						noWs ? null : root,
-						id,
-						cdbFile,
-						envFor(req),
-					);
+					const res = await deviceStats(id, cdbFile, envFor(req));
 					return json(res.body, res.status);
 				}
 				// T48 set-credentials modal: thin wrappers over the fleet
@@ -3260,25 +3287,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const id = decodeURIComponent(
 						p.slice("/api/devices/".length, -"/credentials".length),
 					);
-					let target: string | null;
-					if (noWs) {
-						target = id;
-					} else {
-						const listed = await listDevices(root, null, envFor(req));
-						const device = listed.devices.find((s) => s.id === id);
-						if (!device)
-							return json({ ok: false, why: `no device ${id}` }, 404);
-						if (!device.cdb) {
-							return json(
-								{
-									ok: false,
-									why: `device ${id} has no cdb link yet (add cdb = "<centrs-device>" to its [device])`,
-								},
-								400,
-							);
-						}
-						target = device.cdb;
-					}
+					// D53: the device id is the CDB target.
+					const target = id;
 					if (req.method === "GET") {
 						const seen = await showCdbDevice(cdbFile, target, envFor(req));
 						if (!seen.ok) {
@@ -3300,10 +3310,18 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							sshKey?: unknown;
 							profile?: unknown;
 							session?: unknown;
+							ports?: unknown;
 							expected?: unknown;
 						};
 						const field = (v: unknown): string | undefined =>
 							typeof v === "string" ? v : undefined;
+						const ports = cleanPorts(body.ports);
+						if (ports === null) {
+							return json(
+								{ ok: false, why: "bad {ports} (known port keys, 1-65535)" },
+								400,
+							);
+						}
 						const exp = body.expected as
 							| CdbCredentialDetails
 							| { missing: true }
@@ -3318,6 +3336,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								sshKey: field(body.sshKey),
 								profile: field(body.profile),
 								session: field(body.session),
+								ports,
 							},
 							envFor(req),
 							exp === undefined ? null : exp,
@@ -3356,11 +3375,10 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 				// password rides this loopback POST body only (the same
 				// accepted shape as T48) — never logged, never argv in
 				// OUR code (setCdbCredentials' internal centrs argv is
-				// the documented existing residual). Workspace mode
-				// appends a [device] block to router.toml then creates
-				// the CDB record; no-workspace mode is CDB-only. The
-				// router.toml entry stays when the CDB write fails — the
-				// card's Set credentials affordance is the recovery.
+				// the documented existing residual). D53: CDB-only in
+				// every mode — the record (with any centrs#618 service
+				// port keys) is the whole device; router.toml is never
+				// written.
 				if (p === "/api/devices/add" && req.method === "POST") {
 					const body = (await req.json()) as {
 						host?: unknown;
@@ -3369,6 +3387,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						sshKey?: unknown;
 						profile?: unknown;
 						session?: unknown;
+						ports?: unknown;
 						id?: unknown;
 					};
 					// Defense in depth: the route is directly reachable,
@@ -3407,148 +3426,15 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							why: "bad {id} (lowercase slug: [a-z0-9-], starts alnum, 1-64 chars)",
 						});
 					}
-					// No-workspace mode has no router.toml, so the id is
-					// the CDB host target itself (the inventory key the
-					// new card renders under).
-					const id = noWs ? host : idRaw !== "" ? idRaw : slugFromHost(host);
-					// Workspace mode: append the device block first.
-					// Re-read immediately before write (C15 interim
-					// stance, same as credentials) and refuse on an
-					// unparseable file rather than appending blind.
-					if (!noWs) {
-						let current: string;
-						try {
-							current = nodeFs.readFileSync(
-								path.join(root, "router.toml"),
-								"utf8",
-							);
-						} catch {
-							current = "";
-						}
-						// Parsed value drives the block form below; a
-						// missing file starts empty.
-						let v: Record<string, unknown> = {};
-						if (current !== "") {
-							const parsedNow = parseToml(current);
-							if (!parsedNow.ok) {
-								return json(
-									{
-										ok: false,
-										stage: "router",
-										id,
-										why: "router.toml is unparseable; edit the file by hand",
-									},
-									409,
-								);
-							}
-							v = (parsedNow.value ?? {}) as Record<string, unknown>;
-						}
-						const devices = readDevices(root);
-						const byId = devices.find((d) => d.id === id);
-						const coversHost = (d: Device): boolean =>
-							d.cdb === host || (d.cdb === undefined && d.host === host);
-						if (byId && (coversHost(byId) || byId.host === host)) {
-							// Idempotent retry: same id+host (a legacy cdb
-							// target differing from host is still this
-							// device) — skip the append.
-						} else if (byId) {
-							return json(
-								{
-									ok: false,
-									stage: "router",
-									id,
-									why: `device id ${id} already names a different host; pick another id`,
-								},
-								409,
-							);
-						} else if (devices.some((d) => d.id !== id && coversHost(d))) {
-							return json(
-								{
-									ok: false,
-									stage: "router",
-									id,
-									why: `host ${host} is already registered under another id; open that card instead`,
-								},
-								409,
-							);
-						} else {
-							// Block form follows the file: a second [device]
-							// table would be a duplicate-table error, so a
-							// file that already names devices grows the
-							// [[device]] array-of-tables shape instead (the
-							// same shape readDevices and the suite use). A
-							// lone [device] single table is promoted by
-							// rewriting its header line only — every other
-							// byte stays untouched. Anything more exotic
-							// refuses honestly rather than appending blind.
-							const entry = `id = "${id}"\nhost = "${host}"\ncdb = "${host}"\n`;
-							let base = current;
-							let header: string;
-							if (Array.isArray(v["device"])) {
-								header = "[[device]]";
-							} else if (v["device"] && typeof v["device"] === "object") {
-								const rewritten = current.replace(
-									/^[ \t]*\[[ \t]*device[ \t]*\][ \t]*\r?$/m,
-									"[[device]]",
-								);
-								if (rewritten === current) {
-									return json(
-										{
-											ok: false,
-											stage: "router",
-											id,
-											why: "router.toml [device] header is not in plain form; edit the file by hand",
-										},
-										409,
-									);
-								}
-								base = rewritten;
-								header = "[[device]]";
-							} else if (Array.isArray(v["devices"])) {
-								header = "[[devices]]";
-							} else if (
-								v["device"] !== undefined ||
-								v["devices"] !== undefined
-							) {
-								return json(
-									{
-										ok: false,
-										stage: "router",
-										id,
-										why: "router.toml device shape is not a table or array; edit the file by hand",
-									},
-									409,
-								);
-							} else {
-								header = "[device]";
-							}
-							const sep = base === "" || base.endsWith("\n") ? "" : "\n";
-							const next = `${base}${sep}\n${header}\n${entry}`;
-							const parsedNext = parseToml(next);
-							if (!parsedNext.ok) {
-								return json(
-									{
-										ok: false,
-										stage: "router",
-										id,
-										why: "router.toml is unparseable; edit the file by hand",
-									},
-									409,
-								);
-							}
-							const written = writeWorkspaceFile(root, "router.toml", next);
-							if (written.status !== 200) {
-								const why =
-									typeof (written.body as Record<string, unknown>)?.["why"] ===
-									"string"
-										? (written.body as Record<string, unknown>)["why"]
-										: "router.toml write refused";
-								return json(
-									{ ok: false, stage: "router", id, why },
-									written.status,
-								);
-							}
-						}
+					// D53: the CDB is the only device list, so the id is the
+					// CDB host target itself; {id} is accepted and ignored.
+					const id = host;
+					const ports = cleanPorts(body.ports);
+					if (ports === null) {
+						return json({
+							ok: false,
+							why: "bad {ports} (known port keys, 1-65535)",
+						});
 					}
 					// Then create the CDB record via the T48 creation
 					// path ({missing:true}); never a parallel writer.
@@ -3561,6 +3447,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							...(sshKey ? { sshKey } : {}),
 							...(profile ? { profile } : {}),
 							...(session ? { session } : {}),
+							ports,
 						},
 						envFor(req),
 						{ missing: true },
@@ -3585,6 +3472,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 									...(sshKey ? { sshKey } : {}),
 									...(profile ? { profile } : {}),
 									...(session ? { session } : {}),
+									ports,
 								},
 								envFor(req),
 								created.current,
@@ -3673,8 +3561,8 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						);
 					}
 					// T49: validate pill targets against the same
-					// inventory the device list shows (router.toml in
-					// workspace mode, the CDB without one) and prepend
+					// inventory the device list shows (the CDB, D53)
+					// and prepend
 					// one context line per known id. Unknown ids drop
 					// silently — a stale pill must never steer — and
 					// the client-sent name/host are ignored: the line
@@ -3682,16 +3570,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const seen = new Set<string>();
 					const valid: Device[] = [];
 					if (Array.isArray(body.targets)) {
-						let inventory: Device[];
-						if (noWs) {
-							const listed = await listCdbDevices(
-								cdbFile ?? undefined,
-								envFor(req),
-							);
-							inventory = listed.ok ? listed.devices : [];
-						} else {
-							inventory = readDevices(root);
-						}
+						const listed = await listCdbDevices(
+							cdbFile ?? undefined,
+							envFor(req),
+						);
+						const inventory: Device[] = listed.ok ? listed.devices : [];
 						const byId = new Map(inventory.map((d) => [d.id, d]));
 						for (const t of body.targets) {
 							const id = (t as Record<string, unknown> | null)?.["id"];

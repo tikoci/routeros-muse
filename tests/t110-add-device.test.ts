@@ -1,5 +1,7 @@
 // T110 add-device: agent opens the UI dialog prefilled, the owner types
-// the secret in the UI, the server writes router.toml + the CDB record.
+// the secret in the UI, the server writes the CDB record. D53: the CDB
+// is the only device list, so the device id is always the host target
+// and router.toml is never written.
 //
 // Fail-first, hermetic: a stateful fake `centrs` (this file only — the
 // shared tests/t50-fake.ts stub does NOT emulate devices add/show, so
@@ -34,10 +36,9 @@ function makeHome(): string {
 	return home;
 }
 
-function makeWorkspace(routerToml: string): string {
+function makeWorkspace(): string {
 	const dir = mktmp("t110-ws-");
 	nodeFs.writeFileSync(path.join(dir, "workspace.toml"), "canonical = true\n");
-	nodeFs.writeFileSync(path.join(dir, "router.toml"), routerToml);
 	// The server binds <ws>/device.cdb; the shim treats an existing
 	// path as an open CDB (auth bypass under allowOpenCdb) and keeps
 	// its own record state in T110_STATE.
@@ -172,6 +173,13 @@ function stateFileOf(state: string): string {
 
 function readState(state: string): Record<string, Record<string, string>> {
 	return JSON.parse(nodeFs.readFileSync(stateFileOf(state), "utf8"));
+}
+
+function seedState(
+	state: string,
+	records: Record<string, Record<string, string>>,
+): void {
+	nodeFs.writeFileSync(stateFileOf(state), JSON.stringify(records));
 }
 
 function argvLines(argvLog: string): string[] {
@@ -350,13 +358,7 @@ describe("add validators", () => {
 describe("ui_add_device relay", () => {
 	test("valid call emits ui/add-device and reports opened, never added", async () => {
 		const { bin, state } = stubT110Bin();
-		const srv = await startT110Srv({
-			workspace: makeWorkspace(
-				'[device]\nid = "t110-gw"\nhost = "192.0.2.1"\ncdb = "192.0.2.1"\n',
-			),
-			state,
-			bin,
-		});
+		const srv = await startT110Srv({ workspace: makeWorkspace(), state, bin });
 		try {
 			const buf = await collectSse(
 				srv.url,
@@ -375,19 +377,16 @@ describe("ui_add_device relay", () => {
 			);
 			expect(buf).toContain('"host":"192.0.2.99"');
 			expect(buf).toContain('"user":"robot-admin"');
-			expect(buf).toContain('"id":"192-0-2-99"');
+			// D53: the id is the CDB target, i.e. the host itself.
+			expect(buf).toContain('"id":"192.0.2.99"');
 		} finally {
 			await srv.stop();
 		}
 	});
 
-	test("explicit id rides the event; namespaced spelling works", async () => {
+	test("explicit id is ignored (the host rides the event); namespaced spelling works", async () => {
 		const { bin, state } = stubT110Bin();
-		const srv = await startT110Srv({
-			workspace: makeWorkspace(""),
-			state,
-			bin,
-		});
+		const srv = await startT110Srv({ workspace: makeWorkspace(), state, bin });
 		try {
 			const buf = await collectSse(
 				srv.url,
@@ -405,7 +404,8 @@ describe("ui_add_device relay", () => {
 					expect(r.json["ok"]).toBe(true);
 				},
 			);
-			expect(buf).toContain('"id":"branch-gw"');
+			expect(buf).toContain('"id":"gw.lan"');
+			expect(buf).not.toContain("branch-gw");
 		} finally {
 			await srv.stop();
 		}
@@ -413,11 +413,7 @@ describe("ui_add_device relay", () => {
 
 	test("bad host/user/id are refused; no event fires", async () => {
 		const { bin, state } = stubT110Bin();
-		const srv = await startT110Srv({
-			workspace: makeWorkspace(""),
-			state,
-			bin,
-		});
+		const srv = await startT110Srv({ workspace: makeWorkspace(), state, bin });
 		try {
 			for (const [args, want] of [
 				[{ host: "a b" }, /need \{host\}/],
@@ -450,11 +446,10 @@ describe("ui_add_device relay", () => {
 });
 
 describe("POST /api/devices/add", () => {
-	test("creates the router.toml entry and the CDB record", async () => {
+	test("creates the CDB record; the id is the host and router.toml is never written", async () => {
 		const { bin, state, argvLog } = stubT110Bin();
-		const ws = makeWorkspace(
-			'[device]\nid = "t110-gw"\nhost = "192.0.2.1"\ncdb = "192.0.2.1"\n',
-		);
+		seedState(state, { "192.0.2.1": { user: "admin" } });
+		const ws = makeWorkspace();
 		const srv = await startT110Srv({ workspace: ws, state, bin });
 		try {
 			const r = await postAdd(srv.url, {
@@ -465,24 +460,20 @@ describe("POST /api/devices/add", () => {
 			expect(r.status).toBe(200);
 			expect(r.json).toMatchObject({
 				ok: true,
-				id: "192-0-2-99",
+				id: "192.0.2.99",
 				action: "add",
 			});
 			expect(JSON.stringify(r.json)).not.toContain("t110-secret");
-			const toml = nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8");
-			expect(toml).toContain('id = "192-0-2-99"');
-			expect(toml).toContain('host = "192.0.2.99"');
-			expect(toml).toContain('cdb = "192.0.2.99"');
-			// The lone [device] single table promotes to the
-			// [[device]] array (header rewrite only); the original
-			// block survives and both devices list.
-			expect(toml).toContain('id = "t110-gw"');
+			expect(nodeFs.existsSync(path.join(ws, "router.toml"))).toBe(false);
+			// The inventory is the CDB: the seeded record plus the new one.
 			const inv = (await (await fetch(`${srv.url}api/devices`)).json()) as {
 				devices: { id: string }[];
+				source: string;
 			};
+			expect(inv.source).toBe("cdb");
 			expect(inv.devices.map((d) => d.id).sort()).toEqual([
-				"192-0-2-99",
-				"t110-gw",
+				"192.0.2.1",
+				"192.0.2.99",
 			]);
 			expect(readState(state)["192.0.2.99"]).toMatchObject({
 				user: "robot-admin",
@@ -506,99 +497,39 @@ describe("POST /api/devices/add", () => {
 		}
 	});
 
-	test("duplicate-same retry is ok and does not duplicate the block", async () => {
-		const { bin, state } = stubT110Bin();
-		const ws = makeWorkspace("");
-		const srv = await startT110Srv({ workspace: ws, state, bin });
+	test("a same-user retry is ok and sets over the existing record", async () => {
+		const { bin, state, argvLog } = stubT110Bin();
+		const srv = await startT110Srv({ workspace: makeWorkspace(), state, bin });
 		try {
 			const body = {
 				host: "192.0.2.99",
 				user: "robot-admin",
 				password: "t110-secret",
 			};
-			expect((await postAdd(srv.url, body)).json["ok"]).toBe(true);
+			expect((await postAdd(srv.url, body)).json).toMatchObject({
+				ok: true,
+				action: "add",
+			});
 			const again = await postAdd(srv.url, body);
-			expect(again.json["ok"]).toBe(true);
-			const toml = nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8");
-			expect(toml.match(/id = "192-0-2-99"/g)).toHaveLength(1);
-		} finally {
-			await srv.stop();
-		}
-	});
-
-	test("legacy cdb!=host with same id+host retries, not a 409", async () => {
-		const { bin, state } = stubT110Bin();
-		const before =
-			'[device]\nid = "legacy"\nhost = "192.0.2.99"\ncdb = "legacy-name"\n';
-		const ws = makeWorkspace(before);
-		const srv = await startT110Srv({ workspace: ws, state, bin });
-		try {
-			const r = await postAdd(srv.url, {
-				id: "legacy",
-				host: "192.0.2.99",
-				user: "robot-admin",
-				password: "t110-secret",
+			expect(again.json).toMatchObject({
+				ok: true,
+				id: "192.0.2.99",
+				action: "set",
 			});
-			expect(r.status).toBe(200);
-			expect(r.json["ok"]).toBe(true);
-			// No duplicate block appended.
-			expect(nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8")).toBe(
-				before,
-			);
+			expect(Object.keys(readState(state))).toEqual(["192.0.2.99"]);
+			expect(
+				argvLines(argvLog).some((l) => l.startsWith("devices set 192.0.2.99")),
+			).toBe(true);
 		} finally {
 			await srv.stop();
 		}
 	});
 
-	test("duplicate-different-host id is a 409 with no write", async () => {
+	test("an existing record under another user is a 409 conflict, never overwritten", async () => {
 		const { bin, state } = stubT110Bin();
-		const before =
-			'[device]\nid = "taken"\nhost = "192.0.2.1"\ncdb = "192.0.2.1"\n';
-		const ws = makeWorkspace(before);
-		const srv = await startT110Srv({ workspace: ws, state, bin });
+		seedState(state, { "192.0.2.99": { user: "stranger" } });
+		const srv = await startT110Srv({ workspace: makeWorkspace(), state, bin });
 		try {
-			const r = await postAdd(srv.url, {
-				id: "taken",
-				host: "192.0.2.99",
-				user: "robot-admin",
-				password: "t110-secret",
-			});
-			expect(r.status).toBe(409);
-			expect(r.json).toMatchObject({ ok: false, stage: "router", id: "taken" });
-			expect(nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8")).toBe(
-				before,
-			);
-			expect(readState(state)["192.0.2.99"]).toBeUndefined();
-		} finally {
-			await srv.stop();
-		}
-	});
-
-	test("already-registered host under another id is a 409", async () => {
-		const { bin, state } = stubT110Bin();
-		const ws = makeWorkspace(
-			'[device]\nid = "id-a"\nhost = "192.0.2.50"\ncdb = "192.0.2.50"\n',
-		);
-		const srv = await startT110Srv({ workspace: ws, state, bin });
-		try {
-			const r = await postAdd(srv.url, {
-				host: "192.0.2.50",
-				user: "robot-admin",
-				password: "t110-secret",
-			});
-			expect(r.status).toBe(409);
-			expect(String(r.json["why"])).toMatch(/another id/);
-		} finally {
-			await srv.stop();
-		}
-	});
-
-	test("unparseable router.toml is refused without any write", async () => {
-		const { bin, state } = stubT110Bin();
-		const ws = makeWorkspace('[device]\nid = "broken"\n= nope\n');
-		const srv = await startT110Srv({ workspace: ws, state, bin });
-		try {
-			const before = nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8");
 			const r = await postAdd(srv.url, {
 				host: "192.0.2.99",
 				user: "robot-admin",
@@ -607,21 +538,43 @@ describe("POST /api/devices/add", () => {
 			expect(r.status).toBe(409);
 			expect(r.json).toMatchObject({
 				ok: false,
-				stage: "router",
-				why: "router.toml is unparseable; edit the file by hand",
+				stage: "cdb",
+				id: "192.0.2.99",
+				conflict: true,
 			});
-			expect(nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8")).toBe(
-				before,
+			expect((r.json["current"] as Record<string, unknown>)["user"]).toBe(
+				"stranger",
 			);
-			expect(readState(state)["192.0.2.99"]).toBeUndefined();
+			expect(JSON.stringify(r.json)).not.toContain("t110-secret");
+			expect(readState(state)["192.0.2.99"]).toEqual({ user: "stranger" });
 		} finally {
 			await srv.stop();
 		}
 	});
 
-	test("CDB failure keeps the router entry and answers ok:false with stage", async () => {
+	test("an explicit {id} is accepted but ignored: the id is the host", async () => {
 		const { bin, state } = stubT110Bin();
-		const ws = makeWorkspace("");
+		const ws = makeWorkspace();
+		const srv = await startT110Srv({ workspace: ws, state, bin });
+		try {
+			const r = await postAdd(srv.url, {
+				id: "branch-gw",
+				host: "192.0.2.99",
+				user: "robot-admin",
+				password: "t110-secret",
+			});
+			expect(r.status).toBe(200);
+			expect(r.json).toMatchObject({ ok: true, id: "192.0.2.99" });
+			expect(Object.keys(readState(state))).toEqual(["192.0.2.99"]);
+			expect(nodeFs.existsSync(path.join(ws, "router.toml"))).toBe(false);
+		} finally {
+			await srv.stop();
+		}
+	});
+
+	test("CDB failure answers ok:false with stage and writes nothing", async () => {
+		const { bin, state } = stubT110Bin();
+		const ws = makeWorkspace();
 		const srv = await startT110Srv({
 			workspace: ws,
 			state,
@@ -637,13 +590,30 @@ describe("POST /api/devices/add", () => {
 			expect(r.json).toMatchObject({
 				ok: false,
 				stage: "cdb",
-				id: "192-0-2-99",
+				id: "192.0.2.99",
 			});
 			expect(JSON.stringify(r.json)).not.toContain("t110-secret");
-			// The router.toml entry stays: Set credentials is the recovery.
-			expect(
-				nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8"),
-			).toContain('id = "192-0-2-99"');
+			expect(nodeFs.existsSync(path.join(ws, "router.toml"))).toBe(false);
+			expect(Object.keys(readState(state))).toHaveLength(0);
+		} finally {
+			await srv.stop();
+		}
+	});
+
+	test("ports ride the add as key=value; a cleared port is skipped on add", async () => {
+		const { bin, state, argvLog } = stubT110Bin();
+		const srv = await startT110Srv({ workspace: makeWorkspace(), state, bin });
+		try {
+			const r = await postAdd(srv.url, {
+				host: "192.0.2.99",
+				user: "robot-admin",
+				password: "t110-secret",
+				ports: { "www-port": "7080", "ssh-port": "" },
+			});
+			expect(r.json).toMatchObject({ ok: true, action: "add" });
+			const add = argvLines(argvLog).find((l) => l.startsWith("devices add "));
+			expect(add?.split(" ")).toContain("www-port=7080");
+			expect(add).not.toContain("ssh-port");
 		} finally {
 			await srv.stop();
 		}
@@ -651,10 +621,9 @@ describe("POST /api/devices/add", () => {
 
 	test("validation refuses bad shapes before any write", async () => {
 		const { bin, state } = stubT110Bin();
-		const ws = makeWorkspace("");
+		const ws = makeWorkspace();
 		const srv = await startT110Srv({ workspace: ws, state, bin });
 		try {
-			const before = nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8");
 			for (const [body, want] of [
 				[{ host: "a b", user: "u", password: "p" }, /need \{host\}/],
 				[{ host: "192.0.2.99", user: "", password: "p" }, /need \{user\}/],
@@ -663,14 +632,34 @@ describe("POST /api/devices/add", () => {
 					{ host: "192.0.2.99", user: "u", password: "p", id: "Bad" },
 					/bad \{id\}/,
 				],
+				[
+					{
+						host: "192.0.2.99",
+						user: "u",
+						password: "p",
+						ports: { "www-port": "0" },
+					},
+					/bad \{ports\}/,
+				],
+				[
+					{
+						host: "192.0.2.99",
+						user: "u",
+						password: "p",
+						ports: { "telnet-port": "23" },
+					},
+					/bad \{ports\}/,
+				],
+				[
+					{ host: "192.0.2.99", user: "u", password: "p", ports: "80" },
+					/bad \{ports\}/,
+				],
 			] as [Record<string, unknown>, RegExp][]) {
 				const r = await postAdd(srv.url, body);
 				expect(r.json["ok"]).toBe(false);
 				expect(String(r.json["why"])).toMatch(want);
 			}
-			expect(nodeFs.readFileSync(path.join(ws, "router.toml"), "utf8")).toBe(
-				before,
-			);
+			expect(nodeFs.existsSync(path.join(ws, "router.toml"))).toBe(false);
 			expect(Object.keys(readState(state))).toHaveLength(0);
 		} finally {
 			await srv.stop();

@@ -1,5 +1,5 @@
 // Fleet module (T40): device inventory, live stats, and twins —
-// UI-agnostic reads over router.toml devices plus the centrs CDB. Serve
+// UI-agnostic reads over the centrs CDB (D53: the only device list). Serve
 // routes stay thin wrappers; the CLI wraps the same functions (one
 // implementation, D30: centrs owns RouterOS semantics, we own the
 // runtime around it). Passwords travel via the caller's env
@@ -189,66 +189,40 @@ export async function listCdbDevices(
 
 export type DevicesResult = {
 	devices: Device[];
-	source: "router.toml" | "cdb";
+	source: "cdb";
 	why?: string;
 };
 
 /**
- * Device inventory for serve + CLI. A workspace root lists its
- * router.toml devices; a null root (no-workspace mode) lists the CDB
- * registry instead. Same function, both surfaces. Both legs probe
- * saved-password presence (T48): the no-workspace leg probes the
- * store it listed (same binding by construction); the workspace leg
- * probes only under an explicit cdbFile binding — a null binding
- * (CLI list, which refuses --cdb-file) probes nothing rather than an
- * ambient store it never named.
+ * Device inventory for serve + CLI (D53): the centrs CDB is the only
+ * device list in every mode — the bound workspace device.cdb, or the
+ * ambient store in no-workspace mode. Rows carry the saved-password
+ * presence bit (T48). router.toml is no longer read for devices.
  */
 export async function listDevices(
-	workspaceRoot: string | null,
 	cdbFile: string | null,
 	env: Record<string, string>,
 ): Promise<DevicesResult> {
-	if (workspaceRoot === null) {
-		const listed = await listCdbDevices(cdbFile ?? undefined, env, true);
-		if (!listed.ok) return { devices: [], source: "cdb", why: listed.why };
-		return { devices: listed.devices, source: "cdb" };
-	}
-	const devices = readDevices(workspaceRoot);
-	if (cdbFile) {
-		const marks = await probeHasPassword(
-			cdbFile,
-			devices.map((d) => d.cdb),
-			env,
-		);
-		devices.forEach((d, i) => {
-			if (marks[i] !== undefined) d.hasPassword = marks[i];
-		});
-	}
-	return { devices, source: "router.toml" };
+	const listed = await listCdbDevices(cdbFile ?? undefined, env, true);
+	if (!listed.ok) return { devices: [], source: "cdb", why: listed.why };
+	return { devices: listed.devices, source: "cdb" };
 }
 
 export type StatsResult = { status: number; body: unknown };
 
 /**
  * Live stats for one device: identity + resource via centrs retrieve
- * under the caller's env (which carries the unlock binding). Device
- * lookup mirrors listDevices: router.toml by root, CDB by null root.
+ * under the caller's env (which carries the unlock binding). The
+ * device is looked up in the CDB, like listDevices (D53).
  */
 export async function deviceStats(
-	workspaceRoot: string | null,
 	id: string,
 	cdbFile: string | null,
 	env: Record<string, string>,
 ): Promise<StatsResult> {
-	let device: Device | undefined;
-	if (workspaceRoot === null) {
-		const listed = await listCdbDevices(cdbFile ?? undefined, env);
-		if (!listed.ok)
-			return { status: 200, body: { ok: false, why: listed.why } };
-		device = listed.devices.find((s) => s.id === id);
-	} else {
-		device = readDevices(workspaceRoot).find((s) => s.id === id);
-	}
+	const listed = await listCdbDevices(cdbFile ?? undefined, env);
+	if (!listed.ok) return { status: 200, body: { ok: false, why: listed.why } };
+	const device = listed.devices.find((s) => s.id === id);
 	if (!device)
 		return { status: 404, body: { ok: false, why: `no device ${id}` } };
 	const argsFor = (rosPath: string) =>
@@ -347,6 +321,8 @@ export async function doctorTwins(
  */
 export type CdbCredentialDetails = {
 	target: string;
+	/** Per-service port overrides from the comment kv-soup (centrs#618). */
+	ports?: Record<string, string>;
 	user: string;
 	group: string;
 	recordTypeName: string;
@@ -375,6 +351,61 @@ export function sshKeyOf(comment: unknown, mirror: unknown): string {
 	return "";
 }
 
+/**
+ * centrs#618 per-service port keys, named after /ip/service. Stored
+ * verbatim in the record comment today (centrs 0.1.9 warns
+ * cdb/unknown-option and ignores them); they take effect when #618
+ * ships. Only the services centrs connects to.
+ */
+export const PORT_KEYS = [
+	"www-port",
+	"www-ssl-port",
+	"api-port",
+	"api-ssl-port",
+	"ssh-port",
+] as const;
+
+/** Port keys out of the comment kv-soup, same tolerance as sshKeyOf. */
+export function portsOf(
+	comment: unknown,
+	mirror: unknown,
+): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const key of PORT_KEYS) {
+		for (const c of [mirror, comment]) {
+			if (typeof c !== "string" || !c) continue;
+			const m = new RegExp(`(?:^|[\\s;])${key}=([^\\s;]+)`).exec(` ${c}`);
+			if (m?.[1]) {
+				out[key] = m[1];
+				break;
+			}
+		}
+	}
+	return out;
+}
+
+/** "" (clear) or an integer 1-65535; the same rule centrs applies to port=. */
+export function validPortValue(v: unknown): v is string {
+	if (typeof v !== "string") return false;
+	if (v === "") return true;
+	if (!/^[0-9]{1,5}$/.test(v)) return false;
+	const n = Number(v);
+	return n >= 1 && n <= 65535;
+}
+
+/** Keep only known port keys with valid values; null when any is invalid. */
+export function cleanPorts(v: unknown): Record<string, string> | null {
+	if (v === undefined || v === null) return {};
+	if (typeof v !== "object" || Array.isArray(v)) return null;
+	const out: Record<string, string> = {};
+	for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+		if (!(PORT_KEYS as readonly string[]).includes(k)) return null;
+		if (!validPortValue(val)) return null;
+		out[k] = val;
+	}
+	return out;
+}
+
 export function projectCdbEntry(entry: unknown): CdbCredentialDetails | null {
 	if (!entry || typeof entry !== "object") return null;
 	const rec = entry as Record<string, unknown>;
@@ -382,6 +413,7 @@ export function projectCdbEntry(entry: unknown): CdbCredentialDetails | null {
 	if (typeof target !== "string" || !target.trim()) return null;
 	return {
 		target: target.trim(),
+		ports: portsOf(rec["comment"], rec["commentMirror"]),
 		user: strField(rec, "user"),
 		group: strField(rec, "group"),
 		recordTypeName: strField(rec, "recordTypeName"),
@@ -403,6 +435,7 @@ export function credentialSnapshot(d: CdbCredentialDetails): string {
 		d.profile,
 		d.hasPassword,
 		d.sshKey,
+		PORT_KEYS.map((k) => d.ports?.[k] ?? ""),
 	]);
 }
 
@@ -445,6 +478,8 @@ export type CdbCredentialWrite = {
 	sshKey?: string;
 	profile?: string;
 	session?: string;
+	/** Port key -> value; "" removes the key (set only). */
+	ports?: Record<string, string>;
 };
 
 export type SetCdbResult =
@@ -471,6 +506,11 @@ function writeArgs(
 	if (nonEmpty(write.profile)) args.push("--profile", write.profile);
 	if (nonEmpty(write.session)) args.push("--session", write.session);
 	if (nonEmpty(write.sshKey)) args.push(`ssh-key=${write.sshKey}`);
+	for (const [k, v] of Object.entries(write.ports ?? {})) {
+		// A new record has nothing to remove; `key=` removes on set.
+		if (v === "" && action === "add") continue;
+		args.push(`${k}=${v}`);
+	}
 	args.push("--format", "json");
 	if (cdbFile) args.push("--cdb-file", cdbFile);
 	return args;
@@ -516,7 +556,8 @@ export async function setCdbCredentials(
 		!nonEmpty(write.password) &&
 		!nonEmpty(write.sshKey) &&
 		!nonEmpty(write.profile) &&
-		!nonEmpty(write.session)
+		!nonEmpty(write.session) &&
+		Object.keys(write.ports ?? {}).length === 0
 	) {
 		return { ok: false, why: "nothing to write (all fields empty)" };
 	}
@@ -579,6 +620,7 @@ export async function setCdbCredentials(
 				why: `record for ${target} was deleted while the modal was open`,
 				current: {
 					target,
+					ports: {},
 					user: "",
 					group: "",
 					recordTypeName: "",
@@ -638,4 +680,25 @@ export async function probeHasPassword(
 			return undefined;
 		}),
 	);
+}
+
+export type RemoveCdbResult = { ok: true } | { ok: false; why: string };
+
+/** Remove one CDB record (centrs keeps its own backup of the store). */
+export async function removeCdbDevice(
+	cdbFile: string | null,
+	target: string,
+	env: Record<string, string>,
+): Promise<RemoveCdbResult> {
+	if (!have("centrs", env)) return { ok: false, why: "centrs not on PATH" };
+	const args = ["devices", "remove", target, "--format", "json"];
+	if (cdbFile) args.push("--cdb-file", cdbFile);
+	const r = await run(["centrs", ...args], { timeoutMs: 30_000, env });
+	try {
+		const parsed = JSON.parse(centrsOut(r)) as Record<string, unknown>;
+		if (parsed["ok"] !== true) return { ok: false, why: centrsWhy(parsed) };
+		return { ok: true };
+	} catch {
+		return { ok: false, why: "centrs devices remove output unreadable" };
+	}
 }

@@ -1020,6 +1020,46 @@ export function stubT50Bin(): { bin: string; log: string } {
 }
 
 /**
+ * D53: the CDB is the only device list, so device fixtures live in the
+ * CDB. Rewrites the bin's centrs shadow so `devices list` answers these
+ * rows when the bound --cdb-file exists (or none is bound: no-workspace
+ * mode reads the ambient store). `devices show` answers
+ * cdb/not-found-target (no password marks). Version probes unchanged.
+ */
+export function stubT50CdbRows(
+	bin: string,
+	rows: { target: string; user?: string }[],
+): void {
+	const listFile = path.join(bin, "cdb-list.json");
+	nodeFs.writeFileSync(
+		listFile,
+		JSON.stringify({
+			ok: true,
+			data: rows.map((r) => ({ target: r.target, user: r.user ?? "" })),
+			warnings: [],
+			tips: [],
+			meta: {},
+		}),
+	);
+	writeShim(
+		bin,
+		"centrs",
+		`if [ "$1" = "devices" ]; then\n` +
+			`file=""; prev=""; for a in "$@"; do if [ "$prev" = "--cdb-file" ]; then file="$a"; fi; prev="$a"; done\n` +
+			`if [ -n "$file" ] && [ ! -f "$file" ]; then\n` +
+			`printf '%s\\n' '{"ok":false,"error":{"code":"cdb/not-found","summary":"CDB file not found"},"warnings":[],"tips":[],"meta":{}}'\n` +
+			`elif [ "$2" = "list" ]; then\n` +
+			`cat ${JSON.stringify(listFile)}\n` +
+			`else\n` +
+			`printf '%s\\n' '{"ok":false,"error":{"code":"cdb/not-found-target","summary":"stub: no record"},"warnings":[],"tips":[],"meta":{}}' >&2\n` +
+			`fi\n` +
+			`else\n` +
+			`echo "stub-centrs 9.9.9-t50"\n` +
+			`fi`,
+	);
+}
+
+/**
  * Run fn with the fake-muse log env set (restored after). The fake
  * reads its config from the spawn env, which the server snapshots
  * from process.env at startup — so the server must start inside fn.

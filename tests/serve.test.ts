@@ -9,11 +9,16 @@ import {
 	cdbRowsToDevices,
 	centrsRetrieveArgs,
 	centrsWhy,
+	cleanPorts,
 	credentialSnapshot,
+	PORT_KEYS,
+	portsOf,
 	projectCdbEntry,
+	validPortValue,
 } from "../src/lib/fleet";
 import { have, run } from "../src/lib/run";
 import { toolBinDir, toolEnv } from "../src/lib/tools";
+import { hiddenFromFiles } from "../src/lib/workspace";
 import { uiMcpServers } from "../src/mcp/ui-tools";
 import { MspClient } from "../src/msp/client";
 import {
@@ -53,6 +58,28 @@ function makeWorkspace(): string {
 	);
 	nodeFs.mkdirSync(path.join(dir, "inbox"), { recursive: true });
 	return dir;
+}
+
+/**
+ * D53: the CDB is the only device list. Init <ws>/device.cdb with real
+ * centrs and add each target (open store, no passwords).
+ */
+async function seedWorkspaceCdb(
+	ws: string,
+	records: { target: string; user?: string }[],
+): Promise<string> {
+	const cdb = path.join(ws, "device.cdb");
+	const init = await run(["centrs", "devices", "init", "--cdb-file", cdb], {
+		timeoutMs: 30_000,
+	});
+	expect(init.ok).toBe(true);
+	for (const r of records) {
+		const args = ["centrs", "devices", "add", r.target, "--cdb-file", cdb];
+		if (r.user !== undefined) args.push("--user", r.user);
+		const add = await run(args, { timeoutMs: 30_000 });
+		expect(add.ok).toBe(true);
+	}
+	return cdb;
 }
 
 const CATALOG_FIXTURE = path.join(import.meta.dir, "fixtures", "model-catalog");
@@ -246,6 +273,92 @@ describe("serve", () => {
 		30_000,
 	);
 
+	test("file list hides dotfiles and CDB stores (T143)", () => {
+		expect(hiddenFromFiles(".agents")).toBe(true);
+		expect(hiddenFromFiles(".env")).toBe(true);
+		expect(hiddenFromFiles("device.cdb")).toBe(true);
+		expect(hiddenFromFiles("DEVICE.CDB")).toBe(true);
+		expect(hiddenFromFiles("device.cdb.bak.2026-11-04T02-46-02-298Z")).toBe(
+			true,
+		);
+		expect(hiddenFromFiles("router.toml")).toBe(false);
+		expect(hiddenFromFiles("notes.md")).toBe(false);
+		expect(hiddenFromFiles("cdb-notes.md")).toBe(false);
+		expect(hiddenFromFiles("my.cdbx")).toBe(false);
+	});
+
+	tc(
+		"GET /api/files lists the workspace minus dot-dirs and CDB files",
+		async () => {
+			const ws = makeWorkspace();
+			// A real (open) store, so the CDB gate lets the request through.
+			await seedWorkspaceCdb(ws, []);
+			nodeFs.mkdirSync(path.join(ws, ".agents", "skills"), { recursive: true });
+			nodeFs.writeFileSync(path.join(ws, ".agents", "skills", "x.md"), "x\n");
+			nodeFs.writeFileSync(path.join(ws, ".hidden"), "h\n");
+			nodeFs.writeFileSync(
+				path.join(ws, "device.cdb.bak.2026-11-04T02-46-02-298Z"),
+				"bak\n",
+			);
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				workspace: ws,
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				const files = (await (await fetch(`${srv.url}api/files`)).json()) as {
+					entries: { path: string }[];
+				};
+				const paths = files.entries.map((e) => e.path);
+				for (const want of [
+					"workspace.toml",
+					"router.toml",
+					"operations",
+					"operations/drift.md",
+					"inbox",
+				]) {
+					expect(paths).toContain(want);
+				}
+				for (const p of paths) {
+					expect(p.split("/").some((seg) => seg.startsWith("."))).toBe(false);
+					expect(p).not.toMatch(/\.cdb(\.|$)/i);
+				}
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
+	t(
+		"GET /api/files is refused without a workspace",
+		async () => {
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				noWorkspace: true,
+				cdbFile: path.join(mktmp("t31-serve-nows-"), "absent.cdb"),
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				const r = await fetch(`${srv.url}api/files`);
+				expect(r.status).toBe(200);
+				expect(await r.json()).toEqual({
+					ok: false,
+					why: "no workspace attached",
+				});
+			} finally {
+				await srv.stop();
+			}
+		},
+		30_000,
+	);
+
 	t(
 		"file roundtrip validates TOML and blocks traversal",
 		async () => {
@@ -303,14 +416,17 @@ describe("serve", () => {
 		30_000,
 	);
 
-	t(
-		"devices come from router.toml; stats are honest without a link",
+	tc(
+		"devices come from the CDB, never router.toml; unknown ids 404 on stats",
 		async () => {
+			// makeWorkspace's router.toml names test-gw; D53 ignores it.
+			const ws = makeWorkspace();
+			await seedWorkspaceCdb(ws, [{ target: "192.0.2.1" }]);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
 				allowOpenCdb: true,
-				workspace: makeWorkspace(),
+				workspace: ws,
 				provider: "echo",
 				museHome: makeHome(),
 			});
@@ -319,28 +435,25 @@ describe("serve", () => {
 					devices: { id: string }[];
 					source: string;
 				};
-				expect(dev.devices.map((d) => d.id)).toContain("test-gw");
-				expect(dev.source).toBe("router.toml");
-				const stats = (await (
-					await fetch(`${srv.url}api/devices/test-gw/stats`)
-				).json()) as { ok: boolean; why: string };
-				expect(stats.ok).toBe(false);
-				expect(stats.why).toContain("no cdb link nor host");
+				expect(dev.source).toBe("cdb");
+				expect(dev.devices.map((d) => d.id)).toEqual(["192.0.2.1"]);
+				const stats = await fetch(`${srv.url}api/devices/test-gw/stats`);
+				expect(stats.status).toBe(404);
+				expect(((await stats.json()) as { why: string }).why).toBe(
+					"no device test-gw",
+				);
 			} finally {
 				await srv.stop();
 			}
 		},
-		30_000,
+		60_000,
 	);
 
-	t(
-		"device cdb key surfaces on the device card payload",
+	tc(
+		"a CDB row is the device card payload (id = cdb = target)",
 		async () => {
 			const ws = makeWorkspace();
-			nodeFs.writeFileSync(
-				path.join(ws, "router.toml"),
-				'[device]\nid = "linked-gw"\nrole = "gateway"\ncdb = "office-gw"\n',
-			);
+			await seedWorkspaceCdb(ws, [{ target: "office-gw", user: "admin" }]);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -351,40 +464,30 @@ describe("serve", () => {
 			});
 			try {
 				const dev = (await (await fetch(`${srv.url}api/devices`)).json()) as {
-					devices: { id: string; role?: string; cdb?: string }[];
+					devices: Record<string, unknown>[];
 				};
 				expect(dev.devices).toEqual([
-					{ id: "linked-gw", role: "gateway", cdb: "office-gw" },
+					{
+						id: "office-gw",
+						cdb: "office-gw",
+						user: "admin",
+						hasPassword: false,
+					},
 				]);
 			} finally {
 				await srv.stop();
 			}
 		},
-		30_000,
+		60_000,
 	);
 
 	tc(
 		"cdb-linked stats run centrs against the workspace device.cdb",
 		async () => {
 			const ws = makeWorkspace();
-			nodeFs.writeFileSync(
-				path.join(ws, "router.toml"),
-				'[device]\nid = "doc-gw"\nrole = "gateway"\ncdb = "192.0.2.1"\n',
-			);
-			const cdb = path.join(ws, "device.cdb");
-			const init = await run(["centrs", "devices", "init", "--cdb-file", cdb], {
-				timeoutMs: 30_000,
-			});
-			expect(init.ok).toBe(true);
 			// Documentation address (RFC 5737): unroutable, so the retrieve leg
 			// must fail honestly at the transport, proving the wiring ran.
-			const add = await run(
-				["centrs", "devices", "add", "192.0.2.1", "--cdb-file", cdb],
-				{
-					timeoutMs: 30_000,
-				},
-			);
-			expect(add.ok).toBe(true);
+			await seedWorkspaceCdb(ws, [{ target: "192.0.2.1" }]);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -395,7 +498,7 @@ describe("serve", () => {
 			});
 			try {
 				const stats = (await (
-					await fetch(`${srv.url}api/devices/doc-gw/stats`)
+					await fetch(`${srv.url}api/devices/192.0.2.1/stats`)
 				).json()) as { ok: boolean; why: string };
 				expect(stats.ok).toBe(false);
 				expect(stats.why).toContain("transport/timeout");
@@ -1819,13 +1922,13 @@ describe("set credentials (T48)", () => {
 		return cdb;
 	}
 
-	function makeCredWorkspace(routerToml: string, cdb: string): string {
+	/** D53: the workspace device.cdb is the device list; no router.toml. */
+	function makeCredWorkspace(cdb: string): string {
 		const dir = mktmp("t48-ws-");
 		nodeFs.writeFileSync(
 			path.join(dir, "workspace.toml"),
 			"canonical = true\n",
 		);
-		nodeFs.writeFileSync(path.join(dir, "router.toml"), routerToml);
 		nodeFs.copyFileSync(cdb, path.join(dir, "device.cdb"));
 		return dir;
 	}
@@ -1909,7 +2012,7 @@ describe("set credentials (T48)", () => {
 			user: "admin",
 			password: "s3cret",
 			savedPassword: true,
-			commentMirror: "ssh-key=/home/op/.ssh/id_ed25519",
+			commentMirror: "ssh-key=/home/op/.ssh/id_ed25519 www-port=7080",
 			profile: "<none>",
 			recordTypeName: "ipAdmin",
 			group: "",
@@ -1917,6 +2020,7 @@ describe("set credentials (T48)", () => {
 		});
 		expect(got).toEqual({
 			target: "gw",
+			ports: { "www-port": "7080" },
 			user: "admin",
 			group: "",
 			recordTypeName: "ipAdmin",
@@ -1928,7 +2032,7 @@ describe("set credentials (T48)", () => {
 		expect(JSON.stringify(got)).not.toContain("s3cret");
 		expect(
 			projectCdbEntry({ target: "bare", savedPassword: false }),
-		).toMatchObject({ hasPassword: false, sshKey: "" });
+		).toMatchObject({ hasPassword: false, sshKey: "", ports: {} });
 		expect(projectCdbEntry(null)).toBeNull();
 		expect(projectCdbEntry({ user: "no-target" })).toBeNull();
 		expect(projectCdbEntry([{ target: "array-is-not-an-entry" }])).toBeNull();
@@ -1955,6 +2059,57 @@ describe("set credentials (T48)", () => {
 		expect(credentialSnapshot({ ...base, sshKey: "/k" })).not.toBe(
 			credentialSnapshot(base),
 		);
+		// Ports are part of the snapshot; an absent map equals an empty one.
+		expect(
+			credentialSnapshot({ ...base, ports: { "www-port": "7080" } }),
+		).not.toBe(credentialSnapshot(base));
+		expect(credentialSnapshot({ ...base, ports: {} })).toBe(
+			credentialSnapshot(base),
+		);
+	});
+
+	test("port keys parse from the comment kv-soup (centrs#618)", () => {
+		expect([...PORT_KEYS]).toEqual([
+			"www-port",
+			"www-ssl-port",
+			"api-port",
+			"api-ssl-port",
+			"ssh-port",
+		]);
+		expect(portsOf("ssh-key=/k www-port=7080;api-ssl-port=8729", "")).toEqual({
+			"www-port": "7080",
+			"api-ssl-port": "8729",
+		});
+		// The mirror wins over the comment, per key.
+		expect(portsOf("www-port=1", "www-port=2")).toEqual({ "www-port": "2" });
+		// Only whole keys: www-ssl-port must not satisfy www-port.
+		expect(portsOf("www-ssl-port=443", "")).toEqual({ "www-ssl-port": "443" });
+		// Unknown keys and non-strings are ignored.
+		expect(portsOf("telnet-port=23", "")).toEqual({});
+		expect(portsOf(undefined, null)).toEqual({});
+	});
+
+	test("port values are empty (clear) or 1-65535", () => {
+		for (const v of ["", "1", "80", "65535"])
+			expect(validPortValue(v)).toBe(true);
+		for (const v of ["0", "65536", "123456", "-1", "8o", " 80", "1.5"])
+			expect(validPortValue(v)).toBe(false);
+		expect(validPortValue(80)).toBe(false);
+		expect(validPortValue(undefined)).toBe(false);
+	});
+
+	test("cleanPorts keeps known keys, refuses anything else whole", () => {
+		expect(cleanPorts(undefined)).toEqual({});
+		expect(cleanPorts(null)).toEqual({});
+		expect(cleanPorts({ "www-port": "7080", "ssh-port": "" })).toEqual({
+			"www-port": "7080",
+			"ssh-port": "",
+		});
+		expect(cleanPorts({ "www-port": "7080", "telnet-port": "23" })).toBeNull();
+		expect(cleanPorts({ "www-port": "70000" })).toBeNull();
+		expect(cleanPorts({ "www-port": 7080 })).toBeNull();
+		expect(cleanPorts(["www-port"])).toBeNull();
+		expect(cleanPorts("www-port=80")).toBeNull();
 	});
 
 	tcentrs(
@@ -1992,7 +2147,7 @@ describe("set credentials (T48)", () => {
 	);
 
 	tcentrs(
-		"GET details are redacted; unknown and unlinked devices fail honest",
+		"GET details are redacted; an unknown target answers missing",
 		async () => {
 			const cdb = seedOpenCdb([
 				{
@@ -2002,10 +2157,7 @@ describe("set credentials (T48)", () => {
 					sshKey: "/home/op/.ssh/id_ed25519",
 				},
 			]);
-			const ws = makeCredWorkspace(
-				'[[device]]\nid = "t48-gw"\ncdb = "t48-target"\n[[device]]\nid = "t48-bare"\n',
-				cdb,
-			);
+			const ws = makeCredWorkspace(cdb);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -2016,23 +2168,26 @@ describe("set credentials (T48)", () => {
 			});
 			try {
 				const good = (await (
-					await fetch(`${srv.url}api/devices/t48-gw/credentials`)
+					await fetch(`${srv.url}api/devices/t48-target/credentials`)
 				).json()) as { ok: boolean; details: Record<string, unknown> };
 				expect(good.ok).toBe(true);
 				expect(good.details).toMatchObject({
 					target: "t48-target",
+					ports: {},
 					user: "admin",
 					hasPassword: true,
 					sshKey: "/home/op/.ssh/id_ed25519",
 				});
 				expect("password" in good.details).toBe(false);
+				// D53: the id IS the CDB target; an unknown one is a
+				// missing record (the modal's create path), not a 404.
 				const unknown = await fetch(`${srv.url}api/devices/nope/credentials`);
-				expect(unknown.status).toBe(404);
-				const bare = await fetch(`${srv.url}api/devices/t48-bare/credentials`);
-				expect(bare.status).toBe(400);
-				expect(((await bare.json()) as { why: string }).why).toContain(
-					"no cdb link",
-				);
+				expect(unknown.status).toBe(200);
+				expect(await unknown.json()).toMatchObject({
+					ok: false,
+					missing: true,
+					code: "cdb/not-found-target",
+				});
 			} finally {
 				await srv.stop();
 			}
@@ -2044,10 +2199,7 @@ describe("set credentials (T48)", () => {
 		"POST writes credentials and the record reads back",
 		async () => {
 			const cdb = seedOpenCdb([{ target: "t48-target", user: "admin" }]);
-			const ws = makeCredWorkspace(
-				'[device]\nid = "t48-gw"\ncdb = "t48-target"\n',
-				cdb,
-			);
+			const ws = makeCredWorkspace(cdb);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -2058,11 +2210,11 @@ describe("set credentials (T48)", () => {
 			});
 			try {
 				const before = (await (
-					await fetch(`${srv.url}api/devices/t48-gw/credentials`)
+					await fetch(`${srv.url}api/devices/t48-target/credentials`)
 				).json()) as { ok: boolean; details: Record<string, unknown> };
 				expect(before.ok).toBe(true);
 				const wrote = await t48post(
-					`${srv.url}api/devices/t48-gw/credentials`,
+					`${srv.url}api/devices/t48-target/credentials`,
 					{
 						user: "t48-admin",
 						password: "t48-new-secret",
@@ -2089,7 +2241,7 @@ describe("set credentials (T48)", () => {
 					devices: Record<string, unknown>[];
 				};
 				expect(
-					inv.devices.find((d) => d["id"] === "t48-gw")?.["hasPassword"],
+					inv.devices.find((d) => d["id"] === "t48-target")?.["hasPassword"],
 				).toBe(true);
 			} finally {
 				await srv.stop();
@@ -2102,10 +2254,7 @@ describe("set credentials (T48)", () => {
 		"POST reports a conflict instead of overwriting drift",
 		async () => {
 			const cdb = seedOpenCdb([{ target: "t48-target", user: "admin" }]);
-			const ws = makeCredWorkspace(
-				'[device]\nid = "t48-gw"\ncdb = "t48-target"\n',
-				cdb,
-			);
+			const ws = makeCredWorkspace(cdb);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -2116,7 +2265,7 @@ describe("set credentials (T48)", () => {
 			});
 			try {
 				const before = (await (
-					await fetch(`${srv.url}api/devices/t48-gw/credentials`)
+					await fetch(`${srv.url}api/devices/t48-target/credentials`)
 				).json()) as { ok: boolean; details: Record<string, unknown> };
 				expect(before.ok).toBe(true);
 				// Another writer lands between the modal read and the save.
@@ -2125,7 +2274,7 @@ describe("set credentials (T48)", () => {
 					"t48-other",
 				]);
 				const raced = await t48post(
-					`${srv.url}api/devices/t48-gw/credentials`,
+					`${srv.url}api/devices/t48-target/credentials`,
 					{ user: "t48-mine", expected: before.details },
 				);
 				expect(raced.status).toBe(409);
@@ -2147,10 +2296,7 @@ describe("set credentials (T48)", () => {
 		"POST creates a missing record via add",
 		async () => {
 			const cdb = seedOpenCdb([]);
-			const ws = makeCredWorkspace(
-				'[device]\nid = "t48-gw"\ncdb = "t48-fresh"\n',
-				cdb,
-			);
+			const ws = makeCredWorkspace(cdb);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -2161,13 +2307,13 @@ describe("set credentials (T48)", () => {
 			});
 			try {
 				const missing = (await (
-					await fetch(`${srv.url}api/devices/t48-gw/credentials`)
+					await fetch(`${srv.url}api/devices/t48-fresh/credentials`)
 				).json()) as { ok: boolean; missing?: boolean; code?: string };
 				expect(missing.ok).toBe(false);
 				expect(missing.missing).toBe(true);
 				expect(missing.code).toBe("cdb/not-found-target");
 				const wrote = await t48post(
-					`${srv.url}api/devices/t48-gw/credentials`,
+					`${srv.url}api/devices/t48-fresh/credentials`,
 					{
 						user: "t48-admin",
 						password: "t48-fresh-secret",
@@ -2192,10 +2338,7 @@ describe("set credentials (T48)", () => {
 		"POST refuses a blind write without a baseline",
 		async () => {
 			const cdb = seedOpenCdb([{ target: "t48-target", user: "admin" }]);
-			const ws = makeCredWorkspace(
-				'[device]\nid = "t48-gw"\ncdb = "t48-target"\n',
-				cdb,
-			);
+			const ws = makeCredWorkspace(cdb);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -2206,7 +2349,7 @@ describe("set credentials (T48)", () => {
 			});
 			try {
 				const blind = await t48post(
-					`${srv.url}api/devices/t48-gw/credentials`,
+					`${srv.url}api/devices/t48-target/credentials`,
 					{
 						user: "t48-mine",
 					},
@@ -2226,10 +2369,7 @@ describe("set credentials (T48)", () => {
 		"POST writes through the session unlock on an encrypted CDB",
 		async () => {
 			const cdb = seedEncryptedCdb("admin");
-			const ws = makeCredWorkspace(
-				'[device]\nid = "t48-gw"\ncdb = "t48-target"\n',
-				cdb,
-			);
+			const ws = makeCredWorkspace(cdb);
 			const srv = await startServer({
 				dataHome: makeDataHome(),
 				configHome: mktmp("t31-serve-cfg-"),
@@ -2239,7 +2379,7 @@ describe("set credentials (T48)", () => {
 			});
 			try {
 				expect(
-					(await fetch(`${srv.url}api/devices/t48-gw/credentials`)).status,
+					(await fetch(`${srv.url}api/devices/t48-target/credentials`)).status,
 				).toBe(401);
 				const unlock = await fetch(`${srv.url}api/auth/unlock`, {
 					method: "POST",
@@ -2253,13 +2393,13 @@ describe("set credentials (T48)", () => {
 				const authed = t48cookie(unlock);
 				expect(authed).not.toBeNull();
 				const before = (await (
-					await fetch(`${srv.url}api/devices/t48-gw/credentials`, {
+					await fetch(`${srv.url}api/devices/t48-target/credentials`, {
 						headers: { cookie: authed as string },
 					})
 				).json()) as { ok: boolean; details: Record<string, unknown> };
 				expect(before.ok).toBe(true);
 				const wrote = await t48post(
-					`${srv.url}api/devices/t48-gw/credentials`,
+					`${srv.url}api/devices/t48-target/credentials`,
 					{ password: "t48-enc-secret", expected: before.details },
 					authed as string,
 				);
@@ -2272,6 +2412,158 @@ describe("set credentials (T48)", () => {
 					T48_FIXTURE_PASSWORD,
 				);
 				expect(entry["savedPassword"]).toBe(true);
+			} finally {
+				await srv.stop();
+			}
+		},
+		60_000,
+	);
+
+	tcentrs(
+		"POST ports writes key=value and an empty value removes the key",
+		async () => {
+			const cdb = seedOpenCdb([{ target: "t48-target", user: "admin" }]);
+			const ws = makeCredWorkspace(cdb);
+			const wsCdb = path.join(ws, "device.cdb");
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				workspace: ws,
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				const url = `${srv.url}api/devices/t48-target/credentials`;
+				const before = (await (await fetch(url)).json()) as {
+					ok: boolean;
+					details: Record<string, unknown>;
+				};
+				expect(before.details["ports"]).toEqual({});
+				// Ports alone are a write (not "nothing to write").
+				const set = await t48post(url, {
+					ports: { "www-port": "7080" },
+					expected: before.details,
+				});
+				expect(set.status).toBe(200);
+				expect(set.json["ok"]).toBe(true);
+				expect(set.json["action"]).toBe("set");
+				expect(
+					(set.json["details"] as Record<string, unknown>)["ports"],
+				).toEqual({ "www-port": "7080" });
+				// centrs 0.1.9 stores the unknown key verbatim (#618 pending).
+				expect(String(centrsShow(wsCdb, "t48-target")["comment"])).toContain(
+					"www-port=7080",
+				);
+				const after = (await (await fetch(url)).json()) as {
+					details: Record<string, unknown>;
+				};
+				expect(after.details["ports"]).toEqual({ "www-port": "7080" });
+				const cleared = await t48post(url, {
+					ports: { "www-port": "" },
+					expected: after.details,
+				});
+				expect(cleared.status).toBe(200);
+				expect(cleared.json["ok"]).toBe(true);
+				expect(
+					(cleared.json["details"] as Record<string, unknown>)["ports"],
+				).toEqual({});
+				const entry = centrsShow(wsCdb, "t48-target");
+				expect(String(entry["comment"])).not.toContain("www-port");
+				expect(entry["user"]).toBe("admin");
+			} finally {
+				await srv.stop();
+			}
+		},
+		60_000,
+	);
+
+	tcentrs(
+		"POST bad ports is a 400 and writes nothing",
+		async () => {
+			const cdb = seedOpenCdb([{ target: "t48-target", user: "admin" }]);
+			const ws = makeCredWorkspace(cdb);
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				workspace: ws,
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				const url = `${srv.url}api/devices/t48-target/credentials`;
+				const before = (await (await fetch(url)).json()) as {
+					details: Record<string, unknown>;
+				};
+				for (const ports of [
+					{ "www-port": "0" },
+					{ "www-port": "65536" },
+					{ "telnet-port": "23" },
+					"80",
+				]) {
+					const r = await t48post(url, {
+						user: "t48-other",
+						ports,
+						expected: before.details,
+					});
+					expect(r.status).toBe(400);
+					expect(r.json).toEqual({
+						ok: false,
+						why: "bad {ports} (known port keys, 1-65535)",
+					});
+				}
+				const entry = centrsShow(path.join(ws, "device.cdb"), "t48-target");
+				expect(entry["user"]).toBe("admin");
+				expect(String(entry["comment"])).toBe("");
+			} finally {
+				await srv.stop();
+			}
+		},
+		60_000,
+	);
+
+	tcentrs(
+		"POST /api/devices/:id/remove removes the CDB record",
+		async () => {
+			const cdb = seedOpenCdb([
+				{ target: "t48-target", user: "admin" },
+				{ target: "t48-keep", user: "admin" },
+			]);
+			const ws = makeCredWorkspace(cdb);
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				workspace: ws,
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				const removed = await t48post(
+					`${srv.url}api/devices/t48-target/remove`,
+					{},
+				);
+				expect(removed.status).toBe(200);
+				expect(removed.json).toEqual({ ok: true });
+				const inv = (await (await fetch(`${srv.url}api/devices`)).json()) as {
+					devices: { id: string }[];
+				};
+				expect(inv.devices.map((d) => d.id)).toEqual(["t48-keep"]);
+				// A second remove fails honestly through centrs.
+				const again = await t48post(
+					`${srv.url}api/devices/t48-target/remove`,
+					{},
+				);
+				expect(again.json["ok"]).toBe(false);
+				expect(typeof again.json["why"]).toBe("string");
+				// Ids that are not valid hosts never reach centrs.
+				const bad = await t48post(
+					`${srv.url}api/devices/${encodeURIComponent("a b")}/remove`,
+					{},
+				);
+				expect(bad.status).toBe(404);
+				expect(bad.json).toEqual({ ok: false, why: "no device a b" });
 			} finally {
 				await srv.stop();
 			}

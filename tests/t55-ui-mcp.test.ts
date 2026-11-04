@@ -42,6 +42,7 @@ import {
 	makeT50Workspace,
 	startT50Srv,
 	stubT50Bin,
+	stubT50CdbRows,
 	withT50Env,
 } from "./t50-fake";
 
@@ -635,10 +636,8 @@ describe("relay route", () => {
 	function relayWs(): string {
 		const ws = mktmp("t55-relay-");
 		nodeFs.writeFileSync(path.join(ws, "workspace.toml"), "canonical = true\n");
-		nodeFs.writeFileSync(
-			path.join(ws, "router.toml"),
-			'[device]\nid = "t55-gw"\n',
-		);
+		// D53: devices live in the CDB; the stub answers its rows.
+		nodeFs.writeFileSync(path.join(ws, "device.cdb"), "t55 stub CDB\n");
 		nodeFs.mkdirSync(path.join(ws, "notes"));
 		nodeFs.writeFileSync(path.join(ws, "notes", "hello.md"), "# hello\n");
 		const outside = mktmp("t55-relay-out-");
@@ -899,12 +898,23 @@ describe("relay route", () => {
 
 	t55("ui_select_device emits its SSE event; unknown ids error", async () => {
 		const bin = stubT50Bin();
+		stubT50CdbRows(bin.bin, [{ target: "t55-gw" }]);
 		await withT50Env(bin.log, async () => {
 			const srv = await startT50Srv(bin.bin, {
 				mcpToken: TOKEN,
 				workspace: relayWs(),
 			});
 			try {
+				// D53: ids are checked against the last /api/devices list,
+				// so a CDB device is unknown until the UI has listed it.
+				const early = await relayCall(srv.relayUrl, {
+					token: TOKEN,
+					tool: "ui_select_device",
+					arguments: { id: "t55-gw" },
+				});
+				expect(early.json["ok"]).toBe(false);
+				expect(String(early.json["why"])).toMatch(/unknown device/);
+				await getJson(`${srv.url}api/devices`);
 				const buf = await collectSse(
 					srv.url,
 					['"method":"ui/select-device"'],
@@ -933,9 +943,10 @@ describe("relay route", () => {
 	});
 
 	t55(
-		"no-workspace mode: notify works, open and select refuse honestly",
+		"no-workspace mode: notify works, open refuses, select checks the CDB list",
 		async () => {
 			const bin = stubT50Bin();
+			stubT50CdbRows(bin.bin, [{ target: "192.0.2.7" }]);
 			await withT50Env(bin.log, async () => {
 				const srv = await startServer({
 					dataHome: mktmp("t55-nows-dh-"),
@@ -960,15 +971,30 @@ describe("relay route", () => {
 						},
 					);
 					expect(buf).toContain('"text":"nows"');
-					for (const tool of ["ui_open", "ui_select_device"]) {
-						const res = await relayCall(srv.relayUrl, {
-							token: TOKEN,
-							tool,
-							arguments: tool === "ui_open" ? { path: "x.md" } : { id: "x" },
-						});
-						expect(res.json["ok"]).toBe(false);
-						expect(String(res.json["why"])).toMatch(/no workspace/);
-					}
+					const open = await relayCall(srv.relayUrl, {
+						token: TOKEN,
+						tool: "ui_open",
+						arguments: { path: "x.md" },
+					});
+					expect(open.json["ok"]).toBe(false);
+					expect(String(open.json["why"])).toMatch(/no workspace/);
+					// D53: select works without a workspace; ids are the
+					// CDB targets from the last device list.
+					const listed = await getJson(`${srv.url}api/devices`);
+					expect(listed["source"]).toBe("cdb");
+					const sel = await relayCall(srv.relayUrl, {
+						token: TOKEN,
+						tool: "ui_select_device",
+						arguments: { id: "192.0.2.7" },
+					});
+					expect(sel.json["ok"]).toBe(true);
+					const unknown = await relayCall(srv.relayUrl, {
+						token: TOKEN,
+						tool: "ui_select_device",
+						arguments: { id: "x" },
+					});
+					expect(unknown.json["ok"]).toBe(false);
+					expect(String(unknown.json["why"])).toMatch(/unknown device/);
 				} finally {
 					await srv.stop();
 				}
@@ -1085,10 +1111,8 @@ describe("bridge MCP surface", () => {
 	function bridgeWs(): string {
 		const ws = mktmp("t55-bridge-");
 		nodeFs.writeFileSync(path.join(ws, "workspace.toml"), "canonical = true\n");
-		nodeFs.writeFileSync(
-			path.join(ws, "router.toml"),
-			'[device]\nid = "t55-gw"\n',
-		);
+		// D53: devices live in the CDB; the stub answers its rows.
+		nodeFs.writeFileSync(path.join(ws, "device.cdb"), "t55 stub CDB\n");
 		nodeFs.mkdirSync(path.join(ws, "notes"));
 		nodeFs.writeFileSync(path.join(ws, "notes", "hello.md"), "# hello\n");
 		const outside = mktmp("t55-bridge-out-");
@@ -1176,12 +1200,14 @@ describe("bridge MCP surface", () => {
 		"tools/call relays each tool; refusals come back isError",
 		async () => {
 			const bin = stubT50Bin();
+			stubT50CdbRows(bin.bin, [{ target: "t55-gw" }]);
 			await withT50Env(bin.log, async () => {
 				const srv = await startT50Srv(bin.bin, {
 					mcpToken: TOKEN,
 					workspace: bridgeWs(),
 				});
 				try {
+					await getJson(`${srv.url}api/devices`);
 					await withBridge(bridgeEnv(srv.relayUrl), async (b) => {
 						await initBridge(b);
 						const buf = await collectSse(
@@ -1338,10 +1364,8 @@ describe("fake-driven end to end", () => {
 					path.join(ws, "workspace.toml"),
 					"canonical = true\n",
 				);
-				nodeFs.writeFileSync(
-					path.join(ws, "router.toml"),
-					'[device]\nid = "t55-gw"\n',
-				);
+				nodeFs.writeFileSync(path.join(ws, "device.cdb"), "t55 stub CDB\n");
+				stubT50CdbRows(bin.bin, [{ target: "t55-gw" }]);
 				nodeFs.mkdirSync(path.join(ws, "notes"));
 				nodeFs.writeFileSync(path.join(ws, "notes", "hello.md"), "# hello\n");
 				const srv = await startT50Srv(bin.bin, {
@@ -1349,6 +1373,8 @@ describe("fake-driven end to end", () => {
 					workspace: ws,
 				});
 				try {
+					// The relay validates select ids against the last list.
+					await getJson(`${srv.url}api/devices`);
 					const buf = await collectSse(
 						srv.url,
 						[

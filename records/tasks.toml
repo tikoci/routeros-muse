@@ -1353,34 +1353,34 @@ updated = "2026-11-03"
 [[task]]
 id = "T135"
 title = "Light CRUD over the CDB in the UI: add, edit, remove devices directly"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: light CRUD over the CDB in the UI; Add device no longer goes through chat, it creates the device directly. Today the left-panel Add Device button injects a chat prompt (src/serve/ui.html adddevice handler: Settled: Add Device is an idle-time prompt injection, not a form) and the only direct writes are the T110 add dialog (agent-opened via ui_add_device) and the T48 credentials modal. Scope: create (the T136 form), edit (host, user, password, ssh-key and other centrs record fields via centrs devices set), remove (centrs devices remove with a confirm), all against the bound CDB with the existing unlock env, redaction rules (no cleartext passwords in envelopes or logs) and re-read-before-write (C15). Multi-user (target,user) identity stays with T68. Until D53 decides the router.toml role, workspace mode keeps the T110 path (router.toml entry plus CDB record) for create and the list source unchanged; if D53 lands as recommended the list reads the CDB in both modes. Ships together with T136 (same slice) and T137 (Edit entry point)."
-evidence = "agenda #1 (2026-11-03): developer agenda 2026-11-03. Current state: ui.html:458 Add Device button title Ask the agent to add a device; ui.html:4333 send() prompt to record it in router.toml; openAddDevice/saveAddDevice (T110) and openCred (T48) are the existing direct-write dialogs; server.ts add-device route appends [device] to router.toml then creates the CDB record."
+evidence = "agenda #1 (2026-11-03): developer agenda 2026-11-03. Current state: ui.html:458 Add Device button title Ask the agent to add a device; ui.html:4333 send() prompt to record it in router.toml; openAddDevice/saveAddDevice (T110) and openCred (T48) are the existing direct-write dialogs; server.ts add-device route appends [device] to router.toml then creates the CDB record. PROGRESS 2026-11-03 (claude, uncommitted): create (T136) and edit (Access modal, now with www/www-ssl/api/api-ssl/ssh port keys stored in the record comment; centrs 0.1.9 keeps them verbatim with cdb/unknown-option until centrs#618 ships; key= removes) and remove (device pane, confirm, POST /api/devices/:id/remove -> centrs devices remove, which keeps a backup)."
 acceptance = "Fail-first tests for create/edit/remove against temp CDBs (open and encrypted) through real centrs; secrets never echoed. UI slice smoke-gated: add, edit, remove a device in workspace and no-workspace modes, console clean, shots eyeballed; make gate and records check pass."
 blocked_by = ["T133"]
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]
 id = "T136"
 title = "Add Device button opens a credentials form instead of a chat prompt"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: Add devices is chat today; bring up a form with credentials instead. Reuse the T110 Add Device dialog (openAddDevice/saveAddDevice, already hardened per T72) from the left-panel button with empty host/user/id fields; the agent path (ui_add_device) keeps prefilling the same dialog. Retire the idle-time prompt injection. Relates to T110 (dialog plus agent handoff, done) and T68 (credential profiles/multi-user follow-ups). Same slice as T135 (create leg)."
-evidence = "agenda #2 (2026-11-03): developer agenda 2026-11-03. ui.html:4333 adddevice click sends a chat prompt; ui.html:1705 openAddDevice requires a host argument today."
+evidence = "agenda #2 (2026-11-03): developer agenda 2026-11-03. ui.html:4333 adddevice click sends a chat prompt; ui.html:1705 openAddDevice requires a host argument today. PROGRESS 2026-11-03 (claude, uncommitted): Add Device opens the T110 modal directly with an editable Device address field (agent relay path keeps it prefilled and read-only); prompt injection retired. Service port fields (centrs#618 keys) in both add and Access."
 acceptance = "Smoke leg: click Add Device, form opens (no chat turn starts), fill host/user/password, device appears in the list; validation errors stay in the form; console clean; make gate and records check pass."
 blocked_by = ["T133"]
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]
 id = "T137"
 title = "Rename the device card Credentials button to Edit, placed in the card's top corner"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: rename Devices (Credentials) to Edit so it sits in the top corner. The device card currently appends a credrow with a Credentials / Set credentials button (ui.html loadDevices). Move a compact Edit control into the card's top row; it opens the credentials modal now and the T135 edit form once that lands. Keep the missing-password signal (the need styling or a badge) visible without the long label."
-evidence = "agenda #3 (2026-11-03): developer agenda 2026-11-03. ui.html:3550 b.textContent = needs ? Set credentials : Credentials."
+evidence = "agenda #3 (2026-11-03): developer agenda 2026-11-03. ui.html:3550 b.textContent = needs ? Set credentials : Credentials. PROGRESS 2026-11-03 (claude, uncommitted): developer revised the label to Access (not Edit), with Add to Chat beside it on the card; the missing-password amber styling stays on Access. Device pane: Access always shown, Remove added there."
 acceptance = "Smoke: card shows Edit in the top corner, opens the modal, missing-password state still visible; console clean, shots eyeballed; make gate and records check pass."
 blocked_by = []
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]
@@ -1441,23 +1441,23 @@ updated = "2026-11-03"
 [[task]]
 id = "T143"
 title = "Left panel: workspace files as a basic tree instead of recents"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: left panel, show the workspace's files as a basic tree, not the most recent files; recents may come back later, maybe as a toggle. Replace the Workspace · recent section (listRecents in src/lib/workspace.ts: curated workspace.toml, router.toml, operations/inbox/observations/reports plus render primaries) with a collapsible tree of the workspace root. Same confinement as the existing viewer: hide dotfiles, private homes, device.cdb and backups, and other never-displayed files; open .md/.toml/artifacts in the existing tab types. Keep listRecents code for a later toggle. Feeds T148 (any TOML file opens from the tree)."
-evidence = "agenda #9 (2026-11-03): developer agenda 2026-11-03. src/lib/workspace.ts listRecents; ui.html:461 Workspace · recent section, loadRecents."
+evidence = "agenda #9 (2026-11-03): developer agenda 2026-11-03. src/lib/workspace.ts listRecents; ui.html:461 Workspace · recent section, loadRecents. PROGRESS 2026-11-03 (claude, uncommitted): GET /api/files (workspace.ts listWorkspaceFiles: walkTree minus dotfiles/dot-dirs and /\\.cdb(\\.|$)/i, so device.cdb and its .bak backups never list); left panel renders it as a folding tree (open dirs kept across reloads), refreshed on turn end and window focus; opening a file no longer reorders the list. listRecents kept for a later toggle."
 acceptance = "Fail-first test that the tree listing excludes device.cdb, .bak, dotfiles and paths outside the root; smoke: expand a folder, open a file in a tab; console clean; make gate and records check pass."
 blocked_by = []
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]
 id = "T144"
 title = "Chat composer: disable + File with a future tooltip"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: in chat, disable the + File button with a future tooltip. The composer + File (id composerfile, title Open a file...) becomes disabled with a tooltip saying file attach is coming in a future release; no handler fires."
-evidence = "agenda #10 (2026-11-03): developer agenda 2026-11-03. ui.html:503 composerfile button."
+evidence = "agenda #10 (2026-11-03): developer agenda 2026-11-03. ui.html:503 composerfile button. PROGRESS 2026-11-03 (claude, uncommitted): developer revised to hide both composer + Device and + File (hidden attribute; Add to Chat on the card replaces + Device). Open File in the Workspace header stays as is."
 acceptance = "Smoke: + File is disabled and shows the future tooltip; console clean; make gate and records check pass."
 blocked_by = []
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]
@@ -1496,12 +1496,12 @@ updated = "2026-11-03"
 [[task]]
 id = "T148"
 title = "Execute D53: device files versus the CDB; UI renders any TOML from the file tree"
-status = "needed"
+status = "active"
 detail = "Developer 2026-11-03: review devices.toml/router.toml with a focus on the CDB in our scheme. Execute the D53 outcome. If the recommendation holds: device list, add, and preallow host seeding read the CDB in both modes (drop the router.toml/cdb split in fleet.ts listDevices), router.toml becomes optional annotations managed by instructions/skills, templates and docs updated together, and the TOML editor opens any TOML file from the T143 tree while the picker keeps the well-known files (workspace.toml, router.toml). Coordinate with T92/T99 (TOML editor stale state and per-tab state)."
-evidence = "agenda #14 (2026-11-03): developer agenda 2026-11-03. See D53 for the current-state inventory. D53 decided 2026-11-03 as option (a): CDB-only device list, twins via centrs --quickchr naming, router.toml optional (templates offer starter schemes, the agent owns workspace TOML except that workspace.toml must stay), and skills and docs stop requiring router.toml. TikTOML is not coming (centrs#137 won't-fix). The CDB-only half may land before T143; only open-any-TOML-from-the-tree needs T143."
+evidence = "agenda #14 (2026-11-03): developer agenda 2026-11-03. See D53 for the current-state inventory. D53 decided 2026-11-03 as option (a): CDB-only device list, twins via centrs --quickchr naming, router.toml optional (templates offer starter schemes, the agent owns workspace TOML except that workspace.toml must stay), and skills and docs stop requiring router.toml. TikTOML is not coming (centrs#137 won't-fix). The CDB-only half may land before T143; only open-any-TOML-from-the-tree needs T143. PROGRESS 2026-11-03 (claude, uncommitted): CDB-only half landed in code. fleet.ts listDevices(cdbFile, env) and deviceStats read only the CDB in both modes; server /api/devices, credentials (id = CDB target), add (no router.toml append; id = host), T49 target validation, ui_select_device (both modes, checked against the last listed ids) and ui_add_device (id = host) follow. Remaining: preallow host seeding still reads router.toml hosts (workspaceHosts; moving it to the CDB needs the unlock env), templates/skills/docs that still describe router.toml as the device inventory, ui-bridge tool descriptions, and open-any-TOML from the tree."
 acceptance = "Fail-first tests for the chosen device source (workspace with and without router.toml), preallow host seeding, and arbitrary TOML open from the tree; smoke across workspace and no-workspace modes; console clean; make gate and records check pass."
 blocked_by = ["T143"]
-agent = ""
+agent = "claude"
 updated = "2026-11-03"
 
 [[task]]
@@ -1641,8 +1641,19 @@ id = "T161"
 title = "Picker test 'default approval mode surfaces in chat stats' times out at 5s on macOS"
 status = "needed"
 detail = "From T155 item 3. tests/templates.test.ts picker template routes > default approval mode surfaces in chat stats hits the 5000 ms bun default timeout and leaves a dangling process (bun reports 'killed 1 dangling process'). Cause unknown: find whether the stats read waits on a worker that never connects on this host, or is just slow and needs an explicit timeout. Check against T152 (session stats come back empty) and the smoke's extra api/chat/stats and api/chat/pending 500s (why: client closed), which may share the cause."
-evidence = "Reproduced 2026-11-03 on the Intel Mac at 7740581 and on clean b27c211."
+evidence = "Reproduced 2026-11-03 on the Intel Mac at 7740581 and on clean b27c211. Same family 2026-11-03: t49.test.ts D39 /api/status trust-state test also times out at 5s on this Mac, intermittently (2 of 3 isolated runs fail), and fails on clean HEAD 07aeb93 too."
 acceptance = "Root cause recorded; test passes without a padded timeout unless the cause shows the work is legitimately slow; make gate and records check pass."
+blocked_by = []
+agent = ""
+updated = "2026-11-03"
+
+[[task]]
+id = "T162"
+title = "Follow-ups from the CDB-only device switch (smoke legs, relay id set, route edges)"
+status = "needed"
+detail = "From the 2026-11-03 UI pass (T148/T135-T137/T143/T144). (1) tools/ui-smoke.ts still assumes router.toml devices (smoke-gw fixtures, t110 router.toml gains the device block, Set credentials labels, Add Device prompt injection, recents rows): update the legs to the CDB-only list, Access/Add to Chat buttons, Add Device form, file tree and Remove. (2) ui_select_device checks ids against the set from the last GET /api/devices: empty until a client lists, shared across clients, and a failed list keeps the old ids; decide whether the relay should list the CDB itself. (3) Bad {ports} answers 200 ok:false on /api/devices/add but 400 on /credentials; align. (4) Remove accepts only ids passing validAddHost, so a CDB target with spaces or metacharacters cannot be removed from the UI."
+evidence = "Found by the test-update subagent and the orchestrator 2026-11-03; unit suite anchors the new behavior (751 pass; remaining fails are the T155 set plus the T161 timeout family)."
+acceptance = "Smoke green on the new UI; each of (2)-(4) fixed or decided with a test; make gate and records check pass."
 blocked_by = []
 agent = ""
 updated = "2026-11-03"

@@ -70,6 +70,7 @@ export function walkTree(
 	depth: number,
 	out: TreeEntry[],
 	rel = "",
+	skip?: (name: string) => boolean,
 ): void {
 	if (out.length >= MAX_TREE_ENTRIES || depth > 4) return;
 	let names: string[];
@@ -81,6 +82,7 @@ export function walkTree(
 	for (const name of names) {
 		if (out.length >= MAX_TREE_ENTRIES) return;
 		if (name.startsWith(".git") || name === "node_modules") continue;
+		if (skip?.(name)) continue;
 		const relPath = rel ? `${rel}/${name}` : name;
 		const full = path.join(root, relPath);
 		let st: nodeFs.Stats;
@@ -97,8 +99,23 @@ export function walkTree(
 			meta: isDir ? "" : ageOf(st.mtimeMs),
 			depth,
 		});
-		if (isDir) walkTree(root, depth + 1, out, relPath);
+		if (isDir) walkTree(root, depth + 1, out, relPath, skip);
 	}
+}
+
+/**
+ * T143: the left panel's honest file list — every workspace file
+ * except dotfiles/dot-dirs (private homes, .agents) and credential
+ * stores: *.cdb and their centrs backups (device.cdb.bak.*).
+ */
+export function hiddenFromFiles(name: string): boolean {
+	return name.startsWith(".") || /\.cdb(\.|$)/i.test(name);
+}
+
+export function listWorkspaceFiles(root: string): TreeEntry[] {
+	const out: TreeEntry[] = [];
+	walkTree(root, 0, out, "", hiddenFromFiles);
+	return out;
 }
 
 export type RecentRow = {
