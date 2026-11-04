@@ -1344,11 +1344,11 @@ id = "T134"
 title = "GitHub push gate: publish routeros-muse to public GitHub after T133 plus test sessions (D34)"
 status = "needed"
 detail = "Executes the D34 GitHub step. Developer 2026-11-03: GitHub was never the blocker, having no auth scheme was; T133 (encrypted new-workspace flow, centrs#600) closes that. Sequence: T133 lands, then a few developer test sessions on the new flow, then the D34 final local sweep (README/docs read well, basic path works) and a D1 privacy pass over history (no creds, tokens, serials, public IPs, people, locations; out/ captures never committed), then create the tikoci/routeros-muse remote and push. Developer pulls the trigger. T96 (de-lab template skills) already landed. T24 covers the owner-repo workflow, not this push."
-evidence = "agenda push gate (2026-11-03): developer agenda 2026-11-03 places the push after T133 and test sessions, before the UX items. D34 outcome: GitHub (public OK) waits on README/docs plus basic path, then final local sweep plus real test turns."
+evidence = "agenda push gate (2026-11-03): developer agenda 2026-11-03 places the push after T133 and test sessions, before the UX items. D34 outcome: GitHub (public OK) waits on README/docs plus basic path, then final local sweep plus real test turns. 2026-11-04 (claude): repo-side GitHub setup committed as f62b561: ci.yml (lint+records+skills, bun test, UI smoke, TMPDIR leak check), release.yml (manual; @next <base>-next.<run>, latest = committed X.Y.Z + tag + GitHub Release; repo secret NPM_TOKEN), issue/PR templates, dependabot, .coderabbit.yaml, CONTRIBUTING.md, MIT LICENSE, package.json no longer private (developer: public, MIT). actionlint clean; not yet run on GitHub. Linux gate on orca pending (other agent). Still open here: test sessions, D34 sweep, D1 history scan, SECURITY.md section 2 wording, GitHub-side settings."
 acceptance = "T133 done; developer test sessions recorded in evidence; D1 history scan command plus output clean; make gate and records check pass on the pushed commit; remote URL recorded here."
 blocked_by = ["T133"]
 agent = ""
-updated = "2026-11-03"
+updated = "2026-11-04"
 
 [[task]]
 id = "T135"
