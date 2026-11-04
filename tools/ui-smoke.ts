@@ -1016,6 +1016,39 @@ try {
 	check("t52 conn chip and agent dot match the msp state", chipOk, chipDbg);
 	await page.screenshot({ path: path.join(OUT, "50-t52-settings.png") });
 
+	// T171: saved preference is distinct from the startup override.
+	const sandboxToggle = page.locator("#disable-sandbox-toggle");
+	await sandboxToggle.waitFor({ state: "visible" });
+	check(
+		"t171 sandbox control lives in Settings and defaults off",
+		(await page.locator("#rview-settings #disable-sandbox-toggle").count()) ===
+			1 && !(await sandboxToggle.isChecked()),
+	);
+	await sandboxToggle.check();
+	await page
+		.locator("#sandbox-status")
+		.filter({ hasText: "Restart required to disable" })
+		.waitFor();
+	check(
+		"t171 restart guidance names stop/start and New Session limitation",
+		(await page.locator("#sandbox-status").textContent())?.includes(
+			"stop routeros-muse, then start it again",
+		) === true &&
+			(await page.locator("#sandbox-status").textContent())?.includes(
+				"New Session will not apply",
+			) === true,
+	);
+	await page.locator("#sandbox-block").scrollIntoViewIfNeeded();
+	await page.screenshot({ path: path.join(OUT, "t171-sandbox-pending.png") });
+	await sandboxToggle.uncheck();
+	await page.waitForFunction(
+		() =>
+			!(document.getElementById("sandbox-status")?.textContent ?? "").includes(
+				"Restart required",
+			),
+	);
+	check("t171 reverting saved preference clears pending restart", true);
+
 	// T101: the settings pane reports the live profile (:ask-me
 	// under Ask first on the real echo wire) and the pre-seeded
 	// read set; the access selector flips the live profile both

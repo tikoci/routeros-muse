@@ -87,6 +87,13 @@ grant); the server spawns it with `--trust-workspace` by default
 (D39; `start --no-trust-workspace` opts out, no-workspace mode never
 passes it — no workspace to trust), `/api/status` reports
 `trustWorkspace` (true/false/null), and the Settings pane shows it.
+Settings → Disable sandbox (T171, partial T156) stores the machine-wide
+`[agent] disable_sandbox` boolean, default false. Server startup latches it
+into `mspExtraArgs` as `--disable-sandbox` for worker and auth-probe spawns.
+The setting does not change the session's approval mode or profile.
+`/api/settings` reports the saved and applied values plus
+`sandboxRestartRequired`; Settings explains the scope and requires a full
+server stop/start to apply a change, including restoring the sandbox.
 `src/serve/server.ts` bridges chat (send/history/SSE stream;
 tree, recents, files (TOML validate-before-save), devices (router.toml
 devices; live stats need a bound host), twins, alerts, and past chats;

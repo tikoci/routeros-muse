@@ -6,6 +6,7 @@
 //
 //   [agent]
 //   default_access = "promptUnmatched" | "allowAll"
+//   disable_sandbox = false | true (T171; latched at server startup)
 //
 //   [devices]
 //   status_poll_seconds = 0 | 15 | 30 | 60
@@ -84,6 +85,11 @@ export function readPreallowReads(dataHome?: string): boolean {
 /** T100: one machine preference; only an explicit false opts out. */
 export function readAutoRouterosSkills(dataHome?: string): boolean {
 	return readAgentKey(dataHome, "auto_routeros_skills") !== false;
+}
+
+/** T171: removing isolation requires an explicit machine opt-in. */
+export function readDisableSandbox(dataHome?: string): boolean {
+	return readAgentKey(dataHome, "disable_sandbox") === true;
 }
 
 /** Bare/double-quoted/single-quoted spellings of a [section] header. */
@@ -293,6 +299,13 @@ export function writeAutoRouterosSkills(
 	on: boolean,
 ): void {
 	writeAgentKey(dataHome, "auto_routeros_skills", on ? "true" : "false");
+}
+
+export function writeDisableSandbox(
+	dataHome: string | undefined,
+	on: boolean,
+): void {
+	writeAgentKey(dataHome, "disable_sandbox", on ? "true" : "false");
 }
 
 /**

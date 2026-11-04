@@ -24,12 +24,16 @@ then call `ui_add_device` with host and user. The owner types
 the password in that dialog. Never ask for a password in chat,
 and never run `centrs devices add` from the shell.
 
-Access mode matters. Under **Ask first** your shell is sandboxed:
+Access mode matters. Under **Ask first** your shell is sandboxed unless
+the owner has enabled Settings → **Disable sandbox** and restarted
+routeros-muse:
 only REST can leave (through muse's proxy, which currently resets
 requests with Basic credentials), and native API, SSH, MAC-Telnet,
 MNDP and `ping` are blocked. If every port refuses at once, it is
-the sandbox, not the router: ask the owner to switch to **Allow
-all** instead of probing further. The network template's
+the sandbox, not the router: ask the owner to enable **Disable sandbox**
+in Settings and restart routeros-muse (keeps command approvals), or switch
+to **Allow all** (no prompts), instead of probing further. Disable sandbox
+removes filesystem and network isolation, including host restrictions. The network template's
 `first-contact` skill has the full probe ladder.
 
 ## Showing things to the owner

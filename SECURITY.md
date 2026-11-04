@@ -60,10 +60,20 @@ Two modes in the UI and `--yolo` flag (D38, D42,
 - **Allow all** (`--yolo`): `allowAll` under `:unrestricted` — no
   sandbox, full egress, no reviewer.
 
+Settings → **Disable sandbox** (T171, partial T156) is a separate,
+machine-wide web UI opt-in, default off. It passes `--disable-sandbox`
+at worker startup without changing approval mode or permission profile.
+Ask first retains command approvals, but filesystem confinement and
+network isolation are removed, including destination restrictions from
+seeded host rules. Approved commands can write outside the workspace.
+Allow all is already unsandboxed regardless of this switch. The setting
+is latched at server startup: changing it requires stopping and starting
+routeros-muse; page reloads, new chats and worker replacement alone do not
+apply it. Settings reports saved versus running state.
+
 The legacy modes the access route still accepts (`onRequest`,
-`denyUnmatched`) map to the sandboxed profile: only an explicit Allow
-all lifts the sandbox. The machine's `settings.json` default profile
-is never edited.
+`denyUnmatched`) map to `:ask-me`, subject to the same startup override.
+The machine's `settings.json` default profile is never edited.
 
 ## 5. Where trust, rules, and settings live
 

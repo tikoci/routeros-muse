@@ -803,13 +803,21 @@
           <div class="arow"><span class="k">Profile</span><span class="v" id="set-profile">…</span></div>
           <div class="arow"><span class="k">Default access</span><span class="v" id="set-defaccess">…</span></div>
           <div class="defbtns" id="defaccess-btns">
-            <button class="minibtn" data-defaccess="promptUnmatched" title="Shell, file and network actions ask before they run unless allowed; sandboxed to the workspace (:ask-me).">Ask first</button>
+            <button class="minibtn" data-defaccess="promptUnmatched" title="Unapproved actions ask before they run (:ask-me). Sandboxed unless Disable sandbox is active in Settings.">Ask first</button>
             <button class="minibtn" data-defaccess="allowAll" title="Nothing asks; runs unsandboxed (:unrestricted), like --yolo.">Allow all</button>
           </div>
           <div class="setnote">New chats start at the default access and profile. Changing it never touches the live chat.</div>
           <div class="arow"><span class="k">Context</span><span class="v" id="set-ctx">…</span></div>
           <div class="arow"><span class="k">Session</span><span class="v" id="set-session">…</span></div>
           <div class="setnote">Model changes apply to the main chat after the current turn finishes.</div>
+        </div>
+        <div class="rblock" id="sandbox-block">
+          <div class="rsect">Sandbox</div>
+          <div class="setrow"><label><input type="checkbox" id="disable-sandbox-toggle" disabled> Disable sandbox</label></div>
+          <div class="setnote">Enables direct networking for discovery, SSH and RouterOS API tools. Removes filesystem and network isolation: approved commands can write outside the workspace and connect to any reachable address. Host allow rules no longer restrict connections.</div>
+          <div class="setnote">Keeps your access mode: Ask first still prompts for unapproved commands; Allow all always runs unsandboxed without prompts. Applies to all web UI workspaces on this machine after restart.</div>
+          <div class="setnote" id="sandbox-status" role="status">Checking sandbox setting…</div>
+          <div class="setnote" id="sandbox-error" role="alert" hidden></div>
         </div>
         <div class="rblock" id="routeros-skills-block">
           <div class="rsect">RouterOS skills</div>
@@ -4717,6 +4725,42 @@
       if (j.ok) paintRouterosSkills(j.routerosSkills);
     } catch { /* keep the last confirmed state */ }
   }
+  let savingSandbox = false;
+  function paintSandbox(j) {
+    if (typeof j.disableSandbox !== "boolean") return;
+    const tog = $("disable-sandbox-toggle");
+    if (!savingSandbox) tog.checked = j.disableSandbox;
+    tog.disabled = savingSandbox;
+    let text = j.disableSandboxApplied
+      ? "Running: sandbox disabled by this setting."
+      : "Running: sandbox follows the access mode (Ask first is sandboxed).";
+    if (j.sandboxRestartRequired) text += " Restart required to " + (j.disableSandbox ? "disable" : "restore") + " the sandbox: stop routeros-muse, then start it again with the same workspace. Reloading this page or choosing New Session will not apply this change. Finish the current turn first; reopen the chat from Past chats after restarting.";
+    $("sandbox-status").textContent = text;
+    $("sandbox-status").classList.toggle("throttle", j.sandboxRestartRequired);
+  }
+  $("disable-sandbox-toggle").addEventListener("change", async (e) => {
+    const tog = e.target;
+    const on = tog.checked;
+    savingSandbox = true;
+    tog.disabled = true;
+    $("sandbox-error").hidden = true;
+    try {
+      const r = await fetch("/api/settings", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ disableSandbox: on }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.why || "Could not save sandbox setting");
+      paintSandbox(j);
+    } catch (err) {
+      tog.checked = !on;
+      $("sandbox-error").textContent = "Could not save sandbox setting: " + err.message;
+      $("sandbox-error").hidden = false;
+    } finally {
+      savingSandbox = false;
+      tog.disabled = false;
+    }
+  });
   function wireRouterosSkills() {
     $("routeros-skills-toggle").addEventListener("change", async (e) => {
       const tog = e.target;
@@ -4843,10 +4887,10 @@
   // so neither is offered; the server still accepts them if sent, and a
   // live session running one shows its raw mode name, honestly.
   // T101: the selector also flips the live profile (:ask-me for Ask
-  // first, :unrestricted for Allow all) — the sandbox follows the
-  // mode at once, not at the next session.
+  // first, :unrestricted for Allow all). The startup Disable sandbox
+  // override stays in effect across profile switches.
   const ACCESS = [
-    ["promptUnmatched", "Ask first", "Shell, file and network actions ask before they run unless allowed; sandboxed to the workspace (:ask-me)."],
+    ["promptUnmatched", "Ask first", "Unapproved actions ask before they run (:ask-me). Sandboxed unless Disable sandbox is active in Settings."],
     ["allowAll", "Allow all", "Nothing asks; runs unsandboxed (:unrestricted), like --yolo."],
   ];
   const cap = (s) => s.slice(0, 1).toUpperCase() + s.slice(1);
@@ -4946,6 +4990,7 @@
       const j = await getJSON("/api/settings");
       if (j.ok && j.defaultAccess) paintDefaultAccess(j.defaultAccess);
       if (j.ok) paintRouterosSkills(j.routerosSkills);
+      if (j.ok) paintSandbox(j);
       if (j.ok) devPollApply(j.devicePollSeconds);
     } catch { /* the row keeps its placeholder */ }
   }

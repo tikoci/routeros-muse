@@ -56,11 +56,13 @@ import {
 	readAutoRouterosSkills,
 	readDefaultAccess,
 	readDevicePollSeconds,
+	readDisableSandbox,
 	readPreallowReads,
 	SettingsSymlinkError,
 	writeAutoRouterosSkills,
 	writeDefaultAccess,
 	writeDevicePollSeconds,
+	writeDisableSandbox,
 	writePreallowReads,
 } from "../lib/settings";
 import { listTemplates, type TemplateMeta } from "../lib/templates";
@@ -624,8 +626,9 @@ export function isLoopbackHost(host: string): boolean {
  * (promptUnmatched) runs sandboxed under :ask-me; Allow all
  * (allowAll, also --yolo) runs unsandboxed under :unrestricted.
  * The legacy modes the access route still accepts (onRequest,
- * denyUnmatched) map to the sandboxed profile: only an explicit
- * Allow all lifts the sandbox. Never edits muse's settings.json —
+ * denyUnmatched) map to :ask-me. T171's startup --disable-sandbox
+ * override lifts isolation independently of these profiles.
+ * Never edits muse's settings.json —
  * the profile rides the wire (session/start + setPermissionProfile).
  */
 export function profileForAccess(mode: string): ":ask-me" | ":unrestricted" {
@@ -1228,6 +1231,17 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 	// `muse serve` spawn (worker + auth probes) carries the same args.
 	const trustWorkspace = !noWs && opts.trustWorkspace !== false;
 	const mspExtraArgs = trustWorkspace ? ["--trust-workspace"] : [];
+	// T171: latch at boot. Saving never changes a running worker or turn.
+	const disableSandboxApplied = readDisableSandbox(opts.dataHome);
+	if (disableSandboxApplied) mspExtraArgs.push("--disable-sandbox");
+	function sandboxSettings() {
+		const disableSandbox = readDisableSandbox(opts.dataHome);
+		return {
+			disableSandbox,
+			disableSandboxApplied,
+			sandboxRestartRequired: disableSandbox !== disableSandboxApplied,
+		};
+	}
 	// T55/D41 + T106: the per-session MCP relay credentials. The
 	// token is minted fresh per server run (tests override it);
 	// the bridge reaches the DEDICATED relay listener below (its
@@ -4811,6 +4825,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						return json({
 							ok: true,
 							defaultAccess: defaultAccess(),
+							...sandboxSettings(),
 							preallowReads: readPreallowReads(opts.dataHome),
 							autoRouterosSkills: readAutoRouterosSkills(opts.dataHome),
 							devicePollSeconds: readDevicePollSeconds(opts.dataHome),
@@ -4823,17 +4838,19 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 							preallowReads?: unknown;
 							autoRouterosSkills?: unknown;
 							devicePollSeconds?: unknown;
+							disableSandbox?: unknown;
 						};
 						if (
 							body.defaultAccess === undefined &&
 							body.preallowReads === undefined &&
 							body.autoRouterosSkills === undefined &&
-							body.devicePollSeconds === undefined
+							body.devicePollSeconds === undefined &&
+							body.disableSandbox === undefined
 						) {
 							return json(
 								{
 									ok: false,
-									why: "need {defaultAccess}, {preallowReads}, {autoRouterosSkills}, or {devicePollSeconds}",
+									why: "need {defaultAccess}, {preallowReads}, {autoRouterosSkills}, {disableSandbox}, or {devicePollSeconds}",
 								},
 								400,
 							);
@@ -4880,7 +4897,19 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 								400,
 							);
 						}
+						if (
+							body.disableSandbox !== undefined &&
+							typeof body.disableSandbox !== "boolean"
+						) {
+							return json(
+								{ ok: false, why: "need {disableSandbox} boolean" },
+								400,
+							);
+						}
 						try {
+							if (typeof body.disableSandbox === "boolean") {
+								writeDisableSandbox(opts.dataHome, body.disableSandbox);
+							}
 							if (body.defaultAccess !== undefined) {
 								writeDefaultAccess(opts.dataHome, body.defaultAccess);
 							}
@@ -4905,6 +4934,7 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 						return json({
 							ok: true,
 							defaultAccess: defaultAccess(),
+							...sandboxSettings(),
 							preallowReads: readPreallowReads(opts.dataHome),
 							autoRouterosSkills: readAutoRouterosSkills(opts.dataHome),
 							devicePollSeconds: readDevicePollSeconds(opts.dataHome),

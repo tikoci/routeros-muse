@@ -108,6 +108,15 @@ package: startup works from local files, without contacting GitHub.
 `--no-trust-workspace` (spawn the agent untrusted: the workspace's
 AGENTS.md and skills don't load).
 
+Settings → **Disable sandbox** enables direct networking while retaining
+the selected approval mode, including **Ask first**. It removes filesystem
+and network isolation for web UI agents on this machine; approved commands
+can access paths outside the workspace and any reachable address. Host
+allow rules do not restrict those connections. Default: off. After changing
+it, finish the current turn, stop `routeros-muse` and start it again with
+the same workspace. Settings shows when a restart is pending. A page reload
+or New Session does not apply it; reopen the previous chat from Past chats.
+
 `init`: scaffolds a workspace in the directory (default: here) from
 `minimal` (runnable minimum) or `network` (full starter), never
 overwriting, with an encrypted `device.cdb`, and registers it.

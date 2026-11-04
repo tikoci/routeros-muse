@@ -19,14 +19,18 @@ read. Never SSH-first blind (specimen: an agent burned turns on
 
 ### Before probing: is the sandbox in the way?
 
-Under routeros-muse **Ask first**, shell commands run in a sandbox.
+Under routeros-muse **Ask first**, shell commands run in a sandbox unless
+the owner enabled Settings → **Disable sandbox** and restarted routeros-muse.
 Direct sockets are blocked: native API (8728/8729), SSH, MAC-Telnet,
 MNDP (`discover`), `ping` and raw TCP probes fail with EPERM or an
 instant connection-refused. HTTP leaves only through muse's proxy,
 which currently resets any request carrying Basic credentials, so
 authenticated centrs REST fails too. If every port refuses at once,
 that is the sandbox, not the router: stop probing and ask the owner
-to switch to **Allow all**. Do not change the router or the CDB to
+to enable **Disable sandbox** in Settings and restart routeros-muse
+(keeps command approvals), or switch to **Allow all** (no prompts). The
+Settings override removes filesystem and network isolation, including
+host restrictions. Do not change the router or the CDB to
 chase it.
 
 ### 0. Load credentials (CDB-first, env fallback)

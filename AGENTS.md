@@ -69,13 +69,17 @@ Local git repo for the RouterOS network workspace + web UI.
   agent can wander `../..` into our source and root AGENTS.md.
   A real owner workspace has no parent repo; weigh findings that
   depend on that.
-- Access mode decides what a session can reach. Ask first runs the
-  shell sandboxed: no direct sockets (native API, SSH, MAC-Telnet,
+- Access mode and the startup sandbox override decide what a session
+  can reach. Ask first normally runs the shell sandboxed: no direct
+  sockets (native API, SSH, MAC-Telnet,
   MNDP, ping fail as EPERM or instant refused), and REST only via
   muse's proxy, which resets Basic-auth requests (T157). Allow all
-  is unsandboxed. Test device work under Allow all until T156 or
-  T157 lands, and never read "every port refused" under Ask first as
-  a router fault.
+  is unsandboxed. T171 adds Settings → Disable sandbox (default off):
+  stop/start routeros-muse to apply it while keeping Ask first command
+  approvals. This removes filesystem and network isolation, including
+  host restrictions. Settings shows the running state and pending restart.
+  T156's full transport matrix remains open. Never read "every port
+  refused" under sandboxed Ask first as a router fault.
 - Read the log before trusting an agent's self-report. Its write-up
   of a session can misattribute causes (sandbox read as router
   state) or credit itself with steps the owner prompted.

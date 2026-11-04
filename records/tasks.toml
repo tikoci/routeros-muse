@@ -1585,12 +1585,12 @@ updated = "2026-11-03"
 id = "T156"
 title = "Third access mode: ask first without the sandbox (promptUnmatched plus --disable-sandbox)"
 status = "needed"
-detail = "Developer test drive 2026-11-03: under Ask first (:ask-me) the shell sandbox blocks direct sockets, so native API, SSH, MAC-Telnet, MNDP and ping cannot reach a router, and REST only leaves through muse's proxy (which resets Basic-auth requests, T157). Allow all works but drops every prompt. Muse supports :ask-me plus --disable-sandbox (permissions.md P6 row 71: REACH and SUCCEED). There is no finer knob (fs sandbox on, direct network on): four fixed profiles, --sandbox-network only tightens, custom profiles need enterprise planes. routeros-muse is binary today: profileForAccess (server.ts) maps everything but allowAll to :ask-me, the UI has two buttons, the worker spawn passes only --trust-workspace. Add a third mode (or workspace toggle) that spawns the worker with --disable-sandbox under promptUnmatched. Costs: writes outside the workspace go from hard-blocked to approve-to-allow; seeded network host rules go inert (network-kind approvals never fire unsandboxed). Must verify first: row 71 was measured under onRequest, not promptUnmatched, so prove shell prompts still fire for unseeded commands. The flag is spawn-level, so a mode switch needs a worker respawn."
+detail = "Developer test drive 2026-11-03: under Ask first (:ask-me) the shell sandbox blocks direct sockets, so native API, SSH, MAC-Telnet, MNDP and ping cannot reach a router, and REST only leaves through muse's proxy (which resets Basic-auth requests, T157). Allow all works but drops every prompt. Muse supports :ask-me plus --disable-sandbox (permissions.md P6 row 71: REACH and SUCCEED). There is no finer knob (fs sandbox on, direct network on): four fixed profiles, --sandbox-network only tightens, custom profiles need enterprise planes. routeros-muse is binary today: profileForAccess (server.ts) maps everything but allowAll to :ask-me, the UI has two buttons, the worker spawn passes only --trust-workspace. Add a third mode (or workspace toggle) that spawns the worker with --disable-sandbox under promptUnmatched. Costs: writes outside the workspace go from hard-blocked to approve-to-allow; seeded network host rules go inert (network-kind approvals never fire unsandboxed). Must verify first: row 71 was measured under onRequest, not promptUnmatched, so prove shell prompts still fire for unseeded commands. The flag is spawn-level, so a mode switch needs a worker respawn. Partial implementation T171 (2026-11-04): Settings-only machine opt-in, default off, applied by a full server restart; retains approval mode. Live unseeded shell approval plus a direct loopback TCP socket passed under promptUnmatched + :ask-me + --disable-sandbox. Native API and MAC-Telnet grounding, finer network scope and automatic worker restart remain open."
 evidence = "docs/design/permissions.md P6 row 71 and line 265; src/serve/server.ts profileForAccess; ui.html defaccess buttons; sandboxed probe session ~/.local/share/muse/sessions/2026/11/03/01a1a3dd-fdc3-79d1-855b-abe029cb1742 (nc/ping EPERM, centrs ECONNRESET, unsandboxed retry OK)."
 acceptance = "Live probe under promptUnmatched plus --disable-sandbox: an unseeded shell command prompts, centrs native-api and mac-telnet reach a real box; the third mode is selectable in the UI and survives restart; templates' access-mode notes updated; make gate passes."
 blocked_by = []
 agent = ""
-updated = "2026-11-03"
+updated = "2026-11-04"
 
 [[task]]
 id = "T157"
@@ -1744,4 +1744,15 @@ evidence = "T98 real-server browser sweep 2026-11-04: PATH=node_modules/.bin:$PA
 acceptance = "A TOML file opened through an internal symlink is clearly read-only; regular-path editor saves still work; browser smoke and records check pass."
 blocked_by = ["T98"]
 agent = ""
+updated = "2026-11-04"
+
+[[task]]
+id = "T171"
+title = "Settings opt-in for --disable-sandbox (partial T156)"
+status = "done"
+detail = "Developer requests a minimal Settings-only sandbox switch, retaining Ask first approvals. Machine preference defaults off, is latched at server startup, and requires stopping and starting routeros-muse to apply. UI must show the running state, pending restart and actual filesystem/network scope. T156 stays open for broader transport grounding and lifecycle work."
+evidence = "bun test tests/t171-sandbox.test.ts -> 2 pass, 29 assertions (default-off, invalid input, symlink refusal, persistence, spawn flag, unchanged promptUnmatched/:ask-me, new-session behavior and restore). bun scratch/t171-probe.ts -> one unseeded shell approval (allow_once/abort), then Python direct TCP socket returned T171_DIRECT_SOCKET_OK; Muse Code 1.4.14 (1.4.14-R7309.1), real meta session 01a1a6aa-d61c-7f03-889f-294ad5887fec; local event capture out/t171/probe.json and raw session out/t171/muse-data/muse/sessions/2026/11/04/01a1a6aa-d61c-7f03-889f-294ad5887fec/session.jsonl (requested -> decision_applied -> tool_result_batch_committed confirmed). PATH=node_modules/.bin:$PATH bun scratch/t171-sweep.ts -> PASS startup off/on/off, dark/light, reload persistence, New Session leaves pending, console clean; settings screenshots eyeballed. PATH=node_modules/.bin:$PATH make gate -> exit 0: biome + tsc clean, skills valid, 812 pass / 0 fail / 3708 assertions, SMOKE GREEN (including T171 Settings legs), zero pageerrors, TMPDIR empty (out/t171/gate.log). make -C records check -> ok: 39 needs, 171 tasks, 55 decisions, 31 concepts. Full smoke covers workspace, no-workspace, lock/unlock, both access modes and themes; representative shots eyeballed."
+acceptance = "Settings persistence, spawn flag, approval mode preservation, pending restart and browser behavior verified; live unseeded-command approval probe recorded; make gate and records check pass."
+blocked_by = []
+agent = "codex"
 updated = "2026-11-04"
