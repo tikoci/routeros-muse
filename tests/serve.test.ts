@@ -2588,6 +2588,52 @@ describe("set credentials (T48)", () => {
 	);
 
 	tcentrs(
+		"POST remove takes any existing CDB target id, not only valid hosts (T162)",
+		async () => {
+			const odd = "core router; $(x) `y`";
+			const cdb = seedOpenCdb([
+				{ target: odd, user: "admin" },
+				{ target: "t48-keep", user: "admin" },
+			]);
+			const ws = makeCredWorkspace(cdb);
+			const srv = await startServer({
+				dataHome: makeDataHome(),
+				configHome: mktmp("t31-serve-cfg-"),
+				allowOpenCdb: true,
+				workspace: ws,
+				provider: "echo",
+				museHome: makeHome(),
+			});
+			try {
+				const removed = await t48post(
+					`${srv.url}api/devices/${encodeURIComponent(odd)}/remove`,
+					{},
+				);
+				expect(removed.status).toBe(200);
+				expect(removed.json).toEqual({ ok: true });
+				const inv = (await (await fetch(`${srv.url}api/devices`)).json()) as {
+					devices: { id: string }[];
+				};
+				expect(inv.devices.map((d) => d.id)).toEqual(["t48-keep"]);
+				// A valid-looking host that is not in the CDB is a 404,
+				// checked before centrs is asked to remove anything.
+				const absent = await t48post(
+					`${srv.url}api/devices/192.0.2.250/remove`,
+					{},
+				);
+				expect(absent.status).toBe(404);
+				expect(absent.json).toEqual({
+					ok: false,
+					why: "no device 192.0.2.250",
+				});
+			} finally {
+				await srv.stop();
+			}
+		},
+		60_000,
+	);
+
+	tcentrs(
 		"POST /api/devices/:id/remove removes the CDB record",
 		async () => {
 			const cdb = seedOpenCdb([
@@ -2614,14 +2660,17 @@ describe("set credentials (T48)", () => {
 					devices: { id: string }[];
 				};
 				expect(inv.devices.map((d) => d.id)).toEqual(["t48-keep"]);
-				// A second remove fails honestly through centrs.
+				// A second remove: the id is gone from the CDB (T162).
 				const again = await t48post(
 					`${srv.url}api/devices/t48-target/remove`,
 					{},
 				);
-				expect(again.json["ok"]).toBe(false);
-				expect(typeof again.json["why"]).toBe("string");
-				// Ids that are not valid hosts never reach centrs.
+				expect(again.status).toBe(404);
+				expect(again.json).toEqual({
+					ok: false,
+					why: "no device t48-target",
+				});
+				// Ids the CDB does not hold never reach centrs remove.
 				const bad = await t48post(
 					`${srv.url}api/devices/${encodeURIComponent("a b")}/remove`,
 					{},

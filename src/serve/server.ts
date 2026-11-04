@@ -3260,6 +3260,11 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					return json(listed);
 				}
 				// Remove one device from the CDB (owner click + confirm).
+				// T162: any target the CDB holds is removable (WinBox and
+				// centrs accept spaces and metacharacters; argv carries it,
+				// never a shell), so check the id exists rather than that
+				// it would be a valid new host. A leading dash would read
+				// as a centrs flag, so it is refused even when present.
 				if (
 					p.startsWith("/api/devices/") &&
 					p.endsWith("/remove") &&
@@ -3268,9 +3273,21 @@ export async function startServer(opts: ServeOpts): Promise<ServerHandle> {
 					const id = decodeURIComponent(
 						p.slice("/api/devices/".length, -"/remove".length),
 					);
-					if (!validAddHost(id))
-						return json({ ok: false, why: `no device ${id}` }, 404);
-					const res = await removeCdbDevice(cdbFile, id, envFor(req));
+					const env = envFor(req);
+					const listed = await listCdbDevices(cdbFile ?? undefined, env);
+					if (!listed.ok) return json({ ok: false, why: listed.why });
+					const shown = id.slice(0, 120);
+					if (!listed.devices.some((d) => d.id === id))
+						return json({ ok: false, why: `no device ${shown}` }, 404);
+					if (id.startsWith("-"))
+						return json(
+							{
+								ok: false,
+								why: `centrs cannot address a target starting with "-" (${shown}); remove it in WinBox`,
+							},
+							400,
+						);
+					const res = await removeCdbDevice(cdbFile, id, env);
 					if (res.ok) knownDeviceIds.delete(id);
 					return json(res);
 				}
