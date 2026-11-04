@@ -17,6 +17,18 @@ Run top to bottom. Stop at the first transport that yields an authenticated
 read. Never SSH-first blind (specimen: an agent burned turns on
 `execute --via ssh` before probing what the box offers).
 
+### Before probing: is the sandbox in the way?
+
+Under routeros-muse **Ask first**, shell commands run in a sandbox.
+Direct sockets are blocked: native API (8728/8729), SSH, MAC-Telnet,
+MNDP (`discover`), `ping` and raw TCP probes fail with EPERM or an
+instant connection-refused. HTTP leaves only through muse's proxy,
+which currently resets any request carrying Basic credentials, so
+authenticated centrs REST fails too. If every port refuses at once,
+that is the sandbox, not the router: stop probing and ask the owner
+to switch to **Allow all**. Do not change the router or the CDB to
+chase it.
+
 ### 0. Load credentials (CDB-first, env fallback)
 
 1. `centrs devices show <handle>` — if a record exists, use it (zero flags).
@@ -42,6 +54,10 @@ read. Never SSH-first blind (specimen: an agent burned turns on
   - ARP presence = L2-adjacency fact. Required
     before even considering mac-telnet.
 - Record: open ports, REST-401 yes/no, ARP yes/no, MNDP seen yes/no.
+- Non-default service ports: if the standard ports fail but ARP
+  shows the box, get in over whatever works (MAC-Telnet by MAC),
+  read `/ip/service/print` for the real ports, then re-probe the
+  IP transports at those ports.
 
 ### 2. Select (probe-then-pick — centrs auto-select does NOT fail over)
 
@@ -97,9 +113,21 @@ read. Never SSH-first blind (specimen: an agent burned turns on
 ### 4. Persist (CDB write on first success)
 
 - `devices` is the ONLY command that writes the CDB.
-- On first authenticated success: `centrs devices add <handle>` (+
-  `--user/--password` or key path), per-device `via=`/`port=`/`ssh-key=`
-  overrides as comment-kv. Precedence:
+- In routeros-muse, credentials (user/password) enter only through
+  the UI dialog (`ui_add_device`, or the card's credentials button),
+  never `--password` from the shell. Non-secret per-device keys go on
+  the record with `centrs devices set <t> key=value`: `via=`,
+  `port=`, `ssh-key=` (a path), `mac=`.
+- `mac=` on an IP record lets a MAC target (MAC-Telnet) resolve that
+  record's credentials. Without it, a MAC target finds no
+  credentials.
+- `port=` applies to every transport, including the MAC-Telnet UDP
+  delivery port (centrs `src/resolver/target.ts`). Setting a
+  non-standard www port there breaks the native-api and MAC-Telnet
+  defaults: pair it with `via=rest-api` and pass `--port` for other
+  transports. centrs has no per-service port key yet.
+- There is no `note=` key (centrs warns `cdb/unknown-option`). Keep
+  port maps and other notes in workspace files. Precedence:
   defaults → centrs.env → comment-kv → env → CLI flag; `meta.settings`
   reports winner+source.
 - Caveat: `devices set <t> key=` SHOULD remove the token per docs
