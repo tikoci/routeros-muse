@@ -479,6 +479,92 @@ try {
 	);
 	await page.click("#doc-source");
 	await page.waitForSelector("#doc-body.chatmd h2", { timeout: 10_000 });
+	// T148/D53: the first device list writes the devices.toml mirror,
+	// which then sits in the file tree like any file; any .toml opened
+	// from the tree (the mirror, router.toml, an arbitrary nested one)
+	// renders in the TOML view. The mirror's [[device]] tables keep it
+	// read-only there; a plain nested file stays editable.
+	{
+		const mirrorPath = path.join(SMOKE_WS, "devices.toml");
+		const deadline = Date.now() + 10_000;
+		while (!nodeFs.existsSync(mirrorPath) && Date.now() < deadline)
+			await new Promise((r) => setTimeout(r, 100));
+		const mirror = nodeFs.existsSync(mirrorPath)
+			? nodeFs.readFileSync(mirrorPath, "utf8")
+			: "";
+		check(
+			"t148 first device list writes the devices.toml mirror",
+			mirror.startsWith("# devices.toml — GENERATED") &&
+				mirror.includes('id = "smoke-gw"') &&
+				!/password/i.test(mirror.replace(/^#.*$/gm, "")),
+			mirror.slice(0, 80) || "(missing)",
+		);
+		nodeFs.writeFileSync(
+			path.join(SMOKE_WS, "notes", "site.toml"),
+			'[site]\nname = "smoke-site"\nfloors = 2\n',
+		);
+		await page.evaluate(() =>
+			(
+				window as unknown as { __reloadFiles: () => Promise<void> }
+			).__reloadFiles(),
+		);
+		await page
+			.locator('#wslist [data-path="devices.toml"]')
+			.waitFor({ state: "visible", timeout: 10_000 });
+		const tomlView = async (rel: string) => {
+			await page.locator(`#wslist [data-path="${rel}"]`).click();
+			await page.waitForFunction(
+				(want) =>
+					document.getElementById("toml-path")?.textContent === want &&
+					document.getElementById("toml-note")?.textContent !== "loading…",
+				rel,
+				{ timeout: 10_000 },
+			);
+			return page.evaluate(() => ({
+				visible: !!document.getElementById("pane-toml")?.offsetParent,
+				note: document.getElementById("toml-note")?.textContent ?? "",
+				values: [
+					...document.querySelectorAll<HTMLInputElement>(
+						"#toml-secs input, #toml-secs textarea",
+					),
+				].map((e) => e.value),
+				disabled: document.querySelectorAll(
+					"#toml-secs input:disabled, #toml-secs textarea:disabled",
+				).length,
+			}));
+		};
+		const dv = await tomlView("devices.toml");
+		check(
+			"t148 devices.toml from the tree renders read-only in the TOML view",
+			dv.visible &&
+				dv.values.some(
+					(v) => v.includes("smoke-gw") && v.includes("smoke-admin"),
+				) &&
+				dv.disabled === dv.values.length &&
+				(await page.locator("#toml-save").isDisabled()),
+			`${dv.note} | ${dv.values.join(",")}`,
+		);
+		await page.screenshot({
+			path: path.join(OUT, "05b-t148-devices-toml.png"),
+		});
+		const rv = await tomlView("router.toml");
+		check(
+			"t148 router.toml from the tree renders in the TOML view",
+			rv.visible &&
+				rv.values.includes("smoke-gw") &&
+				rv.values.includes("gateway"),
+			`${rv.note} | ${rv.values.join(",")}`,
+		);
+		const sv = await tomlView("notes/site.toml");
+		check(
+			"t148 arbitrary nested .toml from the tree renders editable",
+			sv.visible &&
+				sv.values.includes("smoke-site") &&
+				sv.disabled === 0 &&
+				sv.note.includes("edits write back to notes/site.toml"),
+			`${sv.note} | ${sv.values.join(",")}`,
+		);
+	}
 	await page.locator('.ctab[data-pane="pane-chat"]').click();
 	// Device status + pane (stubbed from the CHR wire fixtures): one dot
 	// state per device shared by the card and the pane, the poll's first
@@ -1132,10 +1218,26 @@ try {
 	await page.locator("#preallow-toggle").uncheck();
 	check("t101 toggle off removes our rules", (await pollOurs(0)) === 0);
 	await page.locator("#preallow-toggle").check();
-	const reseeded = READ_COMMANDS.length + SEED_TOOL_NAMES.length;
+	// T148/D53: toggle-on also seeds a host-only network rule per
+	// workspace CDB target (smoke-gw is this workspace's only device).
+	const SMOKE_CDB_HOSTS = ["smoke-gw"];
+	const reseeded =
+		READ_COMMANDS.length + SEED_TOOL_NAMES.length + SMOKE_CDB_HOSTS.length;
+	const reseededGot = await pollOurs(reseeded);
 	check(
 		"t101 toggle on re-seeds our rules",
-		(await pollOurs(reseeded)) === reseeded,
+		reseededGot === reseeded,
+		`want=${reseeded} got=${reseededGot}`,
+	);
+	const oursHosts = readOurs()
+		.map((r) => r["rule"] as Record<string, unknown>)
+		.filter((r) => r["kind"] === "network")
+		.map((r) => r["host"]);
+	check(
+		"t148 re-seed network rules cover exactly the CDB hosts",
+		JSON.stringify([...oursHosts].sort()) ===
+			JSON.stringify([...SMOKE_CDB_HOSTS].sort()),
+		oursHosts.join(",") || "(none)",
 	);
 	// Access selector flips the live profile (echo speaks
 	// session/setPermissionProfile for real).
@@ -1507,6 +1609,13 @@ try {
 		const gateA = new Promise<void>((r) => {
 			releaseA = r;
 		});
+		// unroute() would handle B's still-parked route itself, and
+		// B's late continue() then throws "Route is already handled":
+		// wait for B's handler before unrouting.
+		let markBDone: () => void = () => {};
+		const bDone = new Promise<void>((r) => {
+			markBDone = r;
+		});
 		await page.route("**/api/chat/send", async (route) => {
 			n += 1;
 			if (n === 1) {
@@ -1520,6 +1629,7 @@ try {
 			}
 			await gateB;
 			await route.continue();
+			markBDone();
 		});
 		try {
 			await page.fill("#chatinput", "T56-OVERLAP-A");
@@ -1537,6 +1647,7 @@ try {
 			);
 		} finally {
 			releaseB();
+			await Promise.race([bDone, new Promise((r) => setTimeout(r, 10_000))]);
 			await page.unroute("**/api/chat/send");
 		}
 		check("t56 overlap B still echoes", await t56Echoed("T56-OVERLAP-B"));
@@ -3292,6 +3403,10 @@ try {
 		await netBatch;
 		check("network child unlocks with its creation password", true);
 		await page.screenshot({ path: path.join(OUT, "12d-child-network.png") });
+		// The return trip boots the picker again: watch that batch, not
+		// the stale first-load one, or stop() lands mid-boot (refused
+		// loads + a "client closed" 500 on /api/chat/stats).
+		const backBatch = watchAppBatch(page);
 		await page.goto(pickSrv.url, { waitUntil: "load" });
 		check("network child killed after the handoff", await killPort(netPort));
 		const netStart = path.join(pickNets, "smoke-net", "START-HERE.md");
@@ -3348,6 +3463,9 @@ try {
 			);
 		}
 		await pickBatch;
+		await backBatch;
+		// Park off the picker so its pollers are not in flight at stop.
+		await page.goto("about:blank");
 	} finally {
 		await pickSrv.stop();
 	}
