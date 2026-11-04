@@ -1435,7 +1435,12 @@ describe("package tool bundle (T51)", () => {
 			const srv = await stubServer(bin);
 			try {
 				const body = (await (await fetch(`${srv.url}api/devices`)).json()) as {
-					devices: { id: string; cdb: string; user?: string }[];
+					devices: {
+						id: string;
+						cdb: string;
+						user?: string;
+						webfigUrl?: string;
+					}[];
 					source: string;
 				};
 				expect(body.source).toBe("cdb");
