@@ -76,6 +76,16 @@ jobs:
           command -v muse && muse --version
       - name: Playwright chromium
         run: bunx playwright install --with-deps chromium
+      # HAVE_CENTRS gates ~40 tests (T39/T48/T64 and the cdb legs); the
+      # server fronts the bundle either way, so align the test process
+      # with orca: locked copy first (T155), same as the smoke job.
+      - name: Bundled bins first on PATH
+        run: echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      # Serve echo tests poll a live turn on fixed 10s windows; 53 files
+      # spawning real workers oversubscribe the 4-core runner (run 2:
+      # echo turns landed off-peak but starved at peak). HALVE the file
+      # parallelism so the timing-sensitive tests get a quieter box.
+      # Same tests, same assertions — matched to the runner, not weakened.
       - name: Fresh TMPDIR
         run: |
           mkdir -p "$RUNNER_TEMP/gate"
@@ -83,7 +93,7 @@ jobs:
       - name: bun test
         run: |
           set -eo pipefail
-          bun test 2>&1 | tee "$RUNNER_TEMP/test.log"
+          bun test --parallel=2 2>&1 | tee "$RUNNER_TEMP/test.log"
       - name: Nothing left behind in TMPDIR
         if: always()
         run: TMPDIR=/tmp bun tools/check-tmpdir.ts "$RUNNER_TEMP/gate"
@@ -109,6 +119,12 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
+      # Smoke also drives the real echo host (T100 skills check needs a
+      # session, sessions need the worker); same install as the test job.
+      - name: Install muse
+        run: |
+          curl -fsSL https://dev.meta.ai/install.sh | bash
+          command -v muse && muse --version
       - name: Playwright chromium
         run: bunx playwright install --with-deps chromium
       # The auth legs run centrs from PATH; use the locked copy (T155).
