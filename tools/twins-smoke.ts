@@ -39,7 +39,12 @@ export async function checkTwinsRefresh(page: Page, out: string) {
 					: {
 							available: true,
 							twins: [
-								{ name: "refresh-test", status: mode, version: "7.25.1" },
+								{
+									name: "refresh-test",
+									status: mode,
+									version: "7.25.1",
+									ports: { http: { host: 9180, guest: 80 } },
+								},
 							],
 						},
 		});
@@ -54,11 +59,20 @@ export async function checkTwinsRefresh(page: Page, out: string) {
 		);
 	await ready();
 	assert.equal(await page.locator("#qc-running").textContent(), "1");
+	assert.equal(
+		await page.locator("#twinlist .webfig").getAttribute("href"),
+		"http://127.0.0.1:9180/webfig/",
+	);
+	assert.equal(
+		await page.locator("#twinlist .webfig").getAttribute("target"),
+		"_blank",
+	);
 	mode = "stopped";
 	await page.locator("#twinsrefresh").click();
 	await ready();
 	assert.equal(await page.locator("#qc-running").textContent(), "0");
 	assert.equal(await page.locator("#twinbadge").textContent(), "0/1");
+	assert.equal(await page.locator("#twinlist .webfig").count(), 0);
 	mode = "running";
 	await page.clock.runFor(15000);
 	await ready();

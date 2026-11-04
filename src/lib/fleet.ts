@@ -10,6 +10,8 @@ import { have, run } from "./run";
 import { parseToml } from "./toml";
 
 export type Device = {
+	/** Demo HTTP WebFig endpoint; never carries credentials. */
+	webfigUrl?: string;
 	id: string;
 	label?: string;
 	site?: string;
@@ -126,17 +128,32 @@ export type CdbListResult =
 	| { ok: true; devices: Device[] }
 	| { ok: false; why: string };
 
+/** Explicit demo HTTP origin from the record name and saved www port. */
+export function deviceWebfigUrl(name: string, port = "80"): string | undefined {
+	if (!validPortValue(port) || !port || /[\s/@?#\\]/.test(name))
+		return undefined;
+	try {
+		const host =
+			name.includes(":") && !name.startsWith("[") ? `[${name}]` : name;
+		const url = new URL(`http://${host}:${port}/webfig/`);
+		if (url.username || url.password) return undefined;
+		return url.href;
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * CDB list rows to device cards. The reserved __default__ record is a
  * credential fallback, not a target (T9; MCP never allowlists it), so
  * it is filtered from the inventory like everywhere else. The mapping
- * preserves (target, user) and nothing else.
+ * preserves (target, user) and derives a credential-free WebFig URL.
  *
  * Defense-in-depth redaction guard (T64, C13): centrs#551 shipped
  * in 0.1.9 (show/mutation envelopes withhold passwords by default),
  * and this projection keeps us independent of that — no handler
  * forwards raw record envelopes to UI/chat/logs; it allowlists
- * id/cdb/user and drops everything else.
+ * id/cdb/user/webfigUrl and drops everything else.
  */
 export function cdbRowsToDevices(data: unknown): Device[] {
 	const rows = Array.isArray(data)
@@ -152,6 +169,10 @@ export function cdbRowsToDevices(data: unknown): Device[] {
 			const device: Device = { id: t.trim(), cdb: t.trim() };
 			const u = rec["user"];
 			if (typeof u === "string" && u.trim()) device.user = u.trim();
+			const port =
+				portsOf(rec["comment"], rec["commentMirror"])["www-port"] ?? "80";
+			const webfigUrl = deviceWebfigUrl(device.id, port);
+			if (webfigUrl) device.webfigUrl = webfigUrl;
 			devices.push(device);
 		}
 	}
@@ -178,14 +199,20 @@ export async function listCdbDevices(
 		if (parsed["ok"] !== true) return { ok: false, why: centrsWhy(parsed) };
 		const devices = cdbRowsToDevices(parsed["data"]);
 		if (passwords && env) {
-			const marks = await probeHasPassword(
-				cdbFile ?? null,
-				devices.map((d) => d.cdb),
-				env,
+			await Promise.all(
+				devices.map(async (device) => {
+					const seen = await showCdbDevice(cdbFile ?? null, device.id, env);
+					if (seen.ok) {
+						device.hasPassword = seen.details.hasPassword;
+						device.webfigUrl = deviceWebfigUrl(
+							device.id,
+							seen.details.ports?.["www-port"] ?? "80",
+						);
+					} else if (seen.code === "cdb/not-found-target") {
+						device.hasPassword = false;
+					}
+				}),
 			);
-			devices.forEach((d, i) => {
-				if (marks[i] !== undefined) d.hasPassword = marks[i];
-			});
 		}
 		return { ok: true, devices };
 	} catch {

@@ -176,7 +176,7 @@ describe("listen addresses", () => {
 				{ target: "  " },
 				{ nope: 1 },
 			]),
-		).toEqual([{ id: "gw", cdb: "gw" }]);
+		).toEqual([{ id: "gw", cdb: "gw", webfigUrl: "http://gw/webfig/" }]);
 		expect(cdbRowsToDevices({})).toEqual([]);
 		expect(cdbRowsToDevices(null)).toEqual([]);
 	});
@@ -471,6 +471,7 @@ describe("serve", () => {
 				expect(dev.devices).toEqual([
 					{
 						id: "office-gw",
+						webfigUrl: "http://office-gw/webfig/",
 						cdb: "office-gw",
 						user: "admin",
 						hasPassword: false,
@@ -1439,7 +1440,12 @@ describe("package tool bundle (T51)", () => {
 				};
 				expect(body.source).toBe("cdb");
 				expect(body.devices).toEqual([
-					{ id: "stub-gw", cdb: "stub-gw", user: "admin" },
+					{
+						id: "stub-gw",
+						webfigUrl: "http://stub-gw/webfig/",
+						cdb: "stub-gw",
+						user: "admin",
+					},
 				]);
 			} finally {
 				await srv.stop();
@@ -1548,8 +1554,8 @@ describe("unlock context (T64)", () => {
 				{ target: "nou", password: "y" },
 			]),
 		).toEqual([
-			{ id: "gw", cdb: "gw", user: "admin" },
-			{ id: "nou", cdb: "nou" },
+			{ id: "gw", cdb: "gw", user: "admin", webfigUrl: "http://gw/webfig/" },
+			{ id: "nou", cdb: "nou", webfigUrl: "http://nou/webfig/" },
 		]);
 		for (const row of cdbRowsToDevices([
 			{ target: "g", password: "p", pass: "p", secret: "p" },
@@ -1713,7 +1719,12 @@ describe("unlock context (T64)", () => {
 				};
 				expect(body.source).toBe("cdb");
 				expect(body.devices).toEqual([
-					{ id: "redact-gw", cdb: "redact-gw", user: "admin" },
+					{
+						id: "redact-gw",
+						webfigUrl: "http://redact-gw/webfig/",
+						cdb: "redact-gw",
+						user: "admin",
+					},
 				]);
 				for (const row of body.devices) {
 					expect("password" in row).toBe(false);
@@ -1819,6 +1830,7 @@ describe("unlock context (T64)", () => {
 					expect(dev.devices).toEqual([
 						{
 							id: "t64-gw",
+							webfigUrl: "http://t64-gw/webfig/",
 							cdb: "t64-gw",
 							user: "t64-admin",
 							hasPassword: false,

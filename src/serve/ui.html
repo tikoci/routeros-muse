@@ -63,6 +63,9 @@
   .dev .live { margin: 6px 0 0 16px; font: 11.5px var(--mono); color: var(--muted); }
   .dev .live b { color: var(--text); font-weight: 600; }
   .dev .chat { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 16px; }
+  .webfig { display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 4px; color: var(--muted); text-decoration: none; }
+  .webfig-url { margin: 6px 0 0 16px; font: 10.5px var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+  .twin .webfig { margin-left: auto; }
   .dev .inchat { font-size: 11px; color: var(--green); font-weight: 600; }
   .btn { font: 600 12px var(--sans); border-radius: 7px; padding: 5px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); }
   .btn:hover { border-color: var(--accent); }
@@ -4245,6 +4248,18 @@
     return null;
   }
 
+  function webfigLink(url, name) {
+    const a = document.createElement("a");
+    a.className = "minibtn webfig";
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.title = "Open WebFig for " + name;
+    a.setAttribute("aria-label", a.title);
+    a.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 2h5v5M14 2 7 9M6 3H2v11h11v-4"/></svg>';
+    a.addEventListener("click", (e) => e.stopPropagation());
+    return a;
+  }
   async function loadDevices() {
     const box = $("devlist");
     try {
@@ -4282,6 +4297,14 @@
         card.querySelector(".name").textContent = d.id;
         card.querySelector(".role").textContent = role;
         card.dataset.base = d.cdb ? "cdb " + d.cdb + (d.user ? " · " + d.user : "") : d.host ? d.host : "no device linked";
+        if (d.webfigUrl) {
+          card.querySelector(".row1").appendChild(webfigLink(d.webfigUrl, d.id));
+          const url = document.createElement("div");
+          url.className = "webfig-url";
+          url.textContent = d.webfigUrl;
+          url.title = "WebFig URL";
+          card.querySelector(".live").after(url);
+        }
         const acc = card.querySelector(".access");
         if (d.hasPassword === false) {
           acc.classList.add("need");
@@ -4500,6 +4523,10 @@
         st.classList.add(isRun ? "run" : "off");
         st.textContent = isRun ? "running" : "stopped";
         div.querySelector(".cfg").textContent = [t.version, t.state].filter(Boolean).join(" · ") || "—";
+        const port = t.ports && t.ports.http && t.ports.http.host;
+        if (isRun && Number.isInteger(port) && port > 0 && port <= 65535) {
+          div.querySelector(".trow1").appendChild(webfigLink("http://127.0.0.1:" + port + "/webfig/", t.name || "twin"));
+        }
         box.appendChild(div);
       }
       if (twins.length === 0) box.innerHTML = '<div class="setnote">no twins defined.</div>';

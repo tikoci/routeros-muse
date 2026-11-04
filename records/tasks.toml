@@ -1082,10 +1082,10 @@ id = "T108"
 title = "Smoke flake: stray net::ERR_CONNECTION_REFUSED console errors"
 status = "needed"
 detail = "One gate run in four on 2026-11-02 (T56 branch) failed 'console errors are only the expected resource loads' with two ERR_CONNECTION_REFUSED entries. The check aggregates the whole run, so the leg is unknown. Likely a page still polling or reconnecting (SSE/status) to a server a later step stopped. Make the console collector record the URL and leg, then close or navigate pages before srv.stop (or scope the excuse to that teardown). A gate that flakes erodes trust (D28)."
-evidence = "/dev/shm/gate-t56.log (local, transient); reruns green twice"
+evidence = "/dev/shm/gate-t56.log (local, transient); reruns green twice. T172 sweep 2026-11-04: /tmp/muse-t172-smoke.log repeats the teardown race: /api/chat/pending ERR_CONNECTION_REFUSED plus /api/chat/stats 500 client closed on a stopped child server. WebFig checks and zero pageerrors pass; full smoke red on the exact-response/console checks. No suppression added."
 blocked_by = []
 agent = ""
-updated = "2026-11-02"
+updated = "2026-11-04"
 
 [[task]]
 id = "T109"
@@ -1755,4 +1755,26 @@ evidence = "bun test tests/t171-sandbox.test.ts -> 2 pass, 29 assertions (defaul
 acceptance = "Settings persistence, spawn flag, approval mode preservation, pending restart and browser behavior verified; live unseeded-command approval probe recorded; make gate and records check pass."
 blocked_by = []
 agent = "codex"
+updated = "2026-11-04"
+
+[[task]]
+id = "T172"
+title = "WebFig launch links on Device and Twin cards"
+status = "done"
+detail = "Developer 2026-11-04: demo plumbing, HTTP WebFig links on Device and Twin cards; Devices show URL using record name and www port (80 default); twins use local forwarded HTTP port. Smarter service and TLS selection tracked separately in T173. Completes the WebFig slice of T145."
+evidence = "Bundled quickchr list --json confirmed ports.http.host. bun scratch/t172-cdb.ts -> PASS real disposable CDB saved www-port=7080 and record-name URL through listDevices. URL guards and inventory/redaction expectations verified. PATH=node_modules/.bin:$PATH make gate -> exit 0, 813 pass / 0 fail, lint and typecheck clean, skills valid, SMOKE GREEN, zero pageerrors and TMPDIR empty (/tmp/muse-t172-final-gate.log). Full browser smoke covers workspace/no-workspace, lock/unlock, access modes, settings, files, chat and both themes; WebFig checks verify saved port, visible Device URL, separate tab and unchanged active pane; Twin checks verify HTTP host-forward and no link for stopped twins. Eyeballed out/ui-smoke/t172-devices-{dark,light}.png and t167-twins-{dark,light}.png. Initial standalone sweep repeated existing T108 teardown race; evidence added there, final gate clean."
+acceptance = "Links open a separate tab, device URL visible, saved www ports honored, no credentials in links; browser sweep, make gate and records check pass."
+blocked_by = []
+agent = "codex"
+updated = "2026-11-04"
+
+[[task]]
+id = "T173"
+title = "Discover browser-reachable WebFig services and TLS readiness across repos"
+status = "needed"
+detail = "Developer follow-up to T172 before shipping: coordinate quickchr/centrs contracts for WebFig endpoint selection, service enabled state, www/www-ssl ports, certificate readiness and browser reachability. QuickCHR demo uses forwarded HTTP because factory www-ssl has no certificate. Decide HTTPS provisioning/trust and local versus remote host handling; do upstream work in sibling repos and consume @next."
+evidence = "Developer request 2026-11-04; T172 intentionally supplies the requested explicit demo URLs."
+acceptance = "Ground actual service and certificate behavior on disposable CHR, file upstream needs/issues once contracts are established, consume published contracts and verify browser launch."
+blocked_by = []
+agent = ""
 updated = "2026-11-04"

@@ -103,7 +103,14 @@ function seedCdb(dir: string, targets: string[], user = "smoke-admin"): string {
 	const env = { ...process.env, CENTRS_CDB_FILE: cdb };
 	const steps = [
 		["devices", "init"],
-		...targets.map((t) => ["devices", "add", t, "--user", user]),
+		...targets.map((t) => [
+			"devices",
+			"add",
+			t,
+			"--user",
+			user,
+			...(t === "smoke-gw" ? ["www-port=7080"] : []),
+		]),
 	];
 	for (const args of steps) {
 		const r = childProcess.spawnSync("centrs", args, { env, encoding: "utf8" });
@@ -2451,6 +2458,46 @@ try {
 		devBase === "cdb smoke-gw · smoke-admin",
 		devBase ?? "no card",
 	);
+
+	const webfig = page.locator('#devlist .dev[data-key="dev-smoke-gw"] .webfig');
+	check(
+		"T172 device WebFig uses name and saved www port",
+		(await webfig.getAttribute("href")) === "http://smoke-gw:7080/webfig/",
+	);
+	check(
+		"T172 device URL is visible",
+		(await page.locator("#devlist .webfig-url").first().textContent()) ===
+			"http://smoke-gw:7080/webfig/",
+	);
+	const activeBeforeWebfig = await page
+		.locator(".cpane.active")
+		.getAttribute("id");
+	await page
+		.context()
+		.route("http://smoke-gw:7080/**", (route) =>
+			route.fulfill({ body: "WebFig destination" }),
+		);
+	const [webfigTab] = await Promise.all([
+		page.waitForEvent("popup"),
+		webfig.click(),
+	]);
+	await webfigTab.waitForLoadState();
+	check(
+		"T172 WebFig opens separate tab",
+		webfigTab.url() === "http://smoke-gw:7080/webfig/" &&
+			(await page.locator(".cpane.active").getAttribute("id")) ===
+				activeBeforeWebfig,
+	);
+	await webfigTab.close();
+	for (const theme of ["dark", "light"]) {
+		await page.evaluate(
+			(t) => document.documentElement.setAttribute("data-theme", t),
+			theme,
+		);
+		await page.screenshot({
+			path: path.join(OUT, `t172-devices-${theme}.png`),
+		});
+	}
 
 	// T38: twins on-demand — no fetch at boot, fetch on first tab show.
 	check(

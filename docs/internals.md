@@ -167,6 +167,14 @@ preference, the applied value, pending changes, and delivery or catalog
 warnings. A response sequence prevents delayed status reads from
 overwriting a newer preference/catalog result in the browser.
 
+Device and running Twin cards offer a WebFig launch icon (T172), opening a
+separate browser tab without credentials. Devices also show the URL: HTTP,
+CDB target as hostname, and saved `www-port` (default 80), projected from the
+existing Access read. Twins use `127.0.0.1` and `ports.http.host` from
+`quickchr list --json`; stopped twins and twins without an HTTP forward have
+no launch link. These are explicit local-demo endpoints. Service discovery,
+TLS readiness and browser reachability across hosts remain T173.
+
 Device status (left cards + device pane) is one per-device state in
 the browser: unknown (grey), ok (green), unreachable (red when the
 transport got no answer, amber when the router answered but refused,
