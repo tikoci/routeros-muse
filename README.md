@@ -23,7 +23,7 @@ touching a real router.*
 
 ![Device detail for a wAP LTE: identity, RouterOS version, CPU, memory and disk, plus the interface table with live RX/TX](docs/screenshots/device-detail.png)
 
-*A device tab, read live through centrs: system resources and every
+*A device tab. centrs reads it live: system resources and every
 interface, with Add to chat, Access, Refresh, and Remove.*
 
 ## Quick start
