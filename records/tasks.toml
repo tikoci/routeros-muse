@@ -1822,3 +1822,14 @@ acceptance = "PR merged green; release.yml channel=next published; bunx @tikoci/
 blocked_by = []
 agent = "claude"
 updated = "2026-11-04"
+
+[[task]]
+id = "T178"
+title = "README screenshots: chat with twins, device detail"
+status = "done"
+detail = "Developer 2026-11-04 supplied two real-app screenshots for the README (hackathon submission readiness): the main chat with a device attached, centrs tool calls and the quickchr twins panel; and a device tab with system resources and the interface table. Stored under docs/screenshots/ and shown under the README status line with captions."
+evidence = "D1 review of both images by eye: private IPs only (10.10.60.x, 172.26.x.x), MACs, device model, RouterOS versions, localhost port, user robot-admin (already in tests/t110-add-device.test.ts); no credentials, tokens, serials, public IPs, ZeroTier network ID or IMEI; tool output collapsed. Router identities shown to the developer as the one judgment call; developer approved posting. magick <in> -strip docs/screenshots/{chat-and-twins,device-detail}.png (metadata stripped; 669 KB and 512 KB)."
+acceptance = "README on main shows both screenshots; CI green."
+blocked_by = []
+agent = "claude"
+updated = "2026-11-04"

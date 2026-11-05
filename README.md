@@ -14,6 +14,18 @@ real owner tool.
 
 Status: **preview**. Expect rough edges; nothing here is finished.
 
+![The agent checking an unreachable router: centrs tool calls in the chat, the device chip on the prompt, and the quickchr twins panel on the right](docs/screenshots/chat-and-twins.png)
+
+*Chat with a device attached. The agent runs `centrs` reads against
+the real network, shows each tool call, and reports its evidence. On
+the right are the quickchr twins where it tests changes before
+touching a real router.*
+
+![Device detail for a wAP LTE: identity, RouterOS version, CPU, memory and disk, plus the interface table with live RX/TX](docs/screenshots/device-detail.png)
+
+*A device tab, read live through centrs: system resources and every
+interface, with Add to chat, Access, Refresh, and Remove.*
+
 ## Quick start
 
 Prereqs: [Bun](https://bun.sh) (per Bun's own install instructions),
